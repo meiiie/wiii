@@ -13,8 +13,9 @@ use std::process::{Child, Command, ExitStatus};
 use std::sync::mpsc;
 #[cfg(windows)]
 use std::thread;
+use std::time::Duration;
 #[cfg(windows)]
-use std::time::{Duration, Instant};
+use std::time::Instant;
 
 #[cfg(windows)]
 const CREATE_NO_WINDOW: u32 = 0x0800_0000;
@@ -22,7 +23,6 @@ const CREATE_NO_WINDOW: u32 = 0x0800_0000;
 const CREATE_NEW_PROCESS_GROUP: u32 = 0x0000_0200;
 #[cfg(windows)]
 const CREATE_SUSPENDED: u32 = 0x0000_0004;
-#[cfg(windows)]
 const PROBE_TIMEOUT: Duration = Duration::from_secs(3);
 const NEKO_STARTUP_TIMEOUT: Duration = Duration::from_secs(10);
 #[cfg(windows)]
@@ -74,7 +74,6 @@ impl SpawnOwnedError {
         }
     }
 
-    #[cfg(any(windows, test))]
     fn after_proven_cleanup(error: io::Error) -> Self {
         Self {
             error,
@@ -161,7 +160,10 @@ fn probe_failure_after_cleanup(child: &mut OwnedChild, original: io::Error) -> S
 /// Unix provider discovery is staged behind the same non-escapable containment
 /// primitive as provider execution. Do not probe by spawning an unowned child.
 #[cfg(unix)]
-fn run_probe_with_timeout(_command: Command, _timeout: Duration) -> Result<ProbeOutput, SpawnOwnedError> {
+fn run_probe_with_timeout(
+    _command: Command,
+    _timeout: Duration,
+) -> Result<ProbeOutput, SpawnOwnedError> {
     Err(SpawnOwnedError::safe(unix_containment_unavailable()))
 }
 
@@ -170,7 +172,10 @@ fn run_probe_with_timeout(_command: Command, _timeout: Duration) -> Result<Probe
 /// cannot allocate unbounded disk space between monitor polls. Process-tree
 /// cleanup is checked before any output is trusted.
 #[cfg(windows)]
-fn run_probe_with_timeout(mut command: Command, timeout: Duration) -> Result<ProbeOutput, SpawnOwnedError> {
+fn run_probe_with_timeout(
+    mut command: Command,
+    timeout: Duration,
+) -> Result<ProbeOutput, SpawnOwnedError> {
     command
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
@@ -312,7 +317,9 @@ fn candidate_paths(candidate: &str) -> Vec<PathBuf> {
     #[cfg(windows)]
     if matches!(candidate.to_str(), Some("neko" | "neko.exe")) {
         if let Some(local_data) = std::env::var_os("LOCALAPPDATA") {
-            if let Ok(program) = std::fs::canonicalize(PathBuf::from(local_data).join("Programs/neko/neko.exe")) {
+            if let Ok(program) =
+                std::fs::canonicalize(PathBuf::from(local_data).join("Programs/neko/neko.exe"))
+            {
                 if !resolved.contains(&program) {
                     resolved.push(program);
                 }
@@ -725,10 +732,17 @@ fn probe_definition(
             command.arg(provider.version_arg);
             let output = run_probe_with_timeout(command, NEKO_STARTUP_TIMEOUT)?;
             if !output.status.success() {
-                return Err(io::Error::other("Bundled Neko failed to start; repair Wiii installation").into());
+                return Err(io::Error::other(
+                    "Bundled Neko failed to start; repair Wiii installation",
+                )
+                .into());
             }
             let version = String::from_utf8_lossy(&output.stdout).trim().to_string();
-            return Ok(Some(ResolvedProvider { definition: provider, program, version: (!version.is_empty()).then_some(version) }));
+            return Ok(Some(ResolvedProvider {
+                definition: provider,
+                program,
+                version: (!version.is_empty()).then_some(version),
+            }));
         }
     }
     let mut last_failure = None;
@@ -736,7 +750,11 @@ fn probe_definition(
         for program in candidate_paths(candidate) {
             let mut command = Command::new(&program);
             command.arg(provider.version_arg);
-            let timeout = if provider.id == "neko" { NEKO_STARTUP_TIMEOUT } else { PROBE_TIMEOUT };
+            let timeout = if provider.id == "neko" {
+                NEKO_STARTUP_TIMEOUT
+            } else {
+                PROBE_TIMEOUT
+            };
             match run_probe_with_timeout(command, timeout) {
                 Ok(output) if output.status.success() => {
                     let version = String::from_utf8_lossy(&output.stdout).trim().to_string();
@@ -804,9 +822,15 @@ pub fn resolve(provider_id: &str) -> Result<ResolvedProvider, SpawnOwnedError> {
 }
 
 pub fn list_selected(provider_id: Option<&str>) -> Result<Vec<AgentInfo>, String> {
-    let selected = provider_id.map(|id| definition(id).ok_or_else(|| format!("unknown Neko provider '{id}'"))).transpose()?;
+    let selected = provider_id
+        .map(|id| definition(id).ok_or_else(|| format!("unknown Neko provider '{id}'")))
+        .transpose()?;
     let mut agents = Vec::with_capacity(PROVIDERS.len());
-    for provider in PROVIDERS.iter().copied().filter(|provider| selected.is_none_or(|item| item.id == provider.id)) {
+    for provider in PROVIDERS
+        .iter()
+        .copied()
+        .filter(|provider| selected.is_none_or(|item| item.id == provider.id))
+    {
         let (resolved, detail) = if host_supports_provider_containment() {
             match probe_definition(provider) {
                 Ok(resolved) => (resolved, None),
@@ -923,7 +947,8 @@ pub fn profiles(provider_id: &str, cwd: &str) -> Result<Vec<AgentProfile>, Strin
     let resolved = resolve(provider_id).map_err(|error| error.to_string())?;
     let mut command = Command::new(&resolved.program);
     command.arg("profiles").current_dir(cwd_path);
-    let output = run_probe_with_timeout(command, NEKO_STARTUP_TIMEOUT).map_err(|error| format!("profile probe failed: {error}"))?;
+    let output = run_probe_with_timeout(command, NEKO_STARTUP_TIMEOUT)
+        .map_err(|error| format!("profile probe failed: {error}"))?;
     if !output.status.success() {
         return Err(format!("profile probe exited with {}", output.status));
     }
@@ -939,7 +964,9 @@ mod tests {
     #[test]
     fn scoped_discovery_rejects_paths_and_unknown_providers_before_spawn() {
         for id in ["", "unknown", "C:/custom/neko.exe", "neko --version"] {
-            assert!(list_selected(Some(id)).unwrap_err().contains("unknown Neko provider"));
+            assert!(list_selected(Some(id))
+                .unwrap_err()
+                .contains("unknown Neko provider"));
         }
     }
 
@@ -947,25 +974,42 @@ mod tests {
     #[test]
     fn an_existing_program_with_a_failed_version_check_is_not_reported_missing() {
         let fixture = ProviderDefinition {
-            id: "fixture", name: "Fixture", windows_candidates: &["cmd.exe"],
-            version_arg: "/c exit 7", ..definition("neko").unwrap()
+            id: "fixture",
+            name: "Fixture",
+            windows_candidates: &["cmd.exe"],
+            version_arg: "/c exit 7",
+            ..definition("neko").unwrap()
         };
         let failure = probe_definition(fixture).unwrap_err();
         assert!(failure.post_spawn_cleanup_proven());
-        assert!(failure.to_string().contains("version check exited unsuccessfully"));
+        assert!(failure
+            .to_string()
+            .contains("version check exited unsuccessfully"));
     }
 
     #[cfg(windows)]
     #[test]
     fn startup_deadline_can_allow_slow_launch_but_still_terminates_a_stalled_probe() {
         let mut command = Command::new("powershell.exe");
-        command.args(["-NoProfile", "-NonInteractive", "-Command", "Start-Sleep -Milliseconds 3500; Write-Output ready"]);
+        command.args([
+            "-NoProfile",
+            "-NonInteractive",
+            "-Command",
+            "Start-Sleep -Milliseconds 3500; Write-Output ready",
+        ]);
         let output = run_probe_with_timeout(command, NEKO_STARTUP_TIMEOUT).unwrap();
         assert!(output.status.success());
         assert_eq!(String::from_utf8_lossy(&output.stdout).trim(), "ready");
         let mut command = Command::new("powershell.exe");
-        command.args(["-NoProfile", "-NonInteractive", "-Command", "Start-Sleep -Seconds 60"]);
-        let error = run_probe_with_timeout(command, Duration::from_millis(100)).err().unwrap();
+        command.args([
+            "-NoProfile",
+            "-NonInteractive",
+            "-Command",
+            "Start-Sleep -Seconds 60",
+        ]);
+        let error = run_probe_with_timeout(command, Duration::from_millis(100))
+            .err()
+            .unwrap();
         assert_eq!(error.kind(), io::ErrorKind::TimedOut);
         assert!(error.post_spawn_cleanup_proven());
     }
@@ -1113,7 +1157,7 @@ mod tests {
     #[cfg(unix)]
     #[test]
     fn provider_roster_reports_host_containment_as_unsupported() {
-        let providers = list().unwrap();
+        let providers = list_selected(None).unwrap();
         assert!(!providers.is_empty());
         assert!(providers.iter().all(|provider| {
             !provider.found && provider.availability == AgentAvailability::HostUnsupported

@@ -493,7 +493,7 @@ impl NekoComputerService {
 
     pub fn resume(&self, request: ComputerLifecycleRequest) -> Result<ComputerEnvironment, String> {
         let _guard = self.operation_guard();
-        let environment = self.require_environment(&request.environment_id)?;
+        let environment = self.require_granted_environment(&request.environment_id)?;
         match self.journal.begin_request(
             &request.request_id,
             "computer/resume",
@@ -538,7 +538,7 @@ impl NekoComputerService {
 
     pub fn reset(&self, request: ComputerResetRequest) -> Result<ComputerEnvironment, String> {
         let _guard = self.operation_guard();
-        let environment = self.require_environment(&request.environment_id)?;
+        let environment = self.require_granted_environment(&request.environment_id)?;
         let expected = if self
             .journal
             .coworker_binding_for_environment(&request.environment_id)?
@@ -1012,10 +1012,17 @@ impl NekoComputerService {
         validate_transaction(&request)?;
         let environment =
             self.require_work_plane_authority(&request.environment_id, &request.project_id)?;
+        let mut encoded = serde_json::to_value(&request)
+            .map_err(|error| format!("encode Work Plane identity failed: {error}"))?;
+        encoded.sort_all_objects();
+        let target = format!(
+            "sha256:{:x}",
+            Sha256::digest(encoded.to_string().as_bytes())
+        );
         if let Some(decision) = self.journal.existing_request_decision(
             &request.request_id,
             "computer/work-plane/execute",
-            &request.environment_id,
+            &target,
         )? {
             return match decision {
                 RequestDecision::Replay(value) => serde_json::from_value(value)
@@ -1033,7 +1040,7 @@ impl NekoComputerService {
         match self.journal.begin_request(
             &request.request_id,
             "computer/work-plane/execute",
-            &request.environment_id,
+            &target,
         )? {
             RequestDecision::Replay(value) => {
                 return serde_json::from_value(value)
@@ -1203,11 +1210,38 @@ impl NekoComputerService {
         environment_id: &str,
         project_id: &str,
     ) -> Result<ComputerEnvironment, String> {
-        let environment = self.require_environment(environment_id)?;
+        let environment = self.require_granted_environment(environment_id)?;
         if environment.project_id.as_deref() != Some(project_id) {
             return Err(
                 "project_access_denied: Work Plane is bound to the active Project".to_string(),
             );
+        }
+        Ok(environment)
+    }
+
+    fn require_granted_environment(
+        &self,
+        environment_id: &str,
+    ) -> Result<ComputerEnvironment, String> {
+        let environment = self.require_environment(environment_id)?;
+        let denied =
+            || "project_access_denied: Computer requires an active Project grant".to_string();
+        let binding = self
+            .journal
+            .coworker_binding_for_environment(environment_id)?
+            .ok_or_else(denied)?;
+        let project_id = binding.active_project_id.as_deref().ok_or_else(denied)?;
+        if !self
+            .journal
+            .project_grants(&binding.coworker_id)?
+            .iter()
+            .any(|grant| {
+                grant.project_id.as_deref() == Some(project_id)
+                    && grant.project_path == environment.project_path
+            })
+            || binding.active_project_path.as_deref() != Some(environment.project_path.as_str())
+        {
+            return Err(denied());
         }
         Ok(environment)
     }
@@ -1706,6 +1740,99 @@ mod tests {
         assert!(first.starts_with("unknown_outcome:"));
         assert!(replay.starts_with("unknown_outcome:"));
         assert_eq!(adapter.side_effects.load(Ordering::SeqCst), 1);
+    }
+
+    #[test]
+    fn work_plane_rejects_reused_ids_for_different_transactions() {
+        let (service, adapter) = service_with_fake_work_plane();
+        let request = WorkPlaneTransactionRequest {
+            request_id: "operation-work-conflict".to_string(),
+            environment_id: "computer-abc".to_string(),
+            project_id: "project-wiii".to_string(),
+            capability_id: "project.file.patch_text".to_string(),
+            capability_version: "1".to_string(),
+            target_ref: "work:file:YWxwaGE".to_string(),
+            if_revision: format!("sha256:{}", "a".repeat(64)),
+            input: json!({ "expectedText": "old", "replacement": "new" }),
+        };
+        service.work_plane_execute(request.clone()).unwrap();
+        let mut reordered = request.clone();
+        reordered.input =
+            serde_json::from_str(r#"{"replacement":"new","expectedText":"old"}"#).unwrap();
+        service.work_plane_execute(reordered).unwrap();
+        for field in 0..5 {
+            let mut conflicting = request.clone();
+            match field {
+                0 => conflicting.capability_id = "project.file.replace_text".to_string(),
+                1 => conflicting.capability_version = "2".to_string(),
+                2 => conflicting.target_ref = "work:file:YmV0YQ".to_string(),
+                3 => conflicting.if_revision = format!("sha256:{}", "b".repeat(64)),
+                _ => conflicting.input = json!({ "expectedText": "old", "replacement": "other" }),
+            }
+            assert!(service.work_plane_execute(conflicting).is_err());
+        }
+        assert_eq!(adapter.calls.load(Ordering::SeqCst), 1);
+    }
+
+    #[test]
+    fn revoked_project_cannot_be_resumed_or_reset() {
+        let (service, _) = service_with_fake_work_plane();
+        service
+            .journal
+            .revoke_project("wiii-coworker-neko", "project-wiii")
+            .unwrap();
+        let resume = service
+            .resume(ComputerLifecycleRequest {
+                request_id: "revoked-resume".to_string(),
+                environment_id: "computer-abc".to_string(),
+            })
+            .unwrap_err();
+        let reset = service
+            .reset(ComputerResetRequest {
+                request_id: "revoked-reset".to_string(),
+                environment_id: "computer-abc".to_string(),
+                confirmation: "RESET NEKO".to_string(),
+            })
+            .unwrap_err();
+        assert!(resume.starts_with("project_access_denied:"));
+        assert!(reset.starts_with("project_access_denied:"));
+        for (id, method) in [
+            ("revoked-resume", "computer/resume"),
+            ("revoked-reset", "computer/reset"),
+        ] {
+            assert!(service
+                .journal
+                .existing_request_decision(id, method, "computer-abc")
+                .unwrap()
+                .is_none());
+        }
+    }
+
+    #[test]
+    fn corrupt_optional_computer_key_is_preserved_for_recovery() {
+        let root =
+            std::env::temp_dir().join(format!("wiii-computer-key-test-{}", uuid::Uuid::new_v4()));
+        let state = root.join("neko-computer-v1");
+        std::fs::create_dir_all(&state).unwrap();
+        let key = state.join("computer-history-v1.key");
+        std::fs::write(&key, b"incomplete-key").unwrap();
+        let availability: super::super::ComputerAvailability = NekoComputerService::open(&root);
+        assert!(availability.is_err());
+        assert_eq!(std::fs::read(key).unwrap(), b"incomplete-key");
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn changed_project_grant_does_not_authorize_the_old_mount() {
+        let (service, _) = service_with_fake_work_plane();
+        service
+            .journal
+            .grant_project("wiii-coworker-neko", "project-wiii", "Other", "C:/other")
+            .unwrap();
+        assert!(service
+            .require_granted_environment("computer-abc")
+            .unwrap_err()
+            .starts_with("project_access_denied:"));
     }
 
     #[test]

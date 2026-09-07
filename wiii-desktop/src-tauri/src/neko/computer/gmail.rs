@@ -146,7 +146,12 @@ impl<C> AccountGrantedGmailClient<C> {
 
     fn credential(&self, account_grant_ref: &str) -> Result<String, GmailHistoryError> {
         self.records
-            .active_credential_ref(&self.coworker_id, account_grant_ref)
+            .active_credential_ref(
+                &self.coworker_id,
+                account_grant_ref,
+                "gmail",
+                "gmail.readonly",
+            )
             .map_err(|_| GmailHistoryError::InvalidResponse)?
             .ok_or(GmailHistoryError::GrantRevoked)
     }
@@ -154,9 +159,11 @@ impl<C> AccountGrantedGmailClient<C> {
 
 impl<C: GmailCredentialClient> GmailHistoryClient for AccountGrantedGmailClient<C> {
     fn grant_is_active(&self, account_grant_ref: &str) -> Result<bool, GmailHistoryError> {
-        self.records
-            .account_is_active(&self.coworker_id, account_grant_ref)
-            .map_err(|_| GmailHistoryError::InvalidResponse)
+        match self.credential(account_grant_ref) {
+            Ok(_) => Ok(true),
+            Err(GmailHistoryError::GrantRevoked) => Ok(false),
+            Err(error) => Err(error),
+        }
     }
 
     fn current_history_id(&self, account_grant_ref: &str) -> Result<String, GmailHistoryError> {
@@ -987,6 +994,51 @@ mod tests {
             GmailHistoryError::GrantRevoked
         );
         assert_eq!(provider.seen_credential.lock().unwrap().len(), 1);
+    }
+
+    #[test]
+    fn gmail_rejects_grants_for_another_provider_scope_or_coworker() {
+        for (grant_provider, scope, coworker) in [
+            ("facebook", "gmail.readonly", "wiii-coworker-neko"),
+            ("gmail", "gmail.send", "wiii-coworker-neko"),
+            ("gmail", "gmail.readonly", "wiii-coworker-other"),
+        ] {
+            let records = CoworkerRecords::in_memory();
+            records
+                .grant_account(NewAccountGrant {
+                    grant_id: "grant-mail".to_string(),
+                    coworker_id: coworker.to_string(),
+                    provider: grant_provider.to_string(),
+                    display_identity: "Test identity".to_string(),
+                    scopes: vec![scope.to_string()],
+                    credential_ref: "computer-profile:test:mail".to_string(),
+                })
+                .unwrap();
+            let provider = Arc::new(FakeCredentialClient {
+                seen_credential: Mutex::new(Vec::new()),
+            });
+            let client = AccountGrantedGmailClient::new(
+                "wiii-coworker-neko".to_string(),
+                records,
+                provider.clone(),
+            );
+            assert!(!client.grant_is_active("grant-mail").unwrap());
+            assert_eq!(
+                client.current_history_id("grant-mail").unwrap_err(),
+                GmailHistoryError::GrantRevoked
+            );
+            assert_eq!(
+                client
+                    .list_history("grant-mail", "100", None, 10)
+                    .unwrap_err(),
+                GmailHistoryError::GrantRevoked
+            );
+            assert_eq!(
+                client.reconcile("grant-mail", 10).unwrap_err(),
+                GmailHistoryError::GrantRevoked
+            );
+            assert!(provider.seen_credential.lock().unwrap().is_empty());
+        }
     }
 
     #[test]

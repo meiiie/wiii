@@ -14,3 +14,5 @@ mod work_plane;
 
 pub use app_event_pump::AppEventPump;
 pub use service::NekoComputerService;
+
+pub type ComputerAvailability = Result<NekoComputerService, String>;
