@@ -1,122 +1,27 @@
-/**
- * Presentation-only complete Markdown block buffer.
- *
- * Providers may still stream arbitrary token/delta fragments. The UI does not
- * expose those fragments. It commits only complete Markdown blocks: a full
- * paragraph, list, table, heading, quote group, or fenced code block. A tool
- * or lifecycle boundary calls `drain()` and therefore finalizes the pending
- * block without losing transport content.
- */
-
 export interface SemanticStreamBufferOptions {
   onFlush: (text: string) => void;
 }
 
-const BLOCK_SEPARATOR = /\r?\n[\t ]*\r?\n/u;
 const ATX_HEADING = /^[\t ]{0,3}#{1,6}(?:[\t ]+|$)/u;
 const SETEXT_HEADING = /^[\t ]{0,3}(?:=+|-+)[\t ]*$/u;
 const THEMATIC_BREAK = /^[\t ]{0,3}(?:(?:\*[\t ]*){3,}|(?:-[\t ]*){3,}|(?:_[\t ]*){3,})$/u;
 const FENCE_OPEN = /^[\t ]{0,3}(`{3,}|~{3,})/u;
 
-interface MarkdownLine {
-  text: string;
-  end: number;
-  terminated: boolean;
-}
-
-function readLine(value: string, start: number): MarkdownLine {
-  const newline = value.indexOf("\n", start);
-  if (newline < 0) {
-    return {
-      text: value.slice(start).replace(/\r$/u, ""),
-      end: value.length,
-      terminated: false,
-    };
-  }
-  return {
-    text: value.slice(start, newline).replace(/\r$/u, ""),
-    end: newline + 1,
-    terminated: true,
-  };
-}
-
-function leadingBlankLinesEnd(value: string): number {
-  let cursor = 0;
-  while (cursor < value.length) {
-    const line = readLine(value, cursor);
-    if (!line.terminated || line.text.trim()) break;
-    cursor = line.end;
-  }
-  return cursor;
-}
-
-function includeAvailableBlankLines(value: string, start: number): number {
-  let cursor = start;
-  while (cursor < value.length) {
-    const line = readLine(value, cursor);
-    if (!line.terminated || line.text.trim()) break;
-    cursor = line.end;
-  }
-  return cursor;
-}
-
-function fencedBlockEnd(value: string, opening: MarkdownLine): number {
-  const marker = opening.text.match(FENCE_OPEN)?.[1];
-  if (!marker || !opening.terminated) return 0;
-
-  const markerCharacter = marker[0];
-  let cursor = opening.end;
-  while (cursor < value.length) {
-    const line = readLine(value, cursor);
-    const trimmed = line.text.trim();
-    const isClosing =
-      trimmed.length >= marker.length &&
-      [...trimmed].every((character) => character === markerCharacter);
-    if (isClosing) {
-      return includeAvailableBlankLines(value, line.end);
-    }
-    if (!line.terminated) return 0;
-    cursor = line.end;
-  }
-  return 0;
-}
-
-/** Return the end offset of the first complete Markdown block, or zero. */
 export function findCompleteMarkdownBlockBoundary(value: string): number {
-  if (!value) return 0;
-
-  const contentStart = leadingBlankLinesEnd(value);
-  if (contentStart >= value.length) return 0;
-
-  const first = readLine(value, contentStart);
-  if (FENCE_OPEN.test(first.text)) {
-    return fencedBlockEnd(value, first);
-  }
-
-  // ATX headings and thematic breaks are complete at the end of their line.
-  if (first.terminated && (ATX_HEADING.test(first.text) || THEMATIC_BREAK.test(first.text))) {
-    return includeAvailableBlankLines(value, first.end);
-  }
-
-  // A Setext heading is exactly two Markdown lines.
-  if (first.terminated && first.end < value.length) {
-    const second = readLine(value, first.end);
-    if (SETEXT_HEADING.test(second.text) && (second.terminated || second.end === value.length)) {
-      return includeAvailableBlankLines(value, second.end);
-    }
-  }
-
-  // Paragraphs, blockquotes, lists, indented code, and tables are finalized by
-  // the Markdown blank-line boundary. This deliberately keeps a whole list or
-  // table together instead of revealing rows/items as provider tokens arrive.
-  const separator = BLOCK_SEPARATOR.exec(value.slice(contentStart));
-  return separator
-    ? contentStart + (separator.index ?? 0) + separator[0].length
-    : 0;
+  let boundary = 0;
+  const buffer = new SemanticStreamBuffer({
+    onFlush: (text) => { boundary ||= text.length; },
+  });
+  buffer.push(value);
+  return boundary;
 }
 
 export class SemanticStreamBuffer {
-  private buffer = "";
+  private chunks: string[] = [];
+  private lineChunks: string[] = [];
+  private pendingLength = 0;
+  private contentLines = 0;
+  private fence: string | null = null;
   private readonly onFlush: (text: string) => void;
 
   constructor(options: SemanticStreamBufferOptions) {
@@ -124,40 +29,59 @@ export class SemanticStreamBuffer {
   }
 
   get pending(): number {
-    return this.buffer.length;
+    return this.pendingLength;
   }
 
-  /** Kept for callers/tests that inspect timer state; complete-block mode has none. */
   get running(): boolean {
     return false;
   }
 
   push(text: string): void {
-    if (!text) return;
-    this.buffer += text;
-    this.flushCompleteBlocks();
+    let cursor = 0;
+    while (cursor < text.length) {
+      const newline = text.indexOf("\n", cursor);
+      const end = newline < 0 ? text.length : newline + 1;
+      const fragment = text.slice(cursor, end);
+      this.chunks.push(fragment);
+      this.lineChunks.push(fragment);
+      this.pendingLength += fragment.length;
+      cursor = end;
+      if (newline < 0) break;
+      const line = this.lineChunks.join("").replace(/\r?\n$/u, "");
+      this.lineChunks = [];
+      if (this.completesBlock(line)) this.drain();
+    }
   }
 
-  /** Finalize pending transport text at a tool, error, or turn boundary. */
   drain(): void {
-    if (!this.buffer) return;
-    const text = this.buffer;
-    this.buffer = "";
+    if (!this.pendingLength) return;
+    const text = this.chunks.join("");
+    this.discard();
     this.onFlush(text);
   }
 
-  /** Drop presentation-only pending text on rollback or disposal. */
   discard(): void {
-    this.buffer = "";
+    this.chunks = [];
+    this.lineChunks = [];
+    this.pendingLength = 0;
+    this.contentLines = 0;
+    this.fence = null;
   }
 
-  private flushCompleteBlocks(): void {
-    let boundary = findCompleteMarkdownBlockBoundary(this.buffer);
-    while (boundary > 0) {
-      const text = this.buffer.slice(0, boundary);
-      this.buffer = this.buffer.slice(boundary);
-      this.onFlush(text);
-      boundary = findCompleteMarkdownBlockBoundary(this.buffer);
+  private completesBlock(line: string): boolean {
+    if (this.fence) {
+      const trimmed = line.trim();
+      const marker = this.fence[0];
+      return trimmed.length >= this.fence.length
+        && [...trimmed].every((character) => character === marker);
     }
+    if (this.contentLines === 0) {
+      if (!line.trim()) return false;
+      this.contentLines = 1;
+      this.fence = line.match(FENCE_OPEN)?.[1] ?? null;
+      return !this.fence && (ATX_HEADING.test(line) || THEMATIC_BREAK.test(line));
+    }
+    this.contentLines += 1;
+    return !line.trim() || (this.contentLines === 2 && SETEXT_HEADING.test(line));
   }
 }

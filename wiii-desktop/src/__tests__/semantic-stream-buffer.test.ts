@@ -5,6 +5,57 @@ import {
 } from "@/lib/semantic-stream-buffer";
 
 describe("SemanticStreamBuffer complete-block presentation", () => {
+  it("does not treat a partial Setext underline or closing fence as complete", () => {
+    const onFlush = vi.fn();
+    const buffer = new SemanticStreamBuffer({ onFlush });
+    buffer.push("Title\n-");
+    expect(onFlush).not.toHaveBeenCalled();
+    buffer.push(" item\n\n");
+    expect(onFlush).toHaveBeenCalledExactlyOnceWith("Title\n- item\n\n");
+    onFlush.mockClear();
+    buffer.push("```js\ncode\n```");
+    expect(onFlush).not.toHaveBeenCalled();
+    buffer.push("not a closing fence\n```\n");
+    expect(onFlush).toHaveBeenCalledExactlyOnceWith("```js\ncode\n```not a closing fence\n```\n");
+  });
+
+  it("keeps block boundaries identical across arbitrary delta splits", () => {
+    const text = "\r\n# Heading\r\nTitle\n===\n\n- first\n- second\n\n```ts\n\nvalue\n```\ntrailing";
+    const expected: string[] = [];
+    const whole = new SemanticStreamBuffer({ onFlush: (part) => expected.push(part) });
+    whole.push(text);
+    whole.drain();
+    for (let split = 0; split <= text.length; split += 1) {
+      const parts: string[] = [];
+      const buffer = new SemanticStreamBuffer({ onFlush: (part) => parts.push(part) });
+      buffer.push(text.slice(0, split));
+      buffer.push(text.slice(split));
+      buffer.drain();
+      expect(parts).toEqual(expected);
+      expect(parts.join("")).toBe(text);
+    }
+  });
+
+  it("scans only incoming text while a long paragraph remains unfinished", () => {
+    const original = String.prototype.indexOf;
+    let scanned = 0;
+    const scan = vi.spyOn(String.prototype, "indexOf").mockImplementation(function (this: string, search, position = 0) {
+      if (search === "\n") scanned += this.length - position;
+      return original.call(this, search, position);
+    });
+    const flushes: string[] = [];
+    const buffer = new SemanticStreamBuffer({ onFlush: (part) => flushes.push(part) });
+    try {
+      for (let i = 0; i < 1000; i += 1) buffer.push("x".repeat(1000));
+    } finally {
+      scan.mockRestore();
+    }
+    expect(scanned).toBe(1_000_000);
+    expect(flushes).toEqual([]);
+    buffer.push("\n\n");
+    expect(flushes).toEqual(["x".repeat(1_000_000) + "\n\n"]);
+  });
+
   it("does not expose partial paragraph tokens", () => {
     const onFlush = vi.fn();
     const buffer = new SemanticStreamBuffer({ onFlush });

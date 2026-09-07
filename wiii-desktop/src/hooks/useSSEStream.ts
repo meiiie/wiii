@@ -1486,9 +1486,17 @@ export function useSSEStream() {
       },
       onThinkingDelta: (data) => {
         traceEvent("thinking_delta", { node: data.node, length: data.content.length });
-        // Sprint 150: Push to thinking buffer instead of direct update
+        const nextMeta = toDisplayMeta(data);
+        if (
+          thinkingNodeRef.current !== data.node
+          || thinkingMetaRef.current?.stepId !== nextMeta.stepId
+          || thinkingMetaRef.current?.displayRole !== nextMeta.displayRole
+          || thinkingMetaRef.current?.presentation !== nextMeta.presentation
+        ) {
+          thinkingBufferRef.current?.drain();
+        }
         thinkingNodeRef.current = data.node;
-        thinkingMetaRef.current = toDisplayMeta(data);
+        thinkingMetaRef.current = nextMeta;
         thinkingBufferRef.current?.push(data.content);
       },
       onThinkingStart: (data) => {

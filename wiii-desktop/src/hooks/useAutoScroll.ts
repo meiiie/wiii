@@ -10,6 +10,7 @@ export function useAutoScroll(dependency: unknown) {
   const containerRef = useRef<HTMLDivElement>(null);
   const isUserScrolledUp = useRef(false);
   const scrollFrameRef = useRef(0);
+  const followFrameRef = useRef(0);
   const [isAtBottom, setIsAtBottom] = useState(true);
 
   const scrollToBottom = useCallback((behavior: ScrollBehavior = "smooth") => {
@@ -23,17 +24,38 @@ export function useAutoScroll(dependency: unknown) {
     }
   }, []);
 
-  // Follow streamed content once per paint. Smooth scrolling per token creates
-  // overlapping animations and makes the transcript feel delayed.
-  useEffect(() => {
-    if (!containerRef.current || isUserScrolledUp.current) return;
-    const frame = requestAnimationFrame(() => {
+  const scheduleFollow = useCallback(() => {
+    if (!containerRef.current || isUserScrolledUp.current || followFrameRef.current) return;
+    followFrameRef.current = requestAnimationFrame(() => {
+      followFrameRef.current = 0;
       const container = containerRef.current;
       if (!container || isUserScrolledUp.current) return;
       container.scrollTo({ top: container.scrollHeight, behavior: "auto" });
     });
-    return () => cancelAnimationFrame(frame);
-  }, [dependency]);
+  }, []);
+
+  useEffect(scheduleFollow, [dependency, scheduleFollow]);
+
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container) return;
+    const resize = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(scheduleFollow);
+    const observeContent = () => {
+      resize?.disconnect();
+      resize?.observe(container);
+      for (const child of container.children) resize?.observe(child);
+      scheduleFollow();
+    };
+    observeContent();
+    const children = new MutationObserver(observeContent);
+    children.observe(container, { childList: true });
+    return () => {
+      children.disconnect();
+      resize?.disconnect();
+      if (followFrameRef.current) cancelAnimationFrame(followFrameRef.current);
+      followFrameRef.current = 0;
+    };
+  }, [scheduleFollow]);
 
   // Detect user scroll
   useEffect(() => {
