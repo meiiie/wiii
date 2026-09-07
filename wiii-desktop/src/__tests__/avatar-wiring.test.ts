@@ -6,14 +6,14 @@
 import { describe, it, expect, vi } from "vitest";
 
 // ---------------------------------------------------------------------------
-// 1) ErrorBoundary uses "error" state
+// 1) ErrorBoundary stays on the lightweight critical path
 // ---------------------------------------------------------------------------
-describe("ErrorBoundary — avatar error state", () => {
-  it("should use state='error' not state='idle'", async () => {
+describe("ErrorBoundary — static product identity", () => {
+  it("uses WiiiMark without loading the animated avatar engine", async () => {
     const src = await import("@/components/common/ErrorBoundary?raw");
     const code = (src as any).default || src;
-    expect(code).toContain('state="error"');
-    expect(code).not.toContain('state="idle"');
+    expect(code).toContain("WiiiMark");
+    expect(code).not.toContain("WiiiAvatar");
   });
 });
 
@@ -166,11 +166,7 @@ describe("All 6 avatar states have usage", () => {
     expect(code).toContain('"listening"');
   });
 
-  it("thinking — used in App loading + useAvatarState hook", async () => {
-    const app = await import("@/App?raw");
-    const appCode = (app as any).default || app;
-    expect(appCode).toContain('"thinking"');
-
+  it("thinking — used in useAvatarState hook", async () => {
     const hook = await import("@/hooks/useAvatarState?raw");
     const hookCode = (hook as any).default || hook;
     expect(hookCode).toContain('"thinking"');
@@ -192,8 +188,8 @@ describe("All 6 avatar states have usage", () => {
     expect(code).toContain('"idle"');
   });
 
-  it("error — used in ErrorBoundary", async () => {
-    const src = await import("@/components/common/ErrorBoundary?raw");
+  it("error — derived by useAvatarState for conversation surfaces", async () => {
+    const src = await import("@/hooks/useAvatarState?raw");
     const code = (src as any).default || src;
     expect(code).toContain('"error"');
   });

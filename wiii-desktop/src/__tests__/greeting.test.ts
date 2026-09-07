@@ -1,108 +1,59 @@
-/**
- * Unit tests for greeting utility.
- * Sprint 82: Time-aware Vietnamese greetings.
- * Sprint 111: Random greeting variants + Wiii subtitles.
- */
-import { describe, it, expect } from "vitest";
-import { getGreeting, getTimeOfDay, getWiiiSubtitle } from "@/lib/greeting";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import {
+  getGreeting,
+  getTimeOfDay,
+  getWelcomePlaceholder,
+  getWiiiSubtitle,
+} from "@/lib/greeting";
 
-describe("getTimeOfDay", () => {
-  it("returns morning for hours 5-11", () => {
-    expect(getTimeOfDay(5)).toBe("morning");
-    expect(getTimeOfDay(8)).toBe("morning");
-    expect(getTimeOfDay(11)).toBe("morning");
+describe("Vietnamese greeting behavior", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
   });
 
-  it("returns afternoon for hours 12-17", () => {
-    expect(getTimeOfDay(12)).toBe("afternoon");
-    expect(getTimeOfDay(14)).toBe("afternoon");
-    expect(getTimeOfDay(17)).toBe("afternoon");
-  });
+  it("classifies every time-of-day boundary", () => {
+    const cases = [
+      [0, "evening"],
+      [4, "evening"],
+      [5, "morning"],
+      [11, "morning"],
+      [12, "afternoon"],
+      [17, "afternoon"],
+      [18, "evening"],
+      [23, "evening"],
+    ] as const;
 
-  it("returns evening for hours 18-23 and 0-4", () => {
-    expect(getTimeOfDay(18)).toBe("evening");
-    expect(getTimeOfDay(22)).toBe("evening");
-    expect(getTimeOfDay(0)).toBe("evening");
-    expect(getTimeOfDay(4)).toBe("evening");
-  });
-});
-
-describe("getGreeting", () => {
-  it("returns morning greeting with name and exclamation", () => {
-    const result = getGreeting("Minh", 8);
-    expect(result).toContain("Minh!");
-    expect(result).toMatch(/^.+, Minh!$/);
-  });
-
-  it("returns afternoon greeting with name and exclamation", () => {
-    const result = getGreeting("Hải", 14);
-    expect(result).toContain("Hải!");
-  });
-
-  it("returns evening greeting with name and exclamation", () => {
-    const result = getGreeting("An", 20);
-    expect(result).toContain("An!");
-  });
-
-  it("returns greeting without name when displayName is empty", () => {
-    const result = getGreeting("", 8);
-    expect(result).not.toContain(",");
-    expect(result).toMatch(/!$/);
-  });
-
-  it("returns greeting without name when displayName is undefined", () => {
-    const result = getGreeting(undefined, 14);
-    expect(result).not.toContain(",");
-    expect(result).toMatch(/!$/);
-  });
-
-  it("trims whitespace from displayName", () => {
-    const result = getGreeting("  Minh  ", 8);
-    expect(result).toContain("Minh!");
-    expect(result).not.toContain("  ");
-  });
-
-  it("returns greeting without name when displayName is only whitespace", () => {
-    const result = getGreeting("   ", 20);
-    expect(result).not.toContain(",");
-    expect(result).toMatch(/!$/);
-  });
-
-  it("uses current hour when hour is not provided", () => {
-    const result = getGreeting("Test");
-    // Should contain the name with exclamation
-    expect(result).toContain("Test!");
-  });
-
-  it("handles midnight (hour 0) as evening", () => {
-    const result = getGreeting("Lan", 0);
-    expect(result).toContain("Lan!");
-  });
-
-  it("returns varied greetings (randomness)", () => {
-    // Run multiple times to check we get variety (at least covers the first variant)
-    const results = new Set<string>();
-    for (let i = 0; i < 30; i++) {
-      results.add(getGreeting("X", 8));
+    for (const [hour, expected] of cases) {
+      expect(getTimeOfDay(hour), `hour ${hour}`).toBe(expected);
     }
-    // With 3 variants, 30 tries should produce at least 2 different greetings
-    expect(results.size).toBeGreaterThanOrEqual(2);
-  });
-});
-
-describe("getWiiiSubtitle", () => {
-  it("returns a non-empty string", () => {
-    const result = getWiiiSubtitle();
-    expect(typeof result).toBe("string");
-    expect(result.length).toBeGreaterThan(0);
   });
 
-  it("returns varied subtitles (randomness)", () => {
-    const results = new Set<string>();
-    for (let i = 0; i < 30; i++) {
-      results.add(getWiiiSubtitle());
+  it("uses the selected time bucket for greetings and placeholders", () => {
+    vi.spyOn(Math, "random").mockReturnValue(0);
+
+    expect(getGreeting(undefined, 5)).toBe("Chào buổi sáng!");
+    expect(getGreeting(undefined, 12)).toBe("Chào buổi chiều!");
+    expect(getGreeting(undefined, 18)).toBe("Chào buổi tối!");
+    expect(getWelcomePlaceholder(5)).toBe("Sáng nay mình tìm hiểu gì nhỉ?");
+    expect(getWelcomePlaceholder(12)).toBe("Chiều nay mình cùng tìm hiểu nhé!");
+    expect(getWelcomePlaceholder(18)).toBe("Tối nay mình cùng tìm hiểu nhé!");
+  });
+
+  it("personalizes real names but filters generic desktop identities", () => {
+    vi.spyOn(Math, "random").mockReturnValue(0);
+
+    expect(getGreeting("Meiiie", 8)).toBe("Chào buổi sáng, Meiiie!");
+    expect(getGreeting("  Meiiie  ", 8)).toBe("Chào buổi sáng, Meiiie!");
+    for (const genericName of ["User", "desktop-user", "Desktop User", "anonymous", "guest"]) {
+      expect(getGreeting(genericName, 8), genericName).toBe("Chào buổi sáng!");
     }
-    // With 5 variants, 30 tries should produce at least 2 unique
-    expect(results.size).toBeGreaterThanOrEqual(2);
+  });
+
+  it("selects subtitle variants through a deterministic random contract", () => {
+    vi.spyOn(Math, "random").mockReturnValue(0);
+    expect(getWiiiSubtitle()).toBe("Mình ở đây, sẵn sàng giúp bạn!");
+
+    vi.mocked(Math.random).mockReturnValue(0.999);
+    expect(getWiiiSubtitle()).toBe("Bạn cần gì, mình nghe đây!");
   });
 });

@@ -1,4 +1,5 @@
 import { useEffect, useState, type ReactNode } from "react";
+import { useShallow } from "zustand/react/shallow";
 import type { Window as TauriWindow } from "@tauri-apps/api/window";
 import {
   Minus,
@@ -12,7 +13,6 @@ import { useUIStore } from "@/stores/ui-store";
 import { APP_NAME } from "@/lib/constants";
 import { WiiiMark } from "@/components/common/WiiiMark";
 
-/** Custom desktop chrome is omitted from browser and embed builds. */
 function isTauri(): boolean {
   return typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
 }
@@ -23,6 +23,7 @@ export interface TitleBarCommandCenter {
 }
 
 interface TitleBarProps {
+  browserVisible?: boolean;
   /** Hide Wiii-owned sidebar and command controls on standalone surfaces. */
   minimal?: boolean;
   /** Optional product/mode control. Interactive children never become drag regions. */
@@ -54,12 +55,17 @@ function reportWindowFailure(message: string, error: unknown) {
 }
 
 export function TitleBar({
+  browserVisible = false,
   minimal = false,
   leading,
   commandCenter,
   trailing,
 }: TitleBarProps) {
-  const { sidebarOpen, toggleSidebar, toggleCommandPalette } = useUIStore();
+  const { sidebarOpen, toggleSidebar, toggleCommandPalette } = useUIStore(useShallow((state) => ({
+    sidebarOpen: state.sidebarOpen,
+    toggleSidebar: state.toggleSidebar,
+    toggleCommandPalette: state.toggleCommandPalette,
+  })));
   const [appWindow, setAppWindow] = useState<TauriWindow | null>(null);
   const [maximized, setMaximized] = useState(false);
   const [tauri] = useState(isTauri);
@@ -101,7 +107,7 @@ export function TitleBar({
     };
   }, [tauri]);
 
-  if (!tauri) return null;
+  if (!tauri && !browserVisible) return null;
 
   const resolvedCommandCenter = commandCenter === undefined && !minimal
     ? {
@@ -126,11 +132,19 @@ export function TitleBar({
 
   return (
     <div
-      className="flex h-11 shrink-0 select-none items-center border-b border-border bg-surface text-text-secondary"
-      data-tauri-drag-region
+      className={`wiii-titlebar grid h-11 shrink-0 select-none items-center border-b border-border bg-surface text-text-secondary ${resolvedCommandCenter ? "[grid-template-columns:minmax(max-content,1fr)_minmax(32px,340px)_minmax(max-content,1fr)]" : "[grid-template-columns:auto_minmax(0,1fr)_auto]"}`}
+      data-tauri-drag-region={tauri || undefined}
       data-testid="desktop-titlebar"
+      onDoubleClick={(event) => {
+        if (!(event.target instanceof HTMLElement) || !event.target.hasAttribute("data-tauri-drag-region")) return;
+        void runWindowAction(
+          maximized ? "Không thể khôi phục cửa sổ" : "Không thể phóng to cửa sổ",
+          (currentWindow) => currentWindow.toggleMaximize(),
+          true,
+        );
+      }}
     >
-      <div className="flex h-full shrink-0 items-center gap-1.5 px-2">
+      <div className="flex h-full w-max items-center gap-1.5 px-2 [-webkit-app-region:no-drag]">
         {leading ?? (
           <>
             {!minimal ? (
@@ -154,40 +168,34 @@ export function TitleBar({
       </div>
 
       <div
-        className="flex h-full min-w-12 flex-1 items-center justify-center px-3"
-        data-tauri-drag-region
+        className="flex h-full min-w-0 items-center justify-center px-1 sm:px-3"
+        data-tauri-drag-region={tauri || undefined}
         data-testid="titlebar-drag-region"
-        onDoubleClick={(event) => {
-          if (event.target !== event.currentTarget) return;
-          void runWindowAction(
-            maximized ? "Không thể khôi phục cửa sổ" : "Không thể phóng to cửa sổ",
-            (currentWindow) => currentWindow.toggleMaximize(),
-            true,
-          );
-        }}
       >
         {resolvedCommandCenter ? (
           <button
             type="button"
             aria-label={resolvedCommandCenter.label}
             title={`${resolvedCommandCenter.label} (Ctrl+K)`}
+            aria-keyshortcuts="Control+K Meta+K"
             onClick={resolvedCommandCenter.onClick}
-            className="flex h-7 min-w-0 max-w-[340px] items-center gap-2 rounded-lg border border-border bg-surface-secondary px-2.5 text-[11.5px] text-text-tertiary shadow-sm transition-colors hover:border-[var(--border-secondary)] hover:bg-surface-tertiary hover:text-text-secondary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]/40"
+            className="wiii-titlebar-search flex h-8 min-w-8 w-full items-center justify-center gap-2 rounded-md border border-border bg-surface-secondary px-2 text-[12px] text-text-secondary transition-colors duration-100 hover:border-[var(--border-secondary)] hover:bg-surface-tertiary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]/40 [-webkit-app-region:no-drag] sm:justify-start sm:px-2.5"
           >
             <Search aria-hidden="true" className="h-3.5 w-3.5 shrink-0" />
             <span className="hidden min-w-0 truncate sm:block">
               {resolvedCommandCenter.label}
             </span>
-            <kbd className="ml-auto hidden shrink-0 rounded border border-border px-1 py-px text-[9px] text-text-tertiary md:inline">
+            <kbd className="ml-auto hidden shrink-0 rounded border border-border px-1 py-px text-[10px] text-text-tertiary lg:inline">
               Ctrl K
             </kbd>
           </button>
         ) : null}
       </div>
 
-      {trailing ? <div className="flex h-full shrink-0 items-center px-1">{trailing}</div> : null}
+      <div className="flex h-full items-center justify-end" data-tauri-drag-region={tauri || undefined}>
+      {trailing ? <div className="flex h-full shrink-0 items-center px-2">{trailing}</div> : null}
 
-      {appWindow ? (
+      {tauri && (appWindow ? (
         <div className="flex h-full shrink-0 items-stretch" aria-label="Điều khiển cửa sổ">
           <button
             type="button"
@@ -230,7 +238,8 @@ export function TitleBar({
         </div>
       ) : (
         <div className="h-11 w-[140px] shrink-0" aria-hidden="true" />
-      )}
+      ))}
+      </div>
     </div>
   );
 }

@@ -36,7 +36,7 @@ type RuntimeDetachReason = (typeof RUNTIME_DETACH_REASONS)[number];
 export type NekoSessionEventData =
   | {
       type: "session-context";
-      source: "created" | "legacy-migration" | "workspace-attached";
+      source: "created" | "provider-imported" | "legacy-migration" | "workspace-attached";
       agentId: string;
       workspacePath: string | null;
       launchProfileId: string | null;
@@ -225,7 +225,9 @@ function isValidEventData(data: Record<string, unknown>): boolean {
   switch (data.type) {
     case "session-context":
       return (
-        ["created", "legacy-migration", "workspace-attached"].includes(data.source as string) &&
+        ["created", "provider-imported", "legacy-migration", "workspace-attached"].includes(
+          data.source as string,
+        ) &&
         typeof data.agentId === "string" &&
         isStringOrNull(data.workspacePath) &&
         isStringOrNull(data.launchProfileId)

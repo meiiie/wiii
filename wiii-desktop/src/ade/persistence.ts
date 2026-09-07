@@ -70,6 +70,10 @@ function isAdeGraph(value: unknown): value is AdeGraph {
       stringArray(item.roots)) &&
     arrayOfRecords(graph.tasks, (item) =>
       text(item.id) && text(item.projectId) && text(item.title) && optionalText(item.description) &&
+      (item.parentTaskId === undefined || text(item.parentTaskId)) &&
+      (item.dependencyTaskIds === undefined || (
+        Array.isArray(item.dependencyTaskIds) && item.dependencyTaskIds.every(text)
+      )) &&
       oneOf(item.state, ["draft", "ready", "running", "blocked", "review", "completed", "cancelled"])) &&
     arrayOfRecords(graph.specs, (item) =>
       text(item.id) && text(item.taskId) && Number.isSafeInteger(item.revision) &&
@@ -82,7 +86,7 @@ function isAdeGraph(value: unknown): value is AdeGraph {
     arrayOfRecords(graph.agentSessions, (item) =>
       text(item.id) && text(item.runId) && text(item.providerId) &&
       (item.providerSessionId === null || text(item.providerSessionId)) &&
-      oneOf(item.role, ["primary", "planner", "implementer", "reviewer", "specialist", "subagent"])) &&
+      oneOf(item.role, ["primary", "planner", "implementer", "reviewer", "specialist"])) &&
     arrayOfRecords(graph.environments, (item) =>
       text(item.id) && text(item.projectId) && optionalText(item.workspaceId) &&
       oneOf(item.kind, ["local_workspace", "worktree", "wsl", "ssh", "container", "wiii_cloud", "external_cloud"]) &&

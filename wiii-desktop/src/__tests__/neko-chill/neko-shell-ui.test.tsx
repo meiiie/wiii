@@ -1,9 +1,18 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import NekoChillApp from "@/neko-chill/NekoChillApp";
 import {
+  formatReasoningDuration,
   formatReasoningLabel,
+  formatReasoningPreview,
+  formatToolActivity,
+  groupTranscriptBlocks,
+  NekoTranscript,
   shouldVirtualizeTranscript,
+  streamingActivityLabel,
+  ThinkingDisclosure,
+  ToolDisclosure,
+  toolActivityFailed,
 } from "@/neko-chill/components/NekoTranscript";
 import { useNekoAgentStore } from "@/neko-chill/stores/neko-agent-store";
 import {
@@ -11,6 +20,11 @@ import {
   useNekoSessionStore,
 } from "@/neko-chill/stores/neko-session-store";
 import { useNekoWorkspaceStore } from "@/neko-chill/stores/neko-workspace-store";
+import { useNekoProjectStore } from "@/neko-chill/stores/neko-project-store";
+
+vi.mock("@/neko-coworker/NekoCoworkerHome", () => ({
+  NekoCoworkerHome: () => <div data-testid="neko-coworker-home">Coworker workstation</div>,
+}));
 
 function makeSession(
   id: string,
@@ -63,6 +77,33 @@ describe("Neko Chill shell UI", () => {
       hydrate: vi.fn(async () => {}),
     });
     useNekoWorkspaceStore.setState({ sessions: {} });
+    useNekoProjectStore.setState({
+      projects: [],
+      hydrated: true,
+      hydrating: false,
+      error: null,
+    });
+  });
+
+  it("opens coworker workstation management as a first-class Neko surface", async () => {
+    render(<NekoChillApp />);
+
+    const link = screen.getByTestId("neko-coworker-link");
+    expect(link.getAttribute("aria-current")).toBeNull();
+    fireEvent.click(link);
+
+    expect(await screen.findByTestId("neko-coworker-home")).toBeTruthy();
+    expect(link.getAttribute("aria-current")).toBe("page");
+    expect(screen.queryByTestId("neko-overview")).toBeNull();
+  });
+
+  it("opens account connections from the primary Neko navigation", () => {
+    const onOpenConnections = vi.fn();
+    render(<NekoChillApp onOpenConnections={onOpenConnections} />);
+
+    fireEvent.click(screen.getByTestId("neko-connections-link"));
+
+    expect(onOpenConnections).toHaveBeenCalledTimes(1);
   });
 
   it("keeps history closed on hydration failure and exposes a retry", () => {
@@ -93,9 +134,157 @@ describe("Neko Chill shell UI", () => {
     );
   });
 
+  it("keeps reasoning compact until the reader asks for details", () => {
+    expect(formatReasoningPreview("**Inspecting workspace files**", 22)).toBe(
+      "Inspecting workspace…",
+    );
+    expect(formatReasoningDuration({
+      type: "thinking",
+      id: "duration",
+      content: "Done",
+      toolCalls: [],
+      startTime: 1_000,
+      endTime: 66_000,
+    })).toBe("1 phút 5 giây");
+
+    render(<ThinkingDisclosure block={{
+      type: "thinking",
+      id: "compact",
+      content: "Inspecting the workspace before choosing the smallest safe change.",
+      toolCalls: [],
+      startTime: 1_000,
+      endTime: 3_000,
+    }} />);
+
+    const disclosure = screen.getByTestId("thinking-block") as HTMLDetailsElement;
+    expect(disclosure.open).toBe(false);
+    expect(screen.getByTestId("thinking-preview").textContent).toContain("Inspecting the workspace");
+    expect(screen.getByText("2 giây")).toBeTruthy();
+
+    fireEvent.click(screen.getByLabelText("Đã suy nghĩ. Mở chi tiết suy luận"));
+    expect(disclosure.open).toBe(true);
+  });
+
+  it("marks thinking as live only when the owning session says it is live", () => {
+    const block = {
+      type: "thinking" as const,
+      id: "live",
+      content: "Checking the current project",
+      toolCalls: [],
+    };
+    const { rerender } = render(<ThinkingDisclosure block={block} />);
+    expect(screen.getByLabelText("Đã suy nghĩ. Mở chi tiết suy luận")).toBeTruthy();
+
+    rerender(<ThinkingDisclosure block={block} active />);
+    expect(screen.getByLabelText("Đang suy nghĩ. Mở chi tiết suy luận")).toBeTruthy();
+  });
+
+  it("reduces verbose native tool titles to a stable timeline label and preview", () => {
+    expect(formatToolActivity("Write(src/neko/session.ts)")).toEqual({
+      label: "Write",
+      preview: "src/neko/session.ts",
+    });
+    expect(formatToolActivity("Bash(npm run test)", "exit 0", 20)).toEqual({
+      label: "Bash",
+      preview: "exit 0",
+    });
+
+    render(<ToolDisclosure block={{
+      type: "tool_execution",
+      id: "failed-command",
+      status: "completed",
+      tool: { id: "failed-command", name: "Bash(npm test)", result: "exit 1 — command FAILED" },
+    }} />);
+    expect(screen.getByLabelText("Bash thất bại. Mở chi tiết")).toBeTruthy();
+  });
+
+  it("groups adjacent reasoning and tool activity without swallowing answer blocks", () => {
+    const thinking = { type: "thinking" as const, id: "think", content: "Inspect", toolCalls: [] };
+    const tool = {
+      type: "tool_execution" as const,
+      id: "tool",
+      status: "completed" as const,
+      tool: { id: "tool", name: "Read(src/app.ts)", result: "done" },
+    };
+    const answer = { type: "answer" as const, id: "answer", content: "Result" };
+    const groups = groupTranscriptBlocks([thinking, tool, answer, thinking]);
+
+    expect(groups.map((group) => group.kind)).toEqual(["activity", "content", "activity"]);
+    expect(groups[0]?.kind === "activity" ? groups[0].blocks.map((block) => block.id) : []).toEqual([
+      "think",
+      "tool",
+    ]);
+    expect(toolActivityFailed({ ...tool, tool: { ...tool.tool, result: "exit 2" } })).toBe(true);
+
+    const session = makeSession("grouped", "Grouped activity", { name: "Wiii", path: "E:\\Wiii" }, {
+      messages: [{
+        id: "assistant",
+        role: "assistant",
+        text: "",
+        blocks: [thinking, tool, answer],
+      }],
+    });
+    render(<NekoTranscript session={session} onResolvePermission={vi.fn()} onInsertPrompt={vi.fn()} />);
+    const disclosure = screen.getByTestId("activity-group") as HTMLDetailsElement;
+    expect(disclosure.open).toBe(false);
+    fireEvent.click(screen.getByLabelText("2 bước đã thực hiện, 1 phân tích · 1 công cụ. Mở chi tiết"));
+    expect(disclosure.open).toBe(true);
+  });
+
   it("virtualizes only sessions long enough to benefit", () => {
     expect(shouldVirtualizeTranscript(50)).toBe(false);
     expect(shouldVirtualizeTranscript(51)).toBe(true);
+  });
+
+  it("keeps the working state explicit while complete response blocks are buffered", () => {
+    const base = makeSession(
+      "streaming",
+      "Streaming",
+      { path: "C:/work/neko", name: "Neko" },
+      { status: "streaming", agentName: "Codex" },
+    );
+    expect(streamingActivityLabel(base)).toBe("Codex đang viết…");
+
+    const withThinking = makeSession(
+      "thinking",
+      "Thinking",
+      { path: "C:/work/neko", name: "Neko" },
+      {
+        status: "streaming",
+        agentName: "Neko Core",
+        messages: [{
+          id: "assistant-thinking",
+          role: "assistant",
+          blocks: [{
+            type: "thinking",
+            id: "thinking",
+            content: "Đang phân tích",
+            toolCalls: [],
+          }],
+        }],
+      },
+    );
+    expect(streamingActivityLabel(withThinking)).toBe("Neko Core đang suy nghĩ…");
+
+    const withTool = makeSession(
+      "tool",
+      "Tool",
+      { path: "C:/work/neko", name: "Neko" },
+      {
+        status: "streaming",
+        messages: [{
+          id: "assistant-tool",
+          role: "assistant",
+          blocks: [{
+            type: "tool_execution",
+            id: "tool",
+            status: "pending",
+            tool: { name: "Read(workspace)", result: "" },
+          }],
+        }],
+      },
+    );
+    expect(streamingActivityLabel(withTool)).toBe("Đang chạy Read…");
   });
 
   it("lets readers pause tail-following and jump back to the newest message", () => {
@@ -126,25 +315,160 @@ describe("Neko Chill shell UI", () => {
     expect(screen.queryByRole("button", { name: "Đi tới tin nhắn mới nhất" })).toBeNull();
   });
 
-  it("separates Wiii work, Neko execution, and the optional Service connection", () => {
-    render(<NekoChillApp />);
+  it("creates a session only after submitting from Project Home", async () => {
+    const createSession = vi.fn(async () => "new-session-id");
+    const sendPrompt = vi.fn(async () => {});
+    useNekoAgentStore.setState({
+      agents: [{
+        id: "gemini",
+        name: "Gemini CLI",
+        version: "1.0.0",
+        found: true,
+        availability: "available",
+        supportsProfiles: false,
+      }],
+      isLoading: false,
+      error: null,
+      detect: vi.fn(async () => {}),
+    });
+    useNekoProjectStore.setState({
+      projects: [{
+        id: "project-wiii",
+        name: "Wiii",
+        roots: [{ path: "C:/work/wiii", name: "wiii" }],
+        preferredHarnessId: "gemini",
+        createdAt: 1,
+        updatedAt: 1,
+      }],
+    });
+    useNekoSessionStore.setState({ createSession, sendPrompt });
 
-    const switcher = screen.getByRole("button", { name: "Mở điều hướng Wiii" });
+    render(<NekoChillApp />);
+    expect(screen.getByText("Mọi phiên agent, ở một nơi.")).toBeTruthy();
+    expect(screen.getByTestId("neko-overview-link").getAttribute("aria-current")).toBe("page");
+    fireEvent.click(screen.getByTestId("new-session"));
+    expect(screen.getByTestId("project-home")).toBeTruthy();
+    expect(within(screen.getByTestId("desktop-titlebar")).queryByRole("button", { name: "Mở công cụ Project" })).toBeNull();
+    expect(within(screen.getByTestId("work-area-toolbar")).getByRole("button", { name: "Mở công cụ Project" })).toBeTruthy();
+    expect(screen.getAllByRole("button", { name: "Mở công cụ Project" })).toHaveLength(1);
+    const workspaceToggle = screen.getByTestId("project-workspace-toggle");
+    expect(workspaceToggle.getAttribute("aria-pressed")).toBe("false");
+    fireEvent.click(screen.getAllByRole("button", { name: "Mở công cụ Project" })[0]);
+    expect(await screen.findByTestId("neko-workspace-pane", {}, { timeout: 5000 })).toBeTruthy();
+    expect(workspaceToggle.getAttribute("aria-pressed")).toBe("true");
+    expect(screen.getByRole("navigation", { name: "Công cụ Project" })).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Đóng workspace" }));
+    expect(screen.getByText(/Bạn muốn làm gì trong/).textContent).toContain("Wiii");
+    await vi.waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    expect(screen.queryByTestId("neko-overview")).toBeNull();
+    expect(createSession).not.toHaveBeenCalled();
+    fireEvent.change(screen.getByTestId("project-home-input"), {
+      target: { value: "Kiểm tra runtime" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Gửi và mở phiên" }));
+    await vi.waitFor(() => {
+      expect(createSession).toHaveBeenCalledTimes(1);
+      expect(sendPrompt).toHaveBeenCalledWith("Kiểm tra runtime");
+    });
+    expect(createSession).toHaveBeenCalledWith(
+      expect.objectContaining({ id: "gemini" }),
+      { path: "C:/work/wiii", name: "wiii" },
+      null,
+      { projectId: "project-wiii" },
+    );
+
+    const switcher = screen.getByRole("button", {
+      name: "Mở điều hướng Wiii. Khu vực hiện tại: Neko Chill",
+    });
     expect(switcher.getAttribute("aria-expanded")).toBe("false");
+    expect(switcher.textContent).toContain("Wiii");
 
     fireEvent.click(switcher);
     expect(switcher.getAttribute("aria-expanded")).toBe("true");
     expect(screen.getByRole("menu", { name: "Điều hướng Wiii" })).toBeTruthy();
-    expect(screen.getByRole("menuitem", { name: /Công việc Wiii/i })).toBeTruthy();
-    expect(screen.getByRole("menuitemradio", { name: /Neko Chill/i }).getAttribute("aria-checked"))
-      .toBe("true");
+    expect(screen.getByText("Không gian trên máy")).toBeTruthy();
+    expect(screen.queryByRole("menuitem", { name: /Công việc/i })).toBeNull();
+    expect(screen.getByRole("menuitem", { name: /Neko Chill.*Đang mở/i }).getAttribute("aria-current"))
+      .toBe("page");
+    expect(screen.getByText(/Quản lý project, harness và các phiên trên máy này/i)).toBeTruthy();
     expect(screen.getByRole("menuitem", { name: /Wiii Service/i })).toBeTruthy();
+    expect(screen.getByText(/Đồng bộ và tri thức trực tuyến.*tùy chọn/i)).toBeTruthy();
     expect(screen.queryByText("Wiii Knowledge")).toBeNull();
 
     fireEvent.keyDown(window, { key: "Escape" });
     expect(switcher.getAttribute("aria-expanded")).toBe("false");
     expect(screen.queryByRole("menu", { name: "Điều hướng Wiii" })).toBeNull();
     expect(document.activeElement).toBe(switcher);
+  });
+
+  it("uses a bounded modal only for editing Project metadata", async () => {
+    const updateProject = vi.fn(async () => {});
+    useNekoProjectStore.setState({
+      projects: [{
+        id: "project-wiii",
+        name: "Wiii",
+        roots: [{ path: "C:/work/wiii", name: "wiii" }],
+        preferredHarnessId: null,
+        createdAt: 1,
+        updatedAt: 1,
+      }],
+      updateProject,
+    });
+
+    render(<NekoChillApp />);
+    fireEvent.click(screen.getByRole("button", { name: "Chỉnh sửa Project Wiii" }));
+    expect(screen.getByRole("dialog", { name: "Chỉnh sửa Project" })).toBeTruthy();
+    const name = screen.getByLabelText("Tên Project");
+    fireEvent.change(name, { target: { value: "Wiii Desktop" } });
+    fireEvent.click(screen.getByRole("button", { name: "Lưu thay đổi" }));
+
+    await vi.waitFor(() => expect(updateProject).toHaveBeenCalledWith(
+      "project-wiii",
+      "Wiii Desktop",
+      [{ path: "C:/work/wiii", name: "wiii" }],
+    ));
+    await vi.waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+  });
+
+  it("keeps project navigation primary and offers harness as an alternate catalog projection", () => {
+    useNekoSessionStore.setState({
+      sessions: {
+        codexWiii: makeSession(
+          "codex-wiii",
+          "Fix auth",
+          { path: "C:/work/wiii", name: "Wiii" },
+          { agentId: "codex", agentName: "Codex", updatedAt: 30 },
+        ),
+        nekoWiii: makeSession(
+          "neko-wiii",
+          "Review runtime",
+          { path: "C:/work/wiii", name: "Wiii" },
+          { agentId: "neko", agentName: "Neko Core", updatedAt: 20 },
+        ),
+        codexVideo: makeSession(
+          "codex-video",
+          "Optimize export",
+          { path: "C:/work/video", name: "neko-video-cut" },
+          { agentId: "codex", agentName: "Codex", updatedAt: 10 },
+        ),
+      },
+      activeSessionId: null,
+    });
+
+    render(<NekoChillApp />);
+
+    expect(screen.getByText("Mọi phiên agent, ở một nơi.")).toBeTruthy();
+    expect(within(screen.getByLabelText("Tổng quan phiên")).getByText("3")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Wiii 2" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "neko-video-cut 1" })).toBeTruthy();
+
+    const overview = screen.getByTestId("neko-overview");
+    fireEvent.click(within(overview).getByRole("button", { name: "Harness" }));
+
+    expect(within(overview).getAllByText("Codex").length).toBeGreaterThan(0);
+    expect(within(overview).getAllByText("Neko Core").length).toBeGreaterThan(0);
+    expect(within(overview).getAllByText("neko-video-cut").length).toBeGreaterThan(0);
+    expect(within(overview).getByText(/3 phiên · 3 do Wiii quản lý/i)).toBeTruthy();
   });
 
   it("groups every persisted session and searches all local history from Ctrl+K", () => {
@@ -174,8 +498,8 @@ describe("Neko Chill shell UI", () => {
 
     expect(screen.getAllByText("Project Alpha").length).toBeGreaterThan(0);
     expect(screen.getAllByText("Project Beta").length).toBeGreaterThan(0);
-    expect(screen.getByText("Legacy · Phiên chưa gắn dự án")).toBeTruthy();
-    expect(screen.getByRole("button", { name: "Mở phiên Kiểm tra bản đồ" })).toBeTruthy();
+    expect(screen.getByText("Legacy · Chưa gắn Project")).toBeTruthy();
+    expect(screen.getAllByRole("button", { name: "Mở phiên Kiểm tra bản đồ" })).toHaveLength(2);
     expect(screen.getByRole("button", { name: "Xoá phiên Phiên cũ" })).toBeTruthy();
 
     fireEvent.keyDown(window, { key: "k", ctrlKey: true });
@@ -272,9 +596,14 @@ describe("Neko Chill shell UI", () => {
     expect(screen.queryByTestId("session-sidebar")).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "Hiện cây dự án và phiên" }));
     expect(screen.getByTestId("session-sidebar")).toBeTruthy();
+
+    fireEvent.keyDown(window, { key: "b", ctrlKey: true });
+    expect(screen.queryByTestId("session-sidebar")).toBeNull();
+    fireEvent.keyDown(window, { key: "b", metaKey: true });
+    expect(screen.getByTestId("session-sidebar")).toBeTruthy();
   });
 
-  it("opens, closes, and dismisses the session workspace with Escape", () => {
+  it("opens, switches, closes, and dismisses the session workspace with Escape", async () => {
     useNekoSessionStore.setState({
       sessions: {
         active: makeSession(
@@ -288,16 +617,78 @@ describe("Neko Chill shell UI", () => {
     });
 
     render(<NekoChillApp />);
-    fireEvent.click(screen.getByRole("button", { name: "Mở workspace" }));
-    expect(screen.getByTestId("neko-workspace-pane")).toBeTruthy();
-    expect(screen.getByRole("button", { name: /^Files/ }).getAttribute("aria-pressed")).toBe("true");
+    const titleWorkspaceToggle = screen.getByTestId("session-workspace-toggle");
+    expect(titleWorkspaceToggle.getAttribute("aria-label")).toBe("Mở workspace phiên");
+    expect(titleWorkspaceToggle.getAttribute("aria-pressed")).toBe("false");
+    fireEvent.click(titleWorkspaceToggle);
+    expect(titleWorkspaceToggle.getAttribute("aria-label")).toBe("Ẩn workspace phiên");
+    expect(titleWorkspaceToggle.getAttribute("aria-pressed")).toBe("true");
+    expect(await screen.findByTestId("neko-workspace-pane")).toBeTruthy();
+    const projectTools = screen.getByRole("navigation", { name: "Công cụ Project" });
+    expect(within(projectTools).getByRole("button", { name: "Tệp" }).getAttribute("aria-pressed")).toBe("true");
+    expect(screen.getByTestId("workspace-file-navigator")).toBeTruthy();
 
-    fireEvent.keyDown(window, { key: "Escape" });
+    fireEvent.click(within(projectTools).getByRole("button", { name: "Terminal" }));
+    expect(within(projectTools).getByRole("button", { name: "Terminal" }).getAttribute("aria-pressed")).toBe("true");
+    expect(await screen.findByText("Máy tính công việc của Neko")).toBeTruthy();
+    expect(screen.queryByTestId("workspace-file-navigator")).toBeNull();
+    fireEvent.click(within(projectTools).getByRole("button", { name: "Trình duyệt" }));
+    expect(within(projectTools).getByRole("button", { name: "Trình duyệt" }).getAttribute("aria-pressed")).toBe("true");
+    expect(screen.queryByTestId("workspace-file-navigator")).toBeNull();
+    fireEvent.click(within(projectTools).getByRole("button", { name: "Computer" }));
+    expect(within(projectTools).getByRole("button", { name: "Computer" }).getAttribute("aria-pressed")).toBe("true");
+    expect(screen.queryByTestId("workspace-file-navigator")).toBeNull();
+    fireEvent.click(within(projectTools).getByRole("button", { name: "Tệp" }));
+    expect(screen.getByTestId("workspace-file-navigator")).toBeTruthy();
+
+    fireEvent.keyDown(screen.getByRole("button", { name: "Đóng workspace" }), { key: "Escape" });
     expect(screen.queryByTestId("neko-workspace-pane")).toBeNull();
+    expect(titleWorkspaceToggle.getAttribute("aria-pressed")).toBe("false");
+    expect(document.activeElement).toBe(titleWorkspaceToggle);
 
-    fireEvent.click(screen.getByRole("button", { name: "Mở workspace" }));
+    fireEvent.click(titleWorkspaceToggle);
     fireEvent.click(screen.getByRole("button", { name: "Đóng workspace" }));
     expect(screen.queryByTestId("neko-workspace-pane")).toBeNull();
+  });
+
+  it("keeps sidebar and workspace keyboard shortcuts independent", async () => {
+    useNekoSessionStore.setState({ sessions: {
+      active: makeSession("active", "Bàn làm việc", { path: "C:/work/neko", name: "Neko" }),
+    }, activeSessionId: "active" });
+    render(<NekoChillApp />);
+    const sidebar = screen.getByTestId("neko-sidebar-toggle");
+    const workspace = screen.getByTestId("session-workspace-toggle");
+    fireEvent.keyDown(window, { key: "b", ctrlKey: true, altKey: true });
+    expect(await screen.findByTestId("neko-workspace-pane")).toBeTruthy();
+    expect(sidebar.getAttribute("aria-expanded")).toBe("true");
+    fireEvent.keyDown(window, { key: "b", ctrlKey: true });
+    expect(sidebar.getAttribute("aria-expanded")).toBe("false");
+    expect(workspace.getAttribute("aria-expanded")).toBe("true");
+    fireEvent.keyDown(window, { key: "b", ctrlKey: true, altKey: true, isComposing: true });
+    expect(workspace.getAttribute("aria-expanded")).toBe("true");
+    fireEvent.keyDown(window, { key: "b", metaKey: true, altKey: true });
+    expect(workspace.getAttribute("aria-expanded")).toBe("false");
+  });
+
+  it("lets the navigation menu own Escape without closing the workspace", async () => {
+    useNekoSessionStore.setState({ sessions: {
+      active: makeSession("active", "Bàn làm việc", { path: "C:/work/neko", name: "Neko" }),
+    }, activeSessionId: "active" });
+    render(<NekoChillApp />);
+    fireEvent.click(screen.getByTestId("session-workspace-toggle"));
+    await screen.findByTestId("neko-workspace-pane");
+    const trigger = screen.getByTestId("mode-switcher");
+    fireEvent.click(trigger);
+    const items = within(screen.getByRole("menu", { name: "Điều hướng Wiii" })).getAllByRole("menuitem");
+    expect(document.activeElement).toBe(items[0]);
+    fireEvent.keyDown(items[0], { key: "ArrowDown" });
+    expect(document.activeElement).toBe(items[1]);
+    fireEvent.keyDown(items[1], { key: "End" });
+    expect(document.activeElement).toBe(items.at(-1));
+    fireEvent.keyDown(document.activeElement!, { key: "Escape" });
+    expect(screen.queryByRole("menu")).toBeNull();
+    expect(document.activeElement).toBe(trigger);
+    expect(screen.getByTestId("neko-workspace-pane")).toBeTruthy();
   });
 
   it("gives an empty live session a useful, non-executing start state", () => {
@@ -448,7 +839,7 @@ describe("Neko Chill shell UI", () => {
       .toBe(true);
     fireEvent.change(composer, { target: { value: "khởi động lại" } });
     fireEvent.click(screen.getByRole("button", { name: "Gửi tin nhắn" }));
-    expect(sendPrompt).toHaveBeenCalledWith("khởi động lại");
+    expect(sendPrompt).toHaveBeenCalledWith("khởi động lại", expect.any(Function));
   });
 
   it("keeps the close action available when a session is in error", () => {
@@ -506,17 +897,26 @@ describe("Neko Chill shell UI", () => {
     expect(screen.queryByRole("button", { name: "Kết thúc" })).toBeNull();
   });
 
-  it("requires a project and reuses an exact recent workspace for a new session", async () => {
+  it("opens the exact recent Project without creating an empty session", async () => {
     const createSession = vi.fn(async () => "created");
+    const sendPrompt = vi.fn(async () => {});
     const agent = {
-      id: "neko",
-      name: "Neko Core",
+      id: "gemini",
+      name: "Gemini CLI",
       version: "0.24.0",
       found: true,
       availability: "available",
-      supportsProfiles: true,
+      supportsProfiles: false,
     };
     useNekoAgentStore.setState({ agents: [agent], isLoading: false });
+    useNekoProjectStore.setState({ projects: [{
+      id: "recent-project",
+      name: "project",
+      roots: [{ path: "C:/Users/me/project", name: "project" }],
+      preferredHarnessId: "gemini",
+      createdAt: 1,
+      updatedAt: 1,
+    }] });
     useNekoSessionStore.setState({
       sessions: {
         recent: makeSession("recent", "Lịch sử", {
@@ -526,26 +926,68 @@ describe("Neko Chill shell UI", () => {
       },
       activeSessionId: null,
       createSession,
+      sendPrompt,
     });
 
     render(<NekoChillApp />);
 
-    expect(screen.queryByTestId("start-neko")).toBeNull();
-    fireEvent.click(screen.getByRole("button", { name: "project" }));
-    const start = await screen.findByTestId("start-neko") as HTMLButtonElement;
+    fireEvent.click(screen.getByTestId("new-session"));
+    expect(await screen.findByTestId("project-home")).toBeTruthy();
+    expect(screen.getAllByText("C:/Users/me/project").length).toBeGreaterThan(0);
+    expect(createSession).not.toHaveBeenCalled();
+    expect(sendPrompt).not.toHaveBeenCalled();
+  });
+
+  it("dispatches the first prompt into the session it just created", async () => {
+    const createSession = vi.fn(async () => "created");
+    const sendPrompt = vi.fn(async () => {});
+    const agent = {
+      id: "gemini",
+      name: "Gemini CLI",
+      version: "0.24.0",
+      found: true,
+      availability: "available",
+      supportsProfiles: false,
+    };
+    useNekoAgentStore.setState({ agents: [agent], isLoading: false });
+    useNekoProjectStore.setState({ projects: [{
+      id: "recent-project",
+      name: "project",
+      roots: [{ path: "C:/Users/me/project", name: "project" }],
+      preferredHarnessId: "gemini",
+      createdAt: 1,
+      updatedAt: 1,
+    }] });
+    useNekoSessionStore.setState({
+      sessions: {
+        recent: makeSession("recent", "Lịch sử", {
+          path: "C:/Users/me/project",
+          name: "project",
+        }),
+      },
+      activeSessionId: null,
+      createSession,
+      sendPrompt,
+    });
+
+    render(<NekoChillApp />);
+    fireEvent.click(screen.getByTestId("new-session"));
+    fireEvent.change(screen.getByRole("textbox", { name: "Lời nhắn đầu tiên" }), {
+      target: { value: "  Kiểm tra authentication  " },
+    });
+    const start = screen.getByRole("button", { name: "Gửi và mở phiên" }) as HTMLButtonElement;
     await vi.waitFor(() => expect(start.disabled).toBe(false));
     fireEvent.click(start);
 
     await vi.waitFor(() => {
-      expect(createSession).toHaveBeenCalledWith(
-        agent,
-        { path: "C:/Users/me/project", name: "project" },
-        null,
-      );
+      expect(createSession).toHaveBeenCalledTimes(1);
+      expect(sendPrompt).toHaveBeenCalledWith("Kiểm tra authentication");
     });
+    expect(createSession.mock.invocationCallOrder[0])
+      .toBeLessThan(sendPrompt.mock.invocationCallOrder[0]);
   });
 
-  it("explains host containment limits instead of claiming the provider is missing", async () => {
+  it("keeps unavailable harness details on Overview and blocks dispatch", async () => {
     useNekoAgentStore.setState({
       agents: [{
         id: "neko",
@@ -566,15 +1008,25 @@ describe("Neko Chill shell UI", () => {
       },
       activeSessionId: null,
     });
+    useNekoProjectStore.setState({ projects: [{
+      id: "recent-project",
+      name: "project",
+      roots: [{ path: "C:/Users/me/project", name: "project" }],
+      preferredHarnessId: null,
+      createdAt: 1,
+      updatedAt: 1,
+    }] });
 
     render(<NekoChillApp />);
-    fireEvent.click(screen.getByRole("button", { name: "project" }));
+    expect(screen.getByText("Wiii chưa hỗ trợ chạy trên hệ điều hành này")).toBeTruthy();
+    fireEvent.click(screen.getByTestId("new-session"));
 
-    expect(await screen.findByText(/chưa có cơ chế cô lập process/)).toBeTruthy();
-    expect(screen.queryByText("Chưa cài trên máy này")).toBeNull();
+    const harness = await screen.findByRole("combobox", { name: "Chọn Harness" }) as HTMLSelectElement;
+    expect(harness.value).toBe("neko");
+    expect((screen.getByRole("button", { name: "Gửi và mở phiên" }) as HTMLButtonElement).disabled).toBe(true);
   });
 
-  it("recovers provider discovery failures without leaving the launcher loading", () => {
+  it("routes Project recovery to the focused harness manager without leaking technical errors", async () => {
     const detect = vi.fn(async () => {});
     useNekoAgentStore.setState({
       agents: [],
@@ -591,12 +1043,77 @@ describe("Neko Chill shell UI", () => {
       },
       activeSessionId: null,
     });
+    useNekoProjectStore.setState({ projects: [{
+      id: "recent-project",
+      name: "project",
+      roots: [{ path: "C:/Users/me/project", name: "project" }],
+      preferredHarnessId: null,
+      createdAt: 1,
+      updatedAt: 1,
+    }] });
 
     render(<NekoChillApp />);
-    fireEvent.click(screen.getByRole("button", { name: "project" }));
-    expect(screen.getByRole("alert").textContent).toContain("journal unavailable");
+    fireEvent.click(screen.getByTestId("new-session"));
+    expect(screen.queryByRole("alert")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Quản lý harness" }));
+    expect(document.activeElement).toBe(screen.getByRole("heading", { name: "Quản lý harness" }));
+    expect(screen.getByRole("alert").textContent).toContain("Chưa kiểm tra được agent trên máy");
+    fireEvent.click(screen.getByText("Chi tiết kiểm tra"));
+    expect(screen.getByText(/journal unavailable/).closest("details")?.open).toBe(true);
     expect(screen.queryByText(/Đang dò agent/i)).toBeNull();
-    fireEvent.click(screen.getByRole("button", { name: "Thử dò lại" }));
-    expect(detect).toHaveBeenCalledTimes(2);
+    fireEvent.click(screen.getByRole("button", { name: "Thử lại" }));
+    await vi.waitFor(() => expect(detect).toHaveBeenCalledTimes(2));
+    expect(detect).toHaveBeenLastCalledWith("neko");
+  });
+
+  it("keeps healthy harnesses selectable when another safe probe fails", async () => {
+    useNekoAgentStore.setState({
+      agents: [
+        {
+          id: "neko",
+          name: "Neko Core",
+          version: "0.24.0",
+          found: true,
+          availability: "available",
+          supportsProfiles: true,
+        },
+        {
+          id: "gemini",
+          name: "Gemini CLI",
+          version: null,
+          found: false,
+          availability: "probe_failed",
+          detail: "provider probe timed out",
+          supportsProfiles: false,
+        },
+      ],
+      isLoading: false,
+      error: null,
+    });
+    useNekoSessionStore.setState({
+      sessions: {
+        recent: makeSession("recent", "Lịch sử", {
+          path: "C:/Users/me/project",
+          name: "project",
+        }),
+      },
+      activeSessionId: null,
+    });
+    useNekoProjectStore.setState({ projects: [{
+      id: "recent-project",
+      name: "project",
+      roots: [{ path: "C:/Users/me/project", name: "project" }],
+      preferredHarnessId: "neko",
+      createdAt: 1,
+      updatedAt: 1,
+    }] });
+
+    render(<NekoChillApp />);
+    fireEvent.click(screen.getByTestId("new-session"));
+
+    const harness = await screen.findByRole("combobox", { name: "Chọn Harness" }) as HTMLSelectElement;
+    expect(within(harness).getByRole("option", { name: "Neko Core" })).toBeTruthy();
+    expect(within(harness).queryByRole("option", { name: "Gemini CLI" })).toBeNull();
+    expect(screen.queryByText(/Không thể hoàn tất việc dò harness an toàn/)).toBeNull();
   });
 });

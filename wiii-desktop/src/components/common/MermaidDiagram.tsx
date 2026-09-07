@@ -18,7 +18,7 @@ async function ensureMermaid(isDark: boolean): Promise<typeof import("mermaid")>
   mermaidInstance.default.initialize({
     startOnLoad: false,
     theme: isDark ? "dark" : "default",
-    securityLevel: "strict",
+    securityLevel: "sandbox",
     fontFamily: "Manrope, sans-serif",
   });
   return mermaidInstance;
@@ -53,7 +53,21 @@ const MermaidDiagram = memo(function MermaidDiagram({ code, className = "" }: Me
         const { svg } = await mermaid.default.render(idRef.current, code.trim());
         if (cancelled || !containerRef.current) return;
 
-        containerRef.current.innerHTML = svg;
+        const result = new DOMParser().parseFromString(svg, "text/html");
+        const renderedFrame = result.body.firstElementChild;
+        const prefix = "data:text/html;charset=UTF-8;base64,";
+        const source = renderedFrame?.getAttribute("src") ?? "";
+        if (result.body.children.length !== 1 || renderedFrame?.tagName !== "IFRAME" || !source.startsWith(prefix)) {
+          throw new Error("Mermaid did not return an isolated diagram");
+        }
+        const frame = document.createElement("iframe");
+        frame.title = "Biểu đồ Mermaid";
+        frame.setAttribute("sandbox", "");
+        frame.style.width = "100%";
+        frame.style.height = (renderedFrame as HTMLIFrameElement).style.height || "300px";
+        frame.style.border = "0";
+        frame.srcdoc = new TextDecoder().decode(Uint8Array.from(atob(source.slice(prefix.length)), (character) => character.charCodeAt(0)));
+        containerRef.current.replaceChildren(frame);
         setLoading(false);
       } catch (err) {
         if (cancelled) return;

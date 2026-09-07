@@ -23,8 +23,11 @@ import type {
 } from "../drivers/types";
 import type { AgentLaunchProfile, DetectedAgent } from "./neko-agent-store";
 import { useNekoAgentStore } from "./neko-agent-store";
+import { useCompletionNoticeStore } from "./completion-notice-store";
 import { useNekoWorkspaceStore } from "./neko-workspace-store";
 import { isAbsoluteWorkspacePath, workspaceFromPath, type WorkspaceRef } from "../workspace";
+import { SemanticStreamBuffer } from "@/lib/semantic-stream-buffer";
+import { markWiiiPerformance } from "@/lib/performance-telemetry";
 import {
   deletePersistedSession,
   loadSessionIndex,
@@ -51,6 +54,12 @@ import {
   type NekoExecutionBinding,
   type NekoNativeSessionRecord,
 } from "@/neko/control-client";
+import {
+  validateNekoSessionOwnership,
+  type NekoSessionOwnershipFact,
+  type NekoTopLevelSessionKind,
+} from "@/neko/session-ownership";
+import type { NekoProviderSessionRecord } from "@/neko/contracts";
 
 export interface NekoMessage {
   id: string;
@@ -74,6 +83,10 @@ export interface NekoSession {
   workspace: WorkspaceRef | null;
   /** Neko's config-first launch choice; null for other agents/default launch. */
   launchProfile: AgentLaunchProfile | null;
+  /** Top-level Neko identity. Missing values hydrate as worker/scratch for rollback compatibility. */
+  kind?: NekoTopLevelSessionKind;
+  /** Explicit Neko Project facet. Null keeps manual/imported legacy sessions unassigned. */
+  projectId?: string | null;
   /** Wiii work identity; null means this is a manual/legacy Neko session. */
   execution?: NekoExecutionBinding | null;
   /** Provider-owned durable ACP id; independent from Wiii's local session id. */
@@ -113,6 +126,115 @@ const dispatchBarriers = new Map<string, Set<Promise<void>>>();
 const runtimeOperations = new Map<string, Set<Promise<void>>>();
 let modeExitOperation: Promise<void> | null = null;
 
+type PresentationDeltaKind = "answer" | "reasoning";
+
+interface PresentationStreamEntry {
+  sessionId: string;
+  kind: PresentationDeltaKind;
+  order: number;
+  buffer: SemanticStreamBuffer;
+}
+
+const presentationStreams = new Map<string, PresentationStreamEntry>();
+let presentationStreamOrder = 0;
+
+function presentationStreamKey(sessionId: string, kind: PresentationDeltaKind): string {
+  return `${sessionId}:${kind}`;
+}
+
+function commitPresentationDelta(
+  sessionId: string,
+  kind: PresentationDeltaKind,
+  text: string,
+): void {
+  if (!text) return;
+  markWiiiPerformance(`wiii:stream:${sessionId}:start`);
+  const now = Date.now();
+  useNekoSessionStore.setState((state) => {
+    const session = state.sessions[sessionId];
+    if (!session) return;
+    session.lastActivityAt = now;
+    session.updatedAt = now;
+    const message = openAssistant(session);
+    if (!message) return;
+    const last = lastBlock(message);
+
+    if (kind === "reasoning") {
+      if (last?.type === "thinking" && last.stepState !== "completed") {
+        (last as ThinkingBlockData).content += text;
+      } else {
+        message.blocks!.push({
+          type: "thinking",
+          id: uuidv4(),
+          content: text,
+          toolCalls: [],
+          startTime: now,
+        } satisfies ThinkingBlockData);
+      }
+      return;
+    }
+
+    if (last?.type === "answer") {
+      (last as AnswerBlockData).content += text;
+    } else {
+      message.blocks!.push({
+        type: "answer",
+        id: uuidv4(),
+        content: text,
+      } satisfies AnswerBlockData);
+    }
+  });
+
+  const session = useNekoSessionStore.getState().sessions[sessionId];
+  if (session) persistSessionDebounced(session);
+}
+
+function enqueuePresentationDelta(
+  sessionId: string,
+  kind: PresentationDeltaKind,
+  text: string,
+): void {
+  // A change from reasoning to answer (or back) is a semantic boundary. Drain
+  // the earlier channel first so separate timers can never reorder the blocks.
+  for (const entry of presentationStreams.values()) {
+    if (entry.sessionId === sessionId && entry.kind !== kind && entry.buffer.pending > 0) {
+      entry.buffer.drain();
+    }
+  }
+
+  const key = presentationStreamKey(sessionId, kind);
+  let entry = presentationStreams.get(key);
+  if (!entry) {
+    entry = {
+      sessionId,
+      kind,
+      order: ++presentationStreamOrder,
+      buffer: new SemanticStreamBuffer({
+        onFlush: (chunk) => commitPresentationDelta(sessionId, kind, chunk),
+      }),
+    };
+    presentationStreams.set(key, entry);
+  } else if (entry.buffer.pending === 0) {
+    entry.order = ++presentationStreamOrder;
+  }
+  entry.buffer.push(text);
+}
+
+function drainPresentationStreams(sessionId: string): void {
+  [...presentationStreams.values()]
+    .filter((entry) => entry.sessionId === sessionId && entry.buffer.pending > 0)
+    .sort((left, right) => left.order - right.order)
+    .forEach((entry) => entry.buffer.drain());
+}
+
+function discardPresentationStreams(sessionId?: string): void {
+  for (const [key, entry] of presentationStreams.entries()) {
+    if (sessionId !== undefined && entry.sessionId !== sessionId) continue;
+    entry.buffer.discard();
+    presentationStreams.delete(key);
+  }
+}
+
 function acquireHold(registry: Map<string, Set<Promise<void>>>, sessionId: string): () => void {
   let resolve!: () => void;
   const hold = new Promise<void>((done) => {
@@ -143,6 +265,7 @@ type DriverFactory = (
   sessionId: string,
   launch: {
     workspace: WorkspaceRef;
+    projectId?: string | null;
     execution?: NekoExecutionBinding;
     executionId?: string;
     profileId?: string;
@@ -165,6 +288,31 @@ let nativeControlReaderFactory: () => NativeControlReader = getNekoControlClient
 const NATIVE_REPLAY_PAGE_SIZE = 500;
 const MAX_NATIVE_REPLAY_EVENTS = 10_000;
 const NATIVE_TERMINAL_STATES = new Set(["completed", "failed", "cancelled"]);
+
+function topLevelKind(session: Pick<NekoSession, "kind" | "execution">): NekoTopLevelSessionKind {
+  return session.kind ?? (session.execution ? "worker" : "scratch");
+}
+
+function ownershipFact(
+  session: Pick<
+    NekoSession,
+    "id" | "agentId" | "kind" | "projectId" | "execution" | "status"
+  > & Partial<Pick<NekoSession, "runtime" | "closePending" | "deletePending">>,
+): NekoSessionOwnershipFact {
+  const kind = topLevelKind(session);
+  return {
+    sessionId: session.id,
+    providerId: session.agentId,
+    kind,
+    projectId: session.projectId ?? null,
+    taskId: kind === "worker" ? session.execution?.taskId ?? null : null,
+    runId: kind === "worker" ? session.execution?.runId ?? null : null,
+    active: Boolean(session.runtime || session.closePending || session.deletePending)
+      || runtimes.get(session.id) !== null
+      || runtimes.hasRetainedCleanup(session.id)
+      || (session.status !== "exited" && session.status !== "error"),
+  };
+}
 
 function nativeTaskId(session: Pick<NekoSession, "id" | "execution">): string {
   return session.execution?.taskId ?? `legacy-local/task/${session.id}`;
@@ -489,6 +637,7 @@ async function defaultDriverFactory(
   sessionId: string,
   launch: {
     workspace: WorkspaceRef;
+    projectId?: string | null;
     executionId?: string;
     profileId?: string;
     backendSessionId?: string | null;
@@ -512,11 +661,21 @@ interface NekoSessionState {
     agent: DetectedAgent,
     workspace: WorkspaceRef,
     launchProfile?: AgentLaunchProfile | null,
-    options?: { execution?: NekoExecutionBinding; title?: string },
+    options?: {
+      execution?: NekoExecutionBinding;
+      projectId?: string | null;
+      title?: string;
+    },
+  ) => Promise<string>;
+  /** Wrap a provider-owned conversation without copying or claiming its history. */
+  importProviderSession: (
+    providerSession: NekoProviderSessionRecord,
+    agent: DetectedAgent,
+    workspace: WorkspaceRef,
   ) => Promise<string>;
   /** One-time migration path for a legacy transcript with no workspace. */
   attachWorkspace: (sessionId: string, workspace: WorkspaceRef) => Promise<void>;
-  sendPrompt: (text: string) => Promise<void>;
+  sendPrompt: (text: string, onAccepted?: () => void) => Promise<void>;
   cancelTurn: () => Promise<void>;
   resolvePermission: (optionId: string | null) => Promise<void>;
   setConfigOption: (optionId: string, value: string | boolean) => Promise<void>;
@@ -752,6 +911,8 @@ export const useNekoSessionStore = create<NekoSessionState>()(
             updatedAt: entry.updatedAt,
             workspace,
             launchProfile,
+            kind: entry.kind ?? (entry.execution ? "worker" : "scratch"),
+            projectId: entry.projectId ?? null,
             execution: entry.execution ?? null,
             backendSessionId: entry.backendSessionId ?? null,
             controls: projectControls(entry.controls ?? [], events),
@@ -841,6 +1002,28 @@ export const useNekoSessionStore = create<NekoSessionState>()(
       }
       const sessionId = uuidv4();
       const now = Date.now();
+      const kind: NekoTopLevelSessionKind = options.execution ? "worker" : "scratch";
+      const ownershipDiagnostics = validateNekoSessionOwnership([
+        ...Object.values(get().sessions).map(ownershipFact),
+        {
+          sessionId,
+          providerId: agent.id,
+          kind,
+          projectId: options.projectId ?? null,
+          taskId: options.execution?.taskId ?? null,
+          runId: options.execution?.runId ?? null,
+          active: true,
+        },
+      ]);
+      const conflict = ownershipDiagnostics.find((item) => item.sessionId === sessionId);
+      if (conflict) {
+        if (conflict.code === "multiple_task_workers") {
+          throw new Error(
+            "Công việc này đã có một phiên agent đang hoạt động. Hãy tiếp tục phiên đó hoặc kết thúc nó trước khi retry.",
+          );
+        }
+        throw new Error(`Không thể tạo phiên Neko: ${conflict.code}.`);
+      }
       const events: NekoSessionEvent[] = [];
       appendSessionEvent(
         events,
@@ -864,6 +1047,8 @@ export const useNekoSessionStore = create<NekoSessionState>()(
           updatedAt: now,
           workspace,
           launchProfile,
+          kind,
+          projectId: options.projectId ?? null,
           execution: options.execution ?? null,
           backendSessionId: null,
           controls: [],
@@ -898,6 +1083,7 @@ export const useNekoSessionStore = create<NekoSessionState>()(
             sessionId,
             {
               workspace,
+              projectId: options.projectId ?? null,
               ...(options.execution ? { execution: options.execution } : {}),
               executionId: instanceId,
               ...(launchProfile?.id ? { profileId: launchProfile.id } : {}),
@@ -961,6 +1147,92 @@ export const useNekoSessionStore = create<NekoSessionState>()(
         });
       }
       await persistSessionNowOrReport(sessionId, "trạng thái khởi động runtime");
+      return sessionId;
+    },
+
+    importProviderSession: async (providerSession, agent, workspace) => {
+      if (providerSession.providerId !== agent.id) {
+        throw new Error("Phiên được phát hiện không thuộc harness đã chọn.");
+      }
+      if (!providerSession.canResume) {
+        throw new Error("Harness không xác nhận rằng phiên này có thể tiếp tục.");
+      }
+      if (!isAbsoluteWorkspacePath(workspace.path)) {
+        throw new Error("Hãy gắn một thư mục dự án tuyệt đối trước khi nhập phiên.");
+      }
+      const existing = Object.values(get().sessions).find(
+        (session) =>
+          session.agentId === agent.id &&
+          session.backendSessionId === providerSession.nativeSessionId,
+      );
+      if (existing) {
+        set((state) => {
+          state.activeSessionId = existing.id;
+        });
+        return existing.id;
+      }
+
+      const sessionId = uuidv4();
+      const now = Date.now();
+      const parsedCreatedAt = Date.parse(providerSession.createdAt ?? "");
+      const parsedUpdatedAt = Date.parse(providerSession.updatedAt ?? "");
+      const createdAt = Number.isFinite(parsedCreatedAt)
+        ? parsedCreatedAt
+        : Number.isFinite(parsedUpdatedAt)
+          ? parsedUpdatedAt
+          : now;
+      const updatedAt = Number.isFinite(parsedUpdatedAt)
+        ? parsedUpdatedAt
+        : createdAt;
+      const events: NekoSessionEvent[] = [];
+      appendSessionEvent(
+        events,
+        "model",
+        {
+          type: "session-context",
+          source: "provider-imported",
+          agentId: agent.id,
+          workspacePath: workspace.path,
+          launchProfileId: null,
+        },
+        now,
+      );
+      const imported: NekoSession = {
+        id: sessionId,
+        agentId: agent.id,
+        agentName: agent.name,
+        title: providerSession.title.trim().slice(0, 120) || `Phiên với ${agent.name}`,
+        createdAt,
+        updatedAt,
+        workspace,
+        launchProfile: null,
+        kind: "scratch",
+        projectId: null,
+        execution: null,
+        backendSessionId: providerSession.nativeSessionId,
+        controls: [],
+        commands: [],
+        pendingControlId: null,
+        lastActivityAt: updatedAt,
+        status: "exited",
+        messages: [],
+        events,
+        eventHighWaterMark: events[events.length - 1]?.seq ?? 0,
+        runtime: null,
+        pendingPermission: null,
+        resolvingPermissionId: null,
+        cancelPending: false,
+        closePending: false,
+        deletePending: false,
+        statusDetail:
+          `Phiên do ${agent.name} sở hữu đã được gắn vào Wiii. ` +
+          "Wiii không sao chép lịch sử; nhắn tiếp để harness resume bằng session gốc.",
+      };
+      await persistSessionStrict(imported);
+      set((state) => {
+        state.sessions[sessionId] = imported;
+        state.activeSessionId = sessionId;
+      });
       return sessionId;
     },
 
@@ -1034,7 +1306,7 @@ export const useNekoSessionStore = create<NekoSessionState>()(
       }
     },
 
-    sendPrompt: async (text) => {
+    sendPrompt: async (text, onAccepted) => {
       const activeModeExit = modeExitOperation;
       if (activeModeExit) await activeModeExit;
       const sessionId = get().activeSessionId;
@@ -1086,14 +1358,16 @@ export const useNekoSessionStore = create<NekoSessionState>()(
             if (current) current.status = "connecting";
           });
           const agentStore = useNekoAgentStore.getState();
-          if (agentStore.agents.length === 0) await agentStore.detect();
-          const agent = useNekoAgentStore.getState().agents.find((a) => a.id === session.agentId);
-          if (!agent?.found) {
+          if (!agentStore.agents.some((agent) => agent.id === session.agentId)) await agentStore.detect(session.agentId);
+          const checked = useNekoAgentStore.getState();
+          const agent = checked.agents.find((a) => a.id === session.agentId);
+          if (checked.error || (checked.isLoading && checked.probeStates[session.agentId] !== "ready")
+            || !agent?.found || agent.availability !== "available") {
             set((state) => {
               const s = state.sessions[sessionId];
               if (s?.status === "connecting") {
                 s.status = "error";
-                s.statusDetail = `Không tìm thấy agent "${session.agentName}" trên máy này.`;
+                s.statusDetail = `Chưa xác nhận được ${session.agentName} sẵn sàng. Hãy kiểm tra tại Tổng quan → Quản lý harness rồi thử lại.`;
               }
             });
             return;
@@ -1110,6 +1384,7 @@ export const useNekoSessionStore = create<NekoSessionState>()(
                 sessionId,
                 {
                   workspace: session.workspace!,
+                  projectId: session.projectId ?? null,
                   ...(session.execution ? { execution: session.execution } : {}),
                   executionId: instanceId,
                   ...(session.launchProfile?.id ? { profileId: session.launchProfile.id } : {}),
@@ -1269,6 +1544,7 @@ export const useNekoSessionStore = create<NekoSessionState>()(
           const driver = runtimes.requireInstance(sessionId, providerInstanceId, "prompt");
           const invocation = driver.prompt(modelPrompt);
           promptStarted = true;
+          onAccepted?.();
           set((state) => {
             const current = state.sessions[sessionId];
             if (current && inputEventId) {
@@ -1339,6 +1615,7 @@ export const useNekoSessionStore = create<NekoSessionState>()(
     cancelTurn: async () => {
       const sessionId = get().activeSessionId;
       if (!sessionId) return;
+      drainPresentationStreams(sessionId);
       const provider = runtimes.get(sessionId);
       const session = get().sessions[sessionId];
       if (
@@ -1780,6 +2057,7 @@ export const useNekoSessionStore = create<NekoSessionState>()(
     },
 
     closeSession: (sessionId) => {
+      drainPresentationStreams(sessionId);
       const current = get().sessions[sessionId];
       if (!current || current.deletePending) return Promise.resolve();
       if (
@@ -1862,6 +2140,7 @@ export const useNekoSessionStore = create<NekoSessionState>()(
     },
 
     deleteSession: async (sessionId) => {
+      drainPresentationStreams(sessionId);
       const current = get().sessions[sessionId];
       // Acquire the lifecycle lock before awaiting a close or runtime teardown.
       if (!current || current.deletePending) return;
@@ -1952,6 +2231,7 @@ export const useNekoSessionStore = create<NekoSessionState>()(
           state.activeSessionId = null;
         }
       });
+      discardPresentationStreams(sessionId);
       useNekoWorkspaceStore.getState().clearSession(sessionId);
     },
 
@@ -1962,6 +2242,32 @@ export const useNekoSessionStore = create<NekoSessionState>()(
     },
 
     handleEvent: (event) => {
+      if (event.type === "reasoning-delta" || event.type === "answer-delta") {
+        enqueuePresentationDelta(
+          event.sessionId,
+          event.type === "answer-delta" ? "answer" : "reasoning",
+          event.text,
+        );
+        return;
+      }
+
+      if (
+        event.type === "turn-started" ||
+        event.type === "activity" ||
+        event.type === "permission-request" ||
+        event.type === "turn-finished" ||
+        event.type === "error" ||
+        event.type === "process-exited"
+      ) {
+        drainPresentationStreams(event.sessionId);
+      }
+
+      const previous = get().sessions[event.sessionId];
+      const finishedMessage = previous?.messages[previous.messages.length - 1];
+      const completedTurn = event.type === "turn-finished" && event.stopReason === "end_turn"
+        && previous?.status === "streaming" && !previous.cancelPending && !previous.closePending
+        && !previous.deletePending && finishedMessage?.role === "assistant"
+        ? finishedMessage.id : null;
       const exitingProvider = event.type === "process-exited" ? runtimes.get(event.sessionId) : null;
       set((state) => {
         const session = state.sessions[event.sessionId];
@@ -2007,38 +2313,6 @@ export const useNekoSessionStore = create<NekoSessionState>()(
               role: "assistant",
               blocks: [],
             });
-            return;
-          }
-          case "reasoning-delta": {
-            const message = openAssistant(session);
-            if (!message) return;
-            const last = lastBlock(message);
-            if (last?.type === "thinking" && last.stepState !== "completed") {
-              (last as ThinkingBlockData).content += event.text;
-            } else {
-              message.blocks!.push({
-                type: "thinking",
-                id: uuidv4(),
-                content: event.text,
-                toolCalls: [],
-                startTime: Date.now(),
-              } satisfies ThinkingBlockData);
-            }
-            return;
-          }
-          case "answer-delta": {
-            const message = openAssistant(session);
-            if (!message) return;
-            const last = lastBlock(message);
-            if (last?.type === "answer") {
-              (last as AnswerBlockData).content += event.text;
-            } else {
-              message.blocks!.push({
-                type: "answer",
-                id: uuidv4(),
-                content: event.text,
-              } satisfies AnswerBlockData);
-            }
             return;
           }
           case "activity": {
@@ -2133,7 +2407,17 @@ export const useNekoSessionStore = create<NekoSessionState>()(
             .getState()
             .observeActivity(event.sessionId, session.workspace, event.activity);
         }
-        if (event.type === "process-exited") {
+        if (event.type === "turn-finished") {
+          void persistSessionNowOrReport(event.sessionId, "lượt trả lời đã kết thúc", { strict: true }).then((saved) => {
+            const current = get().sessions[event.sessionId];
+            if (!saved || !completedTurn || !current || current.status !== "idle"
+              || current.closePending || current.deletePending
+              || current.messages[current.messages.length - 1]?.id !== completedTurn) return;
+            useCompletionNoticeStore.getState().publish({
+              id: `${event.sessionId}:${completedTurn}`, sessionId: event.sessionId, title: current.title,
+            });
+          });
+        } else if (event.type === "process-exited") {
           void persistSessionNowOrReport(event.sessionId, "trạng thái provider đã thoát", {
             strict: true,
           });
@@ -2486,6 +2770,7 @@ export function _setNativeControlReaderForTests(
 
 /** Test hook: drop live runtimes, simulating an app restart. */
 export function _clearLiveDriversForTests(): void {
+  discardPresentationStreams();
   runtimes.clearForTests();
   closeOperations.clear();
   dispatchBarriers.clear();

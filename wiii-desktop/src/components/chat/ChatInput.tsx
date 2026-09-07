@@ -277,8 +277,8 @@ export function ChatInput({ onSend, onCancel, editingMessage, onClearEdit, cente
     suggestions: [],
     selectedIndex: 0,
   });
-  const { isStreaming } = useChatStore();
-  const { addToast } = useToastStore();
+  const isStreaming = useChatStore((state) => state.isStreaming);
+  const addToast = useToastStore((state) => state.addToast);
   const setInputFocused = useUIStore((s) => s.setInputFocused);
 
   // Set input when editing a message

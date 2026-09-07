@@ -1,6 +1,6 @@
 import { Component, type ErrorInfo, type ReactNode } from "react";
 import { RefreshCw } from "lucide-react";
-import { WiiiAvatar } from "@/components/common/WiiiAvatar";
+import { WiiiMark } from "@/components/common/WiiiMark";
 
 interface Props {
   children: ReactNode;
@@ -29,7 +29,7 @@ export class ErrorBoundary extends Component<Props, State> {
     if (this.state.hasError) {
       return (
         <div className="flex flex-col items-center justify-center h-full gap-4 p-8">
-          <WiiiAvatar state="error" size={48} />
+          <WiiiMark size={48} alt="Wiii" />
           <h2 className="text-lg font-semibold">Ôi không!</h2>
           <p className="text-text-secondary text-sm text-center max-w-md">
             Mình gặp sự cố rồi. {this.state.error?.message ? `Chi tiết: ${this.state.error.message}` : "Bạn thử lại nhé!"}

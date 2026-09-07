@@ -8,11 +8,11 @@
  */
 
 .nk-root {
-  --nk-canvas: #f6f5f6;
-  --nk-sidebar: #f2f1f2;
-  --nk-raised: #ececec;
+  --nk-canvas: #f8f7f5;
+  --nk-sidebar: #f0eeeb;
+  --nk-raised: #eae7e3;
   --nk-composer: #ffffff;
-  --nk-inset: #e6e6e6;
+  --nk-inset: #e7e3de;
   --nk-overlay: rgba(28, 32, 41, 0.05);
   --nk-overlay-strong: rgba(28, 32, 41, 0.09);
 
@@ -20,10 +20,10 @@
   --nk-border-strong: rgba(28, 32, 41, 0.15);
   --nk-focus-soft: rgba(69, 66, 65, 0.14);
 
-  --nk-text: #242424;
-  --nk-text-2: #666666;
-  --nk-text-3: #858585;
-  --nk-ghost: #a4a4a4;
+  --nk-text: #2a2928;
+  --nk-text-2: #605d59;
+  --nk-text-3: #69655f;
+  --nk-ghost: #69655f;
 
   --nk-accent: #454241;
   --nk-inverse: #202227;
@@ -51,9 +51,9 @@
   --nk-focus-soft: rgba(187, 221, 242, 0.14);
 
   --nk-text: #e2e2e2;
-  --nk-text-2: #a3a3a3;
-  --nk-text-3: #7d7d7d;
-  --nk-ghost: #575757;
+  --nk-text-2: #bcb8b3;
+  --nk-text-3: #a4a09b;
+  --nk-ghost: #99958f;
 
   --nk-accent: #bbddf2;
   --nk-inverse: #e7e9ec;
@@ -72,7 +72,217 @@
   opacity: 0;
   transition: opacity 120ms ease;
 }
+.nk-session-row {
+  content-visibility: auto;
+  contain-intrinsic-size: auto 32px;
+}
+.nk-project-section {
+  content-visibility: auto;
+  contain-intrinsic-size: auto 264px;
+}
+.nk-scroll-surface {
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+}
+.nk-status-pulse {
+  animation: nk-status-pulse 2s infinite;
+}
+@keyframes nk-status-pulse {
+  0%,
+  40% {
+    opacity: 1;
+    animation-timing-function: steps(6);
+  }
+  50%,
+  90% {
+    opacity: 0.5;
+    animation-timing-function: steps(6);
+  }
+  100% {
+    opacity: 1;
+  }
+}
+.nk-root :where(button, input, select, textarea, [tabindex]):focus-visible {
+  outline: 2px solid var(--nk-accent);
+  outline-offset: 2px;
+}
+.nk-input-field:focus-within {
+  outline: 2px solid var(--nk-text-3);
+  outline-offset: -1px;
+}
+.nk-root .nk-input-field :is(input, textarea):focus-visible {
+  outline: none;
+}
+.nk-project-home {
+  container: project-home / inline-size;
+}
+.nk-root .wiii-titlebar {
+  background: var(--nk-sidebar);
+  border-color: transparent;
+  color: var(--nk-text-2);
+}
+.nk-work-area {
+  border-top-left-radius: 12px;
+  border-top: 1px solid var(--nk-border);
+  background: var(--nk-canvas);
+}
+.nk-completion-notice {
+  animation: nk-completion-enter 160ms ease-out;
+}
+
+@keyframes nk-completion-enter {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .nk-completion-notice { animation: none; }
+}
+
+.nk-menu-trigger:hover,
+.nk-menu-trigger[aria-expanded="true"],
+.nk-menu-action:not([aria-disabled="true"]):hover,
+.nk-menu-action:focus-visible,
+.nk-chrome-button:hover {
+  background: var(--nk-overlay);
+  color: var(--nk-text);
+}
+.nk-menu-action[aria-disabled="true"] {
+  opacity: 0.5;
+}
+.nk-help-dialog::backdrop {
+  background: rgba(20, 20, 20, 0.2);
+}
+.nk-chrome-button,
+.nk-surface-toolbar button {
+  transition: background-color 100ms ease-out, color 100ms ease-out;
+}
+.nk-chrome-button:active,
+.nk-surface-toolbar button:active {
+  background: var(--nk-overlay-strong);
+  transition: none;
+}
+.nk-surface-toolbar button {
+  min-width: 32px;
+  min-height: 32px;
+  flex-shrink: 0;
+}
+.nk-workspace-tabs {
+  overscroll-behavior-x: contain;
+  scrollbar-width: thin;
+  align-items: center;
+  height: 42px;
+  gap: 4px;
+}
+.nk-workspace-tabs button {
+  height: 30px;
+  border-radius: 6px;
+  font-weight: 400;
+  transition: background-color 100ms ease-out, color 100ms ease-out;
+}
+.nk-workspace-tabs button:hover {
+  background: var(--nk-overlay);
+}
+.nk-workspace-tabs button[aria-pressed="true"] {
+  background: var(--nk-overlay-strong);
+  font-weight: 500;
+}
+.nk-workspace-frame {
+  overflow: hidden;
+  border-top: 1px solid var(--nk-border-strong);
+  border-radius: 8px 0 0 0;
+  background: var(--nk-composer);
+}
+.nk-workspace-separator {
+  position: relative;
+  z-index: 10;
+  width: 6px;
+  cursor: col-resize;
+}
+.nk-workspace-separator::before {
+  content: "";
+  position: absolute;
+  inset-block: 0;
+  left: 50%;
+  width: 1px;
+  background: var(--nk-border-strong);
+  transition: background-color 100ms ease-out;
+}
+.nk-workspace-separator:hover::before,
+.nk-workspace-separator:active::before,
+.nk-workspace-separator:focus-visible::before {
+  background: var(--nk-accent);
+}
+.nk-root .nk-workspace-separator:focus-visible {
+  outline-offset: -2px;
+}
+.nk-chrome-popover {
+  transform-origin: top left;
+  animation: nk-popover-enter 140ms ease-out;
+}
+.nk-sidebar-entry {
+  animation: nk-sidebar-enter 160ms ease-out;
+}
+@keyframes nk-popover-enter {
+  from { opacity: 0; transform: translateY(-3px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@keyframes nk-sidebar-enter {
+  from { opacity: 0; transform: translateX(-8px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+.nk-workspace-pane {
+  container: workspace-pane / inline-size;
+}
+.nk-project-composer:focus-within {
+  border-color: var(--nk-accent);
+  box-shadow: 0 0 0 2px var(--nk-focus-soft);
+}
+.nk-root .nk-project-composer textarea:focus-visible {
+  outline: none;
+}
+@container project-home (max-width: 560px) {
+  .nk-project-hero {
+    padding-inline: 20px;
+  }
+  .nk-project-heading {
+    font-size: 24px;
+  }
+  .nk-project-local-badge {
+    display: none;
+  }
+}
+@container workspace-pane (max-width: 560px) {
+  .nk-workspace-navigator {
+    position: relative;
+    width: 100%;
+    height: 35%;
+    border-left: 0;
+    border-bottom: 1px solid var(--nk-border);
+  }
+  .nk-workspace-content[data-resource-navigator] {
+    position: relative;
+    right: auto;
+    width: 100%;
+    height: 65%;
+  }
+}
 .nk-session-row:hover .nk-row-action,
 .nk-session-row:focus-within .nk-row-action {
   opacity: 1;
+}
+@media (prefers-reduced-motion: reduce) {
+  .nk-chrome-popover,
+  .nk-sidebar-entry {
+    animation: none;
+  }
+  .nk-chrome-button,
+  .nk-surface-toolbar button,
+  .nk-workspace-tabs button,
+  .nk-workspace-separator::before {
+    transition: none;
+  }
+  .nk-status-pulse {
+    animation: none;
+  }
 }

@@ -212,6 +212,13 @@ export const useAdeWorkStore = create<AdeWorkState>()(
       if (existing && existing.runId !== input.runId) {
         throw new Error(`AgentSession ${input.id} đã thuộc một Run khác.`);
       }
+      const currentOwner = graph.agentSessions.find((session) =>
+        session.runId === input.runId && session.id !== input.id);
+      if (currentOwner) {
+        throw new Error(
+          `Run ${input.runId} đã thuộc phiên ${currentOwner.id}; hãy tạo Run mới để retry hoặc so sánh agent.`,
+        );
+      }
       const transition = validateAdeRunTransition(run.state, "running");
       if (transition) {
         throw new Error(`Không thể gắn agent khi Run đang ở trạng thái ${run.state}.`);

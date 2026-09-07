@@ -89,6 +89,22 @@ describe("Neko driver factory resource ownership", () => {
     }]);
   });
 
+  it("scopes discovery to an approved provider and rejects a mismatched native response", async () => {
+    Object.defineProperty(window, "__TAURI_INTERNALS__", { value: {}, configurable: true });
+    try {
+      tauri.invoke.mockResolvedValueOnce([PROVIDER]);
+      await expect(getNekoControlClient().listProviders("neko")).resolves.toEqual([PROVIDER]);
+      expect(tauri.invoke).toHaveBeenLastCalledWith("neko_control_provider_list", { providerId: "neko" });
+      tauri.invoke.mockResolvedValueOnce([{ ...PROVIDER, id: "gemini" }]);
+      await expect(getNekoControlClient().listProviders("neko")).rejects.toThrow("mismatched provider scope");
+      tauri.invoke.mockClear();
+      await expect(getNekoControlClient().listProviders("C:/unknown.exe")).rejects.toThrow();
+      expect(tauri.invoke).not.toHaveBeenCalled();
+    } finally {
+      Reflect.deleteProperty(window, "__TAURI_INTERNALS__");
+    }
+  });
+
   it("propagates native authority failures instead of faking an empty session list", async () => {
     Object.defineProperty(window, "__TAURI_INTERNALS__", {
       value: {},

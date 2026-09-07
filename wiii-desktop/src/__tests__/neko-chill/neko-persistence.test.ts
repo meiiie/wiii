@@ -363,17 +363,22 @@ describe("neko-chill persistence", () => {
     expect(launches[0].execution).toEqual(execution);
     expect(useNekoSessionStore.getState().sessions[id]).toMatchObject({
       title: "Activate Wiii ADE",
+      kind: "worker",
       execution,
     });
     const persisted = storage.get(`neko-chill-sessions.json:session:${id}`) as {
-      entry: { execution?: typeof execution };
+      entry: { kind?: string; execution?: typeof execution };
     };
+    expect(persisted.entry.kind).toBe("worker");
     expect(persisted.entry.execution).toEqual(execution);
 
     useNekoSessionStore.setState({ sessions: {}, activeSessionId: null, hydrated: false });
     _clearLiveDriversForTests();
     await useNekoSessionStore.getState().hydrate();
-    expect(useNekoSessionStore.getState().sessions[id].execution).toEqual(execution);
+    expect(useNekoSessionStore.getState().sessions[id]).toMatchObject({
+      kind: "worker",
+      execution,
+    });
   });
 
   it("persists native lifecycle facts before the compatible transcript", async () => {

@@ -35,6 +35,8 @@ import {
   _setDriverFactoryForTests,
 } from "@/neko-chill/stores/neko-session-store";
 import { useNekoAgentStore } from "@/neko-chill/stores/neko-agent-store";
+import { useCompletionNoticeStore } from "@/neko-chill/stores/completion-notice-store";
+import { saveStoreStrict } from "@/lib/storage";
 
 const AGENT: DetectedAgent = {
   id: "neko",
@@ -45,6 +47,7 @@ const AGENT: DetectedAgent = {
   supportsProfiles: true,
 };
 const WORKSPACE = { path: "C:/tmp/project", name: "project" };
+const detectAgents = useNekoAgentStore.getState().detect;
 
 class FakeDriver implements Driver {
   readonly kind = "acp" as const;
@@ -109,9 +112,57 @@ const session = (id: string) => useNekoSessionStore.getState().sessions[id];
 describe("neko-session-store", () => {
   beforeEach(() => {
     storage.clear();
+    useCompletionNoticeStore.setState({ enabled: true, sound: false, notices: [] });
     useNekoSessionStore.setState({ sessions: {}, activeSessionId: null });
+    useNekoAgentStore.setState({ agents: [], isLoading: false, error: null, detect: detectAgents });
     launchConfig = undefined;
     _setDriverFactoryForTests(undefined);
+  });
+
+  it("announces only a durably stored live completion, never duplicate events", async () => {
+    const id = await setup();
+    emit({ type: "turn-started", sessionId: id });
+    emit({ type: "answer-delta", sessionId: id, text: "Kết quả đã kiểm tra." });
+    emit({ type: "turn-finished", sessionId: id, stopReason: "end_turn" });
+    expect(useCompletionNoticeStore.getState().notices).toEqual([]);
+    await vi.waitFor(() => expect(useCompletionNoticeStore.getState().notices).toHaveLength(1));
+    const result = useCompletionNoticeStore.getState().notices[0];
+    expect(result.sessionId).toBe(id);
+    useCompletionNoticeStore.getState().dismiss(result.id);
+    emit({ type: "turn-finished", sessionId: id, stopReason: "end_turn" });
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(useCompletionNoticeStore.getState().notices).toEqual([]);
+  });
+
+  it.each(["cancelled", "error", "refusal", "max_tokens", "max_turn_requests"] as const)(
+    "never sends a successful completion notice for %s", async (stopReason) => {
+      const id = await setup();
+      emit({ type: "turn-started", sessionId: id });
+      emit({ type: "answer-delta", sessionId: id, text: "Partial result" });
+      emit({ type: "turn-finished", sessionId: id, stopReason });
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      expect(useCompletionNoticeStore.getState().notices).toEqual([]);
+    },
+  );
+
+  it("does not announce a completion when durable storage rejects it", async () => {
+    const id = await setup();
+    emit({ type: "turn-started", sessionId: id });
+    emit({ type: "answer-delta", sessionId: id, text: "Result not stored" });
+    vi.mocked(saveStoreStrict).mockRejectedValueOnce(new Error("disk unavailable"));
+    emit({ type: "turn-finished", sessionId: id, stopReason: "end_turn" });
+    await vi.waitFor(() => expect(session(id).statusDetail).toContain("disk unavailable"));
+    expect(useCompletionNoticeStore.getState().notices).toEqual([]);
+  });
+
+  it("does not announce a previous turn after a new turn has started", async () => {
+    const id = await setup();
+    emit({ type: "turn-started", sessionId: id });
+    emit({ type: "answer-delta", sessionId: id, text: "First result" });
+    emit({ type: "turn-finished", sessionId: id, stopReason: "end_turn" });
+    emit({ type: "turn-started", sessionId: id });
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(useCompletionNoticeStore.getState().notices).toEqual([]);
   });
 
   it("creates a session, becomes idle, and records the user prompt", async () => {
@@ -119,6 +170,7 @@ describe("neko-session-store", () => {
     expect(session(id).status).toBe("idle");
     expect(useNekoSessionStore.getState().activeSessionId).toBe(id);
     expect(session(id).workspace).toEqual(WORKSPACE);
+    expect(session(id)).toMatchObject({ kind: "scratch", execution: null });
     expect(launchConfig?.workspace).toEqual(WORKSPACE);
     expect(launchConfig?.executionId).toEqual(expect.any(String));
     expect(launchConfig?.executionId).not.toBe(id);
@@ -143,6 +195,93 @@ describe("neko-session-store", () => {
       }),
     ).rejects.toThrow("thư mục dự án tuyệt đối");
     expect(Object.keys(useNekoSessionStore.getState().sessions)).toHaveLength(0);
+  });
+
+  it("wraps one provider-owned session once and resumes the native identity", async () => {
+    const discovered = {
+      providerId: "neko",
+      nativeSessionId: "native-neko-42",
+      title: "Existing provider session",
+      workspacePath: WORKSPACE.path,
+      createdAt: "2026-08-23T10:00:00.000Z",
+      updatedAt: "2026-08-24T10:00:00.000Z",
+      model: "test-model",
+      state: "saved",
+      canResume: true,
+    };
+    const id = await useNekoSessionStore.getState().importProviderSession(
+      discovered,
+      AGENT,
+      WORKSPACE,
+    );
+    const duplicateId = await useNekoSessionStore.getState().importProviderSession(
+      discovered,
+      AGENT,
+      WORKSPACE,
+    );
+
+    expect(duplicateId).toBe(id);
+    expect(Object.keys(useNekoSessionStore.getState().sessions)).toHaveLength(1);
+    expect(session(id)).toMatchObject({
+      backendSessionId: "native-neko-42",
+      title: "Existing provider session",
+      workspace: WORKSPACE,
+      status: "exited",
+      messages: [],
+    });
+    expect(session(id).events[0]?.data).toMatchObject({
+      type: "session-context",
+      source: "provider-imported",
+    });
+
+    useNekoAgentStore.setState({ agents: [AGENT] });
+    _setDriverFactoryForTests(async (_agent, sessionId, launch, onEvent) => {
+      launchConfig = launch;
+      driver = new FakeDriver(sessionId, onEvent);
+      return driver;
+    });
+    await useNekoSessionStore.getState().sendPrompt("Tiếp tục");
+    expect(launchConfig?.backendSessionId).toBe("native-neko-42");
+    expect(driver.prompts).toEqual(["Tiếp tục"]);
+  });
+
+  it.each(["idle", "error"] as const)("blocks a second worker while the first still owns a %s runtime", async (status) => {
+    let starts = 0;
+    _setDriverFactoryForTests(async (_agent, sessionId, _launch, onEvent) => {
+      starts += 1;
+      return new FakeDriver(sessionId, onEvent);
+    });
+    const first = await useNekoSessionStore.getState().createSession(
+      AGENT,
+      WORKSPACE,
+      null,
+      {
+        execution: {
+          taskId: "task-auth",
+          runId: "run-1",
+          environmentId: "env-1",
+        },
+      },
+    );
+
+    if (status === "error") {
+      useNekoSessionStore.getState().handleEvent({ type: "error", sessionId: first, message: "driver fault", fatal: true });
+      expect(session(first).runtime).not.toBeNull();
+    }
+    await expect(useNekoSessionStore.getState().createSession(
+      AGENT,
+      WORKSPACE,
+      null,
+      {
+        execution: {
+          taskId: "task-auth",
+          runId: "run-2",
+          environmentId: "env-2",
+        },
+      },
+    )).rejects.toThrow(/đã có một phiên agent/i);
+    expect(starts).toBe(1);
+    expect(session(first).kind).toBe("worker");
   });
 
   it("stores controls, commands, session info, and routes a control change", async () => {
@@ -357,6 +496,31 @@ describe("neko-session-store", () => {
     ).toHaveLength(2);
   });
 
+  it("presents only complete provider blocks instead of partial tokens", async () => {
+    const id = await setup();
+    emit({ type: "turn-started", sessionId: id });
+
+    emit({ type: "answer-delta", sessionId: id, text: "Neko đang đọc " });
+    emit({ type: "answer-delta", sessionId: id, text: "dự án và chưa xong paragraph." });
+    expect(session(id).messages.at(-1)?.blocks).toEqual([]);
+
+    emit({ type: "answer-delta", sessionId: id, text: "\n\n" });
+    expect(session(id).messages.at(-1)?.blocks?.[0]).toMatchObject({
+      type: "answer",
+      content: "Neko đang đọc dự án và chưa xong paragraph.\n\n",
+    });
+
+    emit({ type: "answer-delta", sessionId: id, text: "Đoạn cuối không có blank line" });
+    expect(session(id).messages.at(-1)?.blocks?.[0]).not.toMatchObject({
+      content: expect.stringContaining("Đoạn cuối"),
+    });
+
+    emit({ type: "turn-finished", sessionId: id, stopReason: "end_turn" });
+    expect(session(id).messages.at(-1)?.blocks?.[0]).toMatchObject({
+      content: "Neko đang đọc dự án và chưa xong paragraph.\n\nĐoạn cuối không có blank line",
+    });
+  });
+
   it("passes permission requests through and resolves them on the driver", async () => {
     const id = await setup();
     emit({ type: "turn-started", sessionId: id });
@@ -407,6 +571,33 @@ describe("neko-session-store", () => {
     expect(closed.status).toBe("exited");
     expect(closed.pendingPermission).toBeNull();
   });
+
+  it("checks a saved session's unprobed harness even when another harness is already known", async () => {
+    const id = await setup();
+    await useNekoSessionStore.getState().closeSession(id);
+    const detect = vi.fn(async () => { useNekoAgentStore.setState({ agents: [AGENT] }); });
+    useNekoAgentStore.setState({ agents: [{ ...AGENT, id: "gemini", name: "Gemini CLI" }], detect });
+    useNekoSessionStore.getState().setActiveSession(id);
+    await useNekoSessionStore.getState().sendPrompt("Tiếp tục bản nháp");
+    expect(detect).toHaveBeenCalledExactlyOnceWith("neko");
+    expect(driver.prompts).toEqual(["Tiếp tục bản nháp"]);
+  });
+
+  it.each([{ isLoading: true }, { error: "cleanup could not be proven" }])(
+    "does not resume a cached harness while discovery is unresolved: %o", async (state) => {
+      const id = await setup();
+      await useNekoSessionStore.getState().closeSession(id);
+      const factory = vi.fn(async (_agent, sessionId, _launch, onEvent) => new FakeDriver(sessionId, onEvent));
+      _setDriverFactoryForTests(factory);
+      useNekoAgentStore.setState({ agents: [AGENT], ...state });
+      useNekoSessionStore.getState().setActiveSession(id);
+      const accepted = vi.fn();
+      await useNekoSessionStore.getState().sendPrompt("Chưa được gửi", accepted);
+      expect(accepted).not.toHaveBeenCalled();
+      expect(factory).not.toHaveBeenCalled();
+      expect(session(id).statusDetail).toContain("Quản lý harness");
+    },
+  );
 
   it("keeps a session exited when close cancels respawn preparation", async () => {
     const id = await setup();

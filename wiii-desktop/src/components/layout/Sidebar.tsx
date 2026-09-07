@@ -4,6 +4,7 @@
  * Full mode: 256px conversation list (unchanged).
  */
 import { useState, useRef, useEffect, useCallback } from "react";
+import { useShallow } from "zustand/react/shallow";
 import { motion, AnimatePresence } from "motion/react";
 import { Plus, Trash2, Settings, MessageSquare, Search, Pin, PinOff, Pencil, Shield, Building2, LogOut, User, Network, PlugZap, PanelLeftClose, PanelLeft, MoreHorizontal } from "lucide-react";
 import { useChatStore } from "@/stores/chat-store";
@@ -38,15 +39,43 @@ export function Sidebar() {
     setSearchQuery,
     pinConversation,
     unpinConversation,
-  } = useChatStore();
-  const { sidebarOpen, toggleSidebar, activeView, openSettings, openAdminPanel, openOrgManagerPanel, openSoulBridge, openWiiiConnect, navigateToChat } = useUIStore();
-  const { isSystemAdmin, isOrgAdmin } = useOrgStore();
-  const { activeDomainId } = useDomainStore();
-  const { activeOrgId } = useOrgStore();
-  const { addToast } = useToastStore();
+  } = useChatStore(useShallow((state) => ({
+    conversations: state.conversations,
+    activeConversationId: state.activeConversationId,
+    searchQuery: state.searchQuery,
+    createConversation: state.createConversation,
+    deleteConversation: state.deleteConversation,
+    renameConversation: state.renameConversation,
+    setActiveConversation: state.setActiveConversation,
+    setSearchQuery: state.setSearchQuery,
+    pinConversation: state.pinConversation,
+    unpinConversation: state.unpinConversation,
+  })));
+  const { sidebarOpen, toggleSidebar, activeView, openSettings, openAdminPanel, openOrgManagerPanel, openSoulBridge, openWiiiConnect, navigateToChat } = useUIStore(useShallow((state) => ({
+    sidebarOpen: state.sidebarOpen,
+    toggleSidebar: state.toggleSidebar,
+    activeView: state.activeView,
+    openSettings: state.openSettings,
+    openAdminPanel: state.openAdminPanel,
+    openOrgManagerPanel: state.openOrgManagerPanel,
+    openSoulBridge: state.openSoulBridge,
+    openWiiiConnect: state.openWiiiConnect,
+    navigateToChat: state.navigateToChat,
+  })));
+  const { isSystemAdmin, isOrgAdmin, activeOrgId } = useOrgStore(useShallow((state) => ({
+    isSystemAdmin: state.isSystemAdmin,
+    isOrgAdmin: state.isOrgAdmin,
+    activeOrgId: state.activeOrgId,
+  })));
+  const activeDomainId = useDomainStore((state) => state.activeDomainId);
+  const addToast = useToastStore((state) => state.addToast);
 
   // Sprint 193: User profile + logout
-  const { user, logout, isAuthenticated } = useAuthStore();
+  const { user, logout, isAuthenticated } = useAuthStore(useShallow((state) => ({
+    user: state.user,
+    logout: state.logout,
+    isAuthenticated: state.isAuthenticated,
+  })));
   const displayUserName = user?.name || useSettingsStore.getState().settings.display_name || "";
 
   const handleLogout = async () => {
@@ -218,12 +247,12 @@ export function Sidebar() {
           </button>
         )}
 
-        {/* Wiii Connect */}
         <button
-          onClick={openWiiiConnect}
+          onClick={() => openWiiiConnect()}
           className={iconBtnClass(activeView === "wiii-connect")}
-          title="Wiii Connect"
-          aria-label="Mở Wiii Connect"
+          title="Tài khoản & ứng dụng"
+          aria-label="Mở tài khoản và ứng dụng của Neko"
+          data-testid="managed-connections-link"
         >
           <PlugZap size={18} />
         </button>
@@ -359,16 +388,18 @@ export function Sidebar() {
       {/* Sprint 231h: User profile footer — click avatar → dropdown menu (Claude.ai pattern) */}
       <div className="px-2 py-2 border-t border-border relative">
         <button
-          onClick={openWiiiConnect}
+          onClick={() => openWiiiConnect()}
           className={`mb-1 flex w-full items-center gap-2.5 rounded-lg px-2 py-2 text-sm transition-colors ${
             activeView === "wiii-connect"
               ? "bg-[var(--accent)]/10 text-[var(--accent)] font-medium"
               : "text-text-secondary hover:bg-surface-tertiary hover:text-text"
           }`}
           aria-current={activeView === "wiii-connect" ? "page" : undefined}
+          aria-label="Tài khoản & ứng dụng"
+          data-testid="managed-connections-link"
         >
           <PlugZap size={15} />
-          <span className="truncate">Wiii Connect</span>
+          <span className="truncate">Tài khoản & ứng dụng</span>
         </button>
         {isAuthenticated && (
           <>
@@ -449,7 +480,7 @@ export function Sidebar() {
                         role="menuitem"
                       >
                         <PlugZap size={15} />
-                        Wiii Connect
+                        Tài khoản & ứng dụng
                       </button>
                       <button
                         onClick={() => { openSoulBridge(); setUserMenuOpen(false); }}

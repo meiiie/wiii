@@ -20,7 +20,7 @@ const CODEX_BOOTSTRAP_SESSION_PREFIX = "codex-account-bootstrap-";
 
 /**
  * Derive the account-probe caller from durable workspace identity rather than
- * React component lifetime. Remounting NewSessionView or reloading the WebView
+ * React component lifetime. Remounting ProjectHome or reloading the WebView
  * therefore reaches the same unresolved native start while it remains
  * non-terminal. Each invocation still receives a fresh Run identity so a
  * later bootstrap after a proven terminal attempt cannot reuse its lifecycle.

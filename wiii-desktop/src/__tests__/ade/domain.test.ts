@@ -70,16 +70,9 @@ function graph(): AdeGraph {
       {
         id: "session-claude",
         runId: "run-claude",
-        providerId: "claude",
+        providerId: "codex",
         providerSessionId: "session-456",
         role: "primary",
-      },
-      {
-        id: "session-review",
-        runId: "run-codex",
-        providerId: "neko",
-        providerSessionId: null,
-        role: "reviewer",
       },
     ],
     artifacts: [],
@@ -96,7 +89,10 @@ describe("Wiii ADE work graph", () => {
     expect(validateAdeGraph(value)).toEqual([]);
     expect(value.runs).toHaveLength(2);
     expect(new Set(value.runs.map((run) => run.taskId))).toEqual(new Set(["task-auth"]));
-    expect(value.agentSessions).toHaveLength(3);
+    expect(value.agentSessions).toHaveLength(2);
+    expect(new Set(value.agentSessions.map((session) => session.providerId))).toEqual(
+      new Set(["codex"]),
+    );
   });
 
   it("rejects a run whose environment belongs to another project", () => {
@@ -170,5 +166,63 @@ describe("Wiii ADE work graph", () => {
       "cross_project_workspace",
       "inconsistent_approval_reference",
     ]));
+  });
+
+  it("keeps task decomposition inside one acyclic project graph", () => {
+    const value = graph();
+    value.tasks.push({
+      id: "task-ui",
+      projectId: "project-wiii",
+      title: "Update login UI",
+      state: "ready",
+      parentTaskId: "task-auth",
+      dependencyTaskIds: ["task-auth"],
+    });
+    expect(validateAdeGraph(value)).toEqual([]);
+
+    value.tasks[0].parentTaskId = "task-ui";
+    expect(validateAdeGraph(value)).toContainEqual(expect.objectContaining({
+      code: "task_cycle",
+      entityId: "task-auth",
+    }));
+  });
+
+  it("requires a focused task to have one active run unless parallelism is explicit", () => {
+    const value = graph();
+    value.runs[0].strategy = "single";
+
+    expect(validateAdeGraph(value)).toContainEqual(expect.objectContaining({
+      code: "multiple_active_task_runs",
+      entityId: "task-auth",
+    }));
+  });
+
+  it("binds one top-level provider session to a run", () => {
+    const value = graph();
+    value.agentSessions.push({
+      id: "session-extra",
+      runId: "run-codex",
+      providerId: "neko",
+      providerSessionId: "neko-native-1",
+      role: "reviewer",
+    });
+
+    expect(validateAdeGraph(value)).toContainEqual(expect.objectContaining({
+      code: "multiple_run_sessions",
+      entityId: "run-codex",
+    }));
+  });
+
+  it("keeps provider-native subagents inside their owning session", () => {
+    const value = graph();
+    value.agentSessions[0] = {
+      ...value.agentSessions[0],
+      role: "subagent",
+    } as never;
+
+    expect(validateAdeGraph(value)).toContainEqual(expect.objectContaining({
+      code: "provider_subagent_not_top_level",
+      entityId: "session-codex",
+    }));
   });
 });

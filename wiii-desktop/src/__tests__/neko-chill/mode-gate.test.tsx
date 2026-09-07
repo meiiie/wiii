@@ -1,10 +1,10 @@
 /**
- * WorkbenchGate: entering the local surface mounts Wiii ADE INSTEAD of the
+ * WorkbenchGate: entering the local surface mounts Neko Chill INSTEAD of the
  * managed app. The no-login guarantee is structural:
  * WiiiCloudApp (and with it every cloud init effect) never mounts.
  */
 
-import { render, screen, waitFor, cleanup } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, cleanup } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 // jsdom does not implement matchMedia; the avatar hook (BootSplash) reads it
@@ -39,8 +39,13 @@ vi.mock("@/lib/storage", () => ({
   clearStore: vi.fn(async () => {}),
 }));
 
-vi.mock("@/ade/WiiiAdeApp", () => ({
-  default: () => <div data-testid="wiii-ade-root">ade</div>,
+vi.mock("@/neko-chill/NekoChillApp", () => ({
+  default: ({ onOpenConnections }: { onOpenConnections?: () => void }) => (
+    <div data-testid="neko-chill-root">
+      neko chill
+      <button type="button" onClick={onOpenConnections}>open connections</button>
+    </div>
+  ),
 }));
 
 // The animated avatar needs IntersectionObserver/canvas APIs jsdom lacks;
@@ -50,6 +55,7 @@ vi.mock("@/components/common/WiiiAvatar", () => ({
 }));
 
 import { WorkbenchGate } from "@/App";
+import { useUIStore } from "@/stores/ui-store";
 import { useWorkbenchStore } from "@/workbench/workbench-store";
 
 const desktop = {
@@ -68,16 +74,17 @@ describe("WorkbenchGate (App.tsx seam)", () => {
   beforeEach(() => {
     storage.clear();
     useWorkbenchStore.setState({ surface: "local", isLoaded: false });
+    useUIStore.setState({ activeView: "chat", wiiiConnectFocusProvider: null });
   });
   afterEach(() => cleanup());
 
-  it("mounts the Wiii ADE surface instead of the cloud app", async () => {
+  it("mounts Neko Chill as the local desktop surface instead of the cloud app", async () => {
     storage.set("neko-chill-mode.json:mode", "neko-chill");
 
     render(<WorkbenchGate host={desktop} />);
 
     await waitFor(() =>
-      expect(screen.getByTestId("wiii-ade-root")).toBeTruthy(),
+      expect(screen.getByTestId("neko-chill-root")).toBeTruthy(),
     );
     // Cloud markers absent: no login screen, no cloud boot splash text.
     expect(screen.queryByText(/đăng nhập/i)).toBeNull();
@@ -88,6 +95,17 @@ describe("WorkbenchGate (App.tsx seam)", () => {
     // Store load resolves async; before isLoaded the gate must not guess.
     storage.set("neko-chill-mode.json:mode", "neko-chill");
     render(<WorkbenchGate host={desktop} />);
-    expect(screen.queryByTestId("wiii-ade-root")).toBeNull();
+    expect(screen.queryByTestId("neko-chill-root")).toBeNull();
+  });
+
+  it("routes the local Connections entry directly to Gmail management", async () => {
+    storage.set("neko-chill-mode.json:mode", "neko-chill");
+    render(<WorkbenchGate host={desktop} />);
+    await screen.findByTestId("neko-chill-root");
+
+    fireEvent.click(screen.getByRole("button", { name: "open connections" }));
+
+    expect(useUIStore.getState().activeView).toBe("wiii-connect");
+    expect(useUIStore.getState().wiiiConnectFocusProvider).toBe("gmail");
   });
 });

@@ -1,6 +1,7 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   buildNekoCommandItems,
+  filterNekoCommandMetadata,
   filterNekoCommandItems,
 } from "@/neko-chill/command-items";
 import type { NekoSession } from "@/neko-chill/stores/neko-session-store";
@@ -79,5 +80,26 @@ describe("Neko command items", () => {
       .toEqual(["gãy đi"]);
     expect(filterNekoCommandItems(items, "gẫy").map((item) => item.label))
       .toEqual(["gãy đi"]);
+  });
+
+  it("keeps metadata search on the fast path without reading transcripts", () => {
+    const items = buildNekoCommandItems([
+      session(1, {
+        title: "Phân tích nhanh",
+        messages: [{ id: "m-1", role: "user", text: "nội dung sâu" }],
+      }),
+    ], null, true);
+    const sessionItem = items.find((item) => item.kind === "session");
+    if (!sessionItem || sessionItem.kind !== "session") throw new Error("Missing session item");
+    const transcriptSearchText = vi.fn(sessionItem.transcriptSearchText);
+    sessionItem.transcriptSearchText = transcriptSearchText;
+
+    expect(filterNekoCommandMetadata(items, "nhanh").map((item) => item.label))
+      .toEqual(["Phân tích nhanh"]);
+    expect(filterNekoCommandMetadata(items, "nội dung sâu")).toEqual([]);
+    expect(transcriptSearchText).not.toHaveBeenCalled();
+    expect(filterNekoCommandItems(items, "nội dung sâu").map((item) => item.label))
+      .toEqual(["Phân tích nhanh"]);
+    expect(transcriptSearchText).toHaveBeenCalledTimes(1);
   });
 });

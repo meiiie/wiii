@@ -1,4 +1,12 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import {
+  memo,
+  useDeferredValue,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import {
   Command,
   FolderOpen,
@@ -10,11 +18,13 @@ import {
 } from "lucide-react";
 import {
   buildNekoCommandItems,
+  filterNekoCommandMetadata,
   filterNekoCommandItems,
   type NekoCommandItem,
   type WorkbenchActionName,
 } from "../command-items";
 import type { NekoSession } from "../stores/neko-session-store";
+import { measureWiiiPerformance } from "@/lib/performance-telemetry";
 
 interface NekoCommandCenterProps {
   open: boolean;
@@ -26,6 +36,9 @@ interface NekoCommandCenterProps {
   onSelectSession: (sessionId: string) => void;
   onInsertCommand: (text: string) => void;
 }
+
+const COMMAND_RESULT_LIMIT = 32;
+const COMMAND_RECENT_RESULT_LIMIT = 8;
 
 const GROUP_LABELS: Record<NekoCommandItem["kind"], string> = {
   action: "Thao tác",
@@ -43,13 +56,13 @@ function ItemIcon({ item }: { item: NekoCommandItem }) {
 }
 
 function statusClass(status: NekoSession["status"]): string {
-  if (status === "streaming") return "bg-[var(--nk-accent)] animate-pulse";
+  if (status === "streaming") return "bg-[var(--nk-accent)] nk-status-pulse";
   if (status === "idle") return "bg-[var(--nk-success)]";
   if (status === "error") return "bg-[var(--nk-danger)]";
   return "bg-[var(--nk-ghost)]";
 }
 
-export function NekoCommandCenter({
+function NekoCommandCenterComponent({
   open,
   sessions,
   activeSession,
@@ -63,24 +76,69 @@ export function NekoCommandCenter({
   const [selectedIndex, setSelectedIndex] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
+  const dialogRef = useRef<HTMLDivElement>(null);
+  const returnFocusRef = useRef<HTMLElement | null>(null);
+  const wasOpenRef = useRef(false);
   const items = useMemo(
     () => buildNekoCommandItems(sessions, activeSession, sidebarOpen),
     [activeSession, sessions, sidebarOpen],
   );
-  const filtered = useMemo(() => filterNekoCommandItems(items, query), [items, query]);
+  const metadataMatches = useMemo(
+    () => filterNekoCommandMetadata(items, query),
+    [items, query],
+  );
+  const transcriptQuery = metadataMatches.length === 0 && query.trim() ? query : "";
+  const deferredTranscriptQuery = useDeferredValue(transcriptQuery);
+  const deferredMatches = useMemo(
+    () => deferredTranscriptQuery
+      ? filterNekoCommandItems(items, deferredTranscriptQuery)
+      : [],
+    [deferredTranscriptQuery, items],
+  );
+  const filtered = metadataMatches.length > 0 || !query.trim()
+    ? metadataMatches
+    : deferredTranscriptQuery === transcriptQuery
+      ? deferredMatches
+      : [];
+  const searchPending = Boolean(transcriptQuery)
+    && deferredTranscriptQuery !== transcriptQuery;
+  const visibleItems = useMemo(
+    () => filtered.slice(
+      0,
+      query.trim() ? COMMAND_RESULT_LIMIT : COMMAND_RECENT_RESULT_LIMIT,
+    ),
+    [filtered, query],
+  );
 
   useEffect(() => {
-    if (!open) return;
-    setQuery("");
-    setSelectedIndex(0);
-    requestAnimationFrame(() => inputRef.current?.focus());
+    if (open) {
+      if (!wasOpenRef.current && document.activeElement instanceof HTMLElement) {
+        returnFocusRef.current = document.activeElement;
+      }
+      wasOpenRef.current = true;
+      setQuery("");
+      setSelectedIndex(0);
+      const frame = requestAnimationFrame(() => inputRef.current?.focus());
+      return () => cancelAnimationFrame(frame);
+    }
+    if (wasOpenRef.current) {
+      wasOpenRef.current = false;
+      const frame = requestAnimationFrame(() => returnFocusRef.current?.focus());
+      return () => cancelAnimationFrame(frame);
+    }
+  }, [open]);
+
+  useLayoutEffect(() => {
+    if (open) {
+      measureWiiiPerformance("wiii:command:ready", "wiii:command:open-start");
+    }
   }, [open]);
 
   useEffect(() => {
-    if (selectedIndex >= filtered.length) {
-      setSelectedIndex(Math.max(0, filtered.length - 1));
+    if (selectedIndex >= visibleItems.length) {
+      setSelectedIndex(Math.max(0, visibleItems.length - 1));
     }
-  }, [filtered.length, selectedIndex]);
+  }, [selectedIndex, visibleItems.length]);
 
   useEffect(() => {
     listRef.current
@@ -101,13 +159,13 @@ export function NekoCommandCenter({
   const handleKeyDown = (event: React.KeyboardEvent<HTMLInputElement>) => {
     if (event.key === "ArrowDown") {
       event.preventDefault();
-      setSelectedIndex((current) => Math.min(current + 1, filtered.length - 1));
+      setSelectedIndex((current) => Math.min(current + 1, visibleItems.length - 1));
     } else if (event.key === "ArrowUp") {
       event.preventDefault();
       setSelectedIndex((current) => Math.max(current - 1, 0));
     } else if (event.key === "Enter") {
       event.preventDefault();
-      execute(filtered[selectedIndex]);
+      execute(visibleItems[selectedIndex]);
     } else if (event.key === "Escape") {
       event.preventDefault();
       onClose();
@@ -125,8 +183,27 @@ export function NekoCommandCenter({
         if (event.target === event.currentTarget) onClose();
       }}
     >
-      <div className="w-full max-w-[620px] overflow-hidden rounded-2xl border border-[var(--nk-border-strong)] bg-[var(--nk-composer)] shadow-[0_24px_70px_rgba(20,20,20,0.22)]">
-        <div className="flex h-14 items-center gap-3 border-b border-[var(--nk-border)] px-4">
+      <div
+        ref={dialogRef}
+        className="w-full max-w-[620px] overflow-hidden rounded-2xl border border-[var(--nk-border-strong)] bg-[var(--nk-composer)] shadow-[0_24px_70px_rgba(20,20,20,0.22)]"
+        onKeyDown={(event) => {
+          if (event.key !== "Tab") return;
+          const focusable = dialogRef.current?.querySelectorAll<HTMLElement>(
+            'button:not([disabled]), input:not([disabled]), [tabindex]:not([tabindex="-1"])',
+          );
+          if (!focusable?.length) return;
+          const first = focusable[0];
+          const last = focusable[focusable.length - 1];
+          if (event.shiftKey && document.activeElement === first) {
+            event.preventDefault();
+            last.focus();
+          } else if (!event.shiftKey && document.activeElement === last) {
+            event.preventDefault();
+            first.focus();
+          }
+        }}
+      >
+        <div className="nk-input-field flex h-14 items-center gap-3 rounded-t-xl border-b border-[var(--nk-border)] px-4">
           <Search aria-hidden="true" className="h-4 w-4 shrink-0 text-[var(--nk-text-3)]" />
           <input
             ref={inputRef}
@@ -134,7 +211,8 @@ export function NekoCommandCenter({
             role="searchbox"
             aria-label="Tìm phiên hoặc lệnh"
             aria-controls="neko-command-results"
-            aria-activedescendant={filtered[selectedIndex]?.id}
+            aria-activedescendant={visibleItems[selectedIndex]?.id}
+            aria-busy={searchPending}
             value={query}
             onChange={(event) => {
               setQuery(event.target.value);
@@ -149,13 +227,15 @@ export function NekoCommandCenter({
           </kbd>
         </div>
 
-        <div id="neko-command-results" ref={listRef} role="listbox" className="max-h-[430px] overflow-y-auto p-2">
-          {filtered.length === 0 ? (
+        <div id="neko-command-results" ref={listRef} role="listbox" className="nk-scroll-surface max-h-[430px] overflow-y-auto p-2">
+          {visibleItems.length === 0 ? (
             <div className="px-4 py-10 text-center text-[12.5px] text-[var(--nk-text-3)]">
-              Không tìm thấy phiên hoặc lệnh phù hợp.
+              {searchPending
+                ? "Đang tìm trong nội dung phiên…"
+                : "Không tìm thấy phiên hoặc lệnh phù hợp."}
             </div>
           ) : (["action", "command", "session"] as const).map((kind) => {
-            const groupItems = filtered.filter((item) => item.kind === kind);
+            const groupItems = visibleItems.filter((item) => item.kind === kind);
             if (!groupItems.length) return null;
             return (
               <section key={kind} aria-label={GROUP_LABELS[kind]} className="mb-1 last:mb-0">
@@ -214,9 +294,18 @@ export function NekoCommandCenter({
           <span>↑↓ di chuyển</span>
           <span>Enter chọn</span>
           <span>Esc đóng</span>
-          <span className="ml-auto">Lệnh agent được chèn để bạn xem lại trước khi gửi</span>
+          <span className="ml-auto">
+            {filtered.length > visibleItems.length
+              ? `${visibleItems.length}/${filtered.length} kết quả · nhập thêm để thu hẹp`
+              : "Lệnh agent được chèn để bạn xem lại trước khi gửi"}
+          </span>
         </footer>
       </div>
     </div>
   );
 }
+
+export const NekoCommandCenter = memo(
+  NekoCommandCenterComponent,
+  (previous, next) => !previous.open && !next.open,
+);
