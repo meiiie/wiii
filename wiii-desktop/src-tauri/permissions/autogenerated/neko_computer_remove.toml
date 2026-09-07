@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-neko-computer-remove"
+description = "Enables the neko_computer_remove command without any pre-configured scope."
+commands.allow = ["neko_computer_remove"]
+
+[[permission]]
+identifier = "deny-neko-computer-remove"
+description = "Denies the neko_computer_remove command without any pre-configured scope."
+commands.deny = ["neko_computer_remove"]

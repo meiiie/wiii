@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-neko-computer-browser-navigate"
+description = "Enables the neko_computer_browser_navigate command without any pre-configured scope."
+commands.allow = ["neko_computer_browser_navigate"]
+
+[[permission]]
+identifier = "deny-neko-computer-browser-navigate"
+description = "Denies the neko_computer_browser_navigate command without any pre-configured scope."
+commands.deny = ["neko_computer_browser_navigate"]

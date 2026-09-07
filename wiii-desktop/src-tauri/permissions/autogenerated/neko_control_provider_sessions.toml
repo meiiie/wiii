@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-neko-control-provider-sessions"
+description = "Enables the neko_control_provider_sessions command without any pre-configured scope."
+commands.allow = ["neko_control_provider_sessions"]
+
+[[permission]]
+identifier = "deny-neko-control-provider-sessions"
+description = "Denies the neko_control_provider_sessions command without any pre-configured scope."
+commands.deny = ["neko_control_provider_sessions"]

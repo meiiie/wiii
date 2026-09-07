@@ -9,17 +9,30 @@ use std::{
 };
 
 const MAX_WORKSPACE_FILES: usize = 2_500;
+const MAX_GIT_WORKSPACE_FILES: usize = 20_000;
 const MAX_TEXT_BYTES: u64 = 3 * 1024 * 1024;
 const MAX_MEDIA_BYTES: u64 = 8 * 1024 * 1024;
 const SKIPPED_DIRECTORIES: &[&str] = &[
+    ".cache",
     ".git",
+    ".gradle",
+    ".idea",
+    ".mypy_cache",
     ".next",
+    ".pytest_cache",
+    ".ruff_cache",
     ".turbo",
+    ".tox",
     ".venv",
+    ".yarn",
+    "__pycache__",
     "build",
+    "coverage",
     "dist",
     "node_modules",
     "target",
+    "vendor",
+    "venv",
 ];
 
 #[derive(Serialize)]
@@ -37,6 +50,13 @@ pub struct WorkspaceEntry {
 pub struct WorkspaceListing {
     entries: Vec<WorkspaceEntry>,
     truncated: bool,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WorkspaceResolution {
+    path: String,
+    name: String,
 }
 
 #[derive(Serialize)]
@@ -92,6 +112,35 @@ fn canonical_workspace(workspace: &str) -> Result<PathBuf, String> {
         return Err("Workspace không phải là một thư mục.".into());
     }
     Ok(root)
+}
+
+fn display_workspace_path(path: &Path) -> String {
+    let value = path.to_string_lossy();
+    #[cfg(windows)]
+    {
+        if let Some(rest) = value.strip_prefix(r"\\?\UNC\") {
+            return format!(r"\\{rest}");
+        }
+        if let Some(rest) = value.strip_prefix(r"\\?\") {
+            return rest.to_string();
+        }
+    }
+    value.into_owned()
+}
+
+#[tauri::command]
+pub fn neko_resolve_workspace(workspace: String) -> Result<WorkspaceResolution, String> {
+    let root = canonical_workspace(&workspace)?;
+    let name = root
+        .file_name()
+        .and_then(|value| value.to_str())
+        .filter(|value| !value.is_empty())
+        .unwrap_or(&workspace)
+        .to_string();
+    Ok(WorkspaceResolution {
+        path: display_workspace_path(&root),
+        name,
+    })
 }
 
 fn safe_relative(path: &str) -> Result<PathBuf, String> {
@@ -259,9 +308,64 @@ fn visit_workspace(
     }
 }
 
+fn git_workspace_listing(root: &Path) -> Option<WorkspaceListing> {
+    let output = git(
+        root,
+        &[
+            "ls-files",
+            "-z",
+            "--cached",
+            "--others",
+            "--exclude-standard",
+        ],
+    )
+    .ok()?;
+    if !output.status.success() {
+        return None;
+    }
+
+    let mut entries = Vec::new();
+    let mut truncated = false;
+    for record in output.stdout.split(|byte| *byte == 0) {
+        if record.is_empty() {
+            continue;
+        }
+        if entries.len() >= MAX_GIT_WORKSPACE_FILES {
+            truncated = true;
+            break;
+        }
+        let path = String::from_utf8_lossy(record);
+        let Ok(relative) = safe_relative(&path) else {
+            continue;
+        };
+        let absolute = root.join(&relative);
+        let Ok(metadata) = fs::symlink_metadata(&absolute) else {
+            continue;
+        };
+        if metadata.file_type().is_symlink() || !metadata.is_file() {
+            continue;
+        }
+        entries.push(WorkspaceEntry {
+            path: slash_path(&relative),
+            name: relative
+                .file_name()
+                .and_then(|name| name.to_str())
+                .unwrap_or("file")
+                .to_string(),
+            size: metadata.len(),
+            modified_at: modified_millis(&metadata),
+            language: language_for(&relative),
+        });
+    }
+    Some(WorkspaceListing { entries, truncated })
+}
+
 #[tauri::command]
 pub fn neko_list_workspace_files(workspace: String) -> Result<WorkspaceListing, String> {
     let root = canonical_workspace(&workspace)?;
+    if let Some(listing) = git_workspace_listing(&root) {
+        return Ok(listing);
+    }
     let mut entries = Vec::new();
     let mut visited = HashSet::new();
     let mut truncated = false;
@@ -398,6 +502,30 @@ fn collect_changes(root: &Path) -> Result<WorkspaceChanges, String> {
     })
 }
 
+fn collect_path_change(root: &Path, path: &str) -> Result<Option<WorkspaceChange>, String> {
+    let probe = git(root, &["rev-parse", "--is-inside-work-tree"])?;
+    if !probe.status.success() {
+        return Err("Workspace này chưa phải Git repository.".into());
+    }
+    let output = git(
+        root,
+        &[
+            "status",
+            "--porcelain=v1",
+            "-z",
+            "--untracked-files=all",
+            "--",
+            path,
+        ],
+    )?;
+    if !output.status.success() {
+        return Err(String::from_utf8_lossy(&output.stderr).trim().to_string());
+    }
+    Ok(parse_porcelain_changes(&output.stdout)
+        .into_iter()
+        .find(|change| change.path == path))
+}
+
 #[tauri::command]
 pub fn neko_workspace_changes(workspace: String) -> Result<WorkspaceChanges, String> {
     let root = canonical_workspace(&workspace)?;
@@ -409,15 +537,7 @@ pub fn neko_workspace_diff(workspace: String, path: String) -> Result<WorkspaceD
     let root = canonical_workspace(&workspace)?;
     let relative = safe_relative(&path)?;
     let relative_string = slash_path(&relative);
-    let changes = collect_changes(&root)?;
-    if !changes.is_git {
-        return Err("Workspace này chưa phải Git repository.".into());
-    }
-    let change = changes
-        .changes
-        .iter()
-        .find(|candidate| candidate.path == relative_string)
-        .cloned()
+    let change = collect_path_change(&root, &relative_string)?
         .ok_or_else(|| "File không có thay đổi Git hiện tại.".to_string())?;
 
     let head_spec = format!("HEAD:{relative_string}");
@@ -448,7 +568,14 @@ pub fn neko_workspace_diff(workspace: String, path: String) -> Result<WorkspaceD
 
 #[cfg(test)]
 mod tests {
-    use super::{parse_porcelain_changes, safe_relative};
+    use super::{
+        neko_list_workspace_files, neko_resolve_workspace, parse_porcelain_changes, safe_relative,
+    };
+    use std::{
+        fs,
+        process::Command,
+        time::{SystemTime, UNIX_EPOCH},
+    };
 
     #[test]
     fn rejects_workspace_escape_paths() {
@@ -469,5 +596,69 @@ mod tests {
         assert!(changes[0].staged);
         assert_eq!(changes[1].path, "notes/draft.txt");
         assert_eq!(changes[1].status, "untracked");
+    }
+
+    #[test]
+    fn resolves_workspace_to_one_canonical_directory_identity() {
+        let nonce = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("system clock")
+            .as_nanos();
+        let base = std::env::temp_dir().join(format!(
+            "wiii-workspace-resolution-{}-{nonce}",
+            std::process::id(),
+        ));
+        let workspace = base.join("project");
+        let nested = workspace.join("nested");
+        fs::create_dir_all(&nested).expect("create temporary workspace");
+
+        let resolution = neko_resolve_workspace(nested.join("..").to_string_lossy().into_owned())
+            .expect("resolve workspace");
+
+        assert_eq!(resolution.name, "project");
+        assert_eq!(
+            fs::canonicalize(&resolution.path).expect("canonical resolved path"),
+            fs::canonicalize(&workspace).expect("canonical workspace"),
+        );
+
+        fs::remove_dir_all(&base).expect("remove temporary workspace");
+    }
+
+    #[test]
+    fn git_workspace_index_respects_ignore_rules() {
+        let nonce = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("system clock")
+            .as_nanos();
+        let workspace = std::env::temp_dir().join(format!(
+            "wiii-workspace-index-{}-{nonce}",
+            std::process::id(),
+        ));
+        fs::create_dir_all(workspace.join("src")).expect("create source directory");
+        fs::create_dir_all(workspace.join("node_modules/package"))
+            .expect("create ignored directory");
+        fs::write(workspace.join(".gitignore"), "node_modules/\n").expect("write ignore rules");
+        fs::write(workspace.join("src/main.ts"), "export {};\n").expect("write source file");
+        fs::write(workspace.join("node_modules/package/index.js"), "ignored\n")
+            .expect("write ignored file");
+        let initialized = Command::new("git")
+            .arg("-C")
+            .arg(&workspace)
+            .args(["init", "--quiet"])
+            .status()
+            .expect("start git");
+        assert!(initialized.success());
+
+        let listing = neko_list_workspace_files(workspace.to_string_lossy().into_owned())
+            .expect("list workspace");
+        let paths = listing
+            .entries
+            .iter()
+            .map(|entry| entry.path.as_str())
+            .collect::<Vec<_>>();
+        assert!(paths.contains(&"src/main.ts"));
+        assert!(!paths.iter().any(|path| path.starts_with("node_modules/")));
+
+        fs::remove_dir_all(&workspace).expect("remove temporary workspace");
     }
 }

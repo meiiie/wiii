@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-neko-computer-history-set-enabled"
+description = "Enables the neko_computer_history_set_enabled command without any pre-configured scope."
+commands.allow = ["neko_computer_history_set_enabled"]
+
+[[permission]]
+identifier = "deny-neko-computer-history-set-enabled"
+description = "Denies the neko_computer_history_set_enabled command without any pre-configured scope."
+commands.deny = ["neko_computer_history_set_enabled"]

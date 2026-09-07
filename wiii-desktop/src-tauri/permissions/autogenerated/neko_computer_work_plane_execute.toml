@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-neko-computer-work-plane-execute"
+description = "Enables the neko_computer_work_plane_execute command without any pre-configured scope."
+commands.allow = ["neko_computer_work_plane_execute"]
+
+[[permission]]
+identifier = "deny-neko-computer-work-plane-execute"
+description = "Denies the neko_computer_work_plane_execute command without any pre-configured scope."
+commands.deny = ["neko_computer_work_plane_execute"]

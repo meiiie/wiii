@@ -6,6 +6,7 @@
   "permissions": [
     "allow-neko-control-provider-list",
     "allow-neko-control-provider-profiles",
+    "allow-neko-control-provider-sessions",
     "allow-neko-control-session-list",
     "allow-neko-control-session-start",
     "allow-neko-control-session-write",
