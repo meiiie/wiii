@@ -1,6 +1,7 @@
 /**
  * SSE streaming hook — connects chat store to SSE parser.
- * Sprint 150: StreamBuffer integration for smooth token rendering.
+ * Provider deltas are presented as short semantic micro-blocks so streaming
+ * stays responsive without a character-by-character typewriter effect.
  */
 import { useCallback, useEffect, useRef } from "react";
 import { sendMessageStream } from "@/api/chat";
@@ -33,7 +34,7 @@ import {
   type RequestModelSelection,
 } from "@/stores/model-store";
 import { useAuthStore } from "@/stores/auth-store";
-import { StreamBuffer } from "@/lib/stream-buffer";
+import { SemanticStreamBuffer } from "@/lib/semantic-stream-buffer";
 import { stripWiiiInternalMarkup } from "@/lib/internal-markup";
 import { normalizeSourceReferences } from "@/lib/source-references";
 import {
@@ -690,8 +691,8 @@ export function buildHostActionResultRequest(
 
 export function useSSEStream() {
   const abortRef = useRef<AbortController | null>(null);
-  // Sprint 150: Token smoothing buffers
-  const answerBufferRef = useRef<StreamBuffer | null>(null);
+  // Presentation-only buffers; transport and durable event truth stay raw.
+  const answerBufferRef = useRef<SemanticStreamBuffer | null>(null);
   // v4.0 F7 (2026-05-06) — Clicky-pattern inline `[POINT:...]` tag.
   // Shadow accumulator captures FULL unstripped answer text (with tag
   // intact) so onDone can parse + dispatch cursor without round-tripping
@@ -872,7 +873,7 @@ export function useSSEStream() {
       }
     }
   }, []);
-  const thinkingBufferRef = useRef<StreamBuffer | null>(null);
+  const thinkingBufferRef = useRef<SemanticStreamBuffer | null>(null);
   // Track current thinking node for buffer flush callback
   const thinkingNodeRef = useRef<string | undefined>(undefined);
   const thinkingMetaRef = useRef<DisplayPresentationMeta | undefined>(undefined);
@@ -1194,14 +1195,10 @@ export function useSSEStream() {
       await Promise.race([pointyFastPathPromise, sleep(350)]);
     }
 
-    // Sprint 150: Create fresh StreamBuffer instances for this stream
-    answerBufferRef.current = new StreamBuffer({
+    // Presentation-only semantic micro-blocks: the user sees a readable
+    // phrase quickly, but never a character-by-character typewriter effect.
+    answerBufferRef.current = new SemanticStreamBuffer({
       onFlush: (chars) => useChatStore.getState().appendStreamingContent(chars),
-      initialHoldMs: 80,
-      minCharsPerFrame: 3,
-      maxCharsPerFrame: 28,
-      targetBufferDepth: 40,
-      easeInFrames: 15,
     });
     // v7.0 F12 — reset streaming dispatch state + queue for new stream.
     fullAnswerTextRef.current = "";
@@ -1211,7 +1208,7 @@ export function useSSEStream() {
     allowEmbodiedDispatchRef.current = allowPointyEmbodiedDispatch;
     lastParsedLenRef.current = 0;
     pointyModulesRef.current?.clearDispatchQueue();
-    thinkingBufferRef.current = new StreamBuffer({
+    thinkingBufferRef.current = new SemanticStreamBuffer({
       onFlush: (chars) => {
         useChatStore.getState().appendThinkingDelta(chars, thinkingNodeRef.current, thinkingMetaRef.current);
         useChatStore.getState().appendPhaseThinkingDelta(
@@ -1220,11 +1217,6 @@ export function useSSEStream() {
           thinkingMetaRef.current?.stepId,
         );
       },
-      initialHoldMs: 70,
-      minCharsPerFrame: 2,
-      maxCharsPerFrame: 20,
-      targetBufferDepth: 28,
-      easeInFrames: 10,
     });
 
     // D3: Consistent buffer flush helper — drain both buffers before any block boundary

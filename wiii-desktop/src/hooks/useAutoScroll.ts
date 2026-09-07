@@ -9,6 +9,7 @@ import { useEffect, useRef, useCallback, useState } from "react";
 export function useAutoScroll(dependency: unknown) {
   const containerRef = useRef<HTMLDivElement>(null);
   const isUserScrolledUp = useRef(false);
+  const scrollFrameRef = useRef(0);
   const [isAtBottom, setIsAtBottom] = useState(true);
 
   const scrollToBottom = useCallback((behavior: ScrollBehavior = "smooth") => {
@@ -22,20 +23,16 @@ export function useAutoScroll(dependency: unknown) {
     }
   }, []);
 
-  // Auto-scroll when dependency changes (new content)
-  // Slight delay (50ms) lets message entry animations settle before scrolling
+  // Follow streamed content once per paint. Smooth scrolling per token creates
+  // overlapping animations and makes the transcript feel delayed.
   useEffect(() => {
-    if (containerRef.current && !isUserScrolledUp.current) {
-      const timer = setTimeout(() => {
-        if (containerRef.current) {
-          containerRef.current.scrollTo({
-            top: containerRef.current.scrollHeight,
-            behavior: "smooth",
-          });
-        }
-      }, 50);
-      return () => clearTimeout(timer);
-    }
+    if (!containerRef.current || isUserScrolledUp.current) return;
+    const frame = requestAnimationFrame(() => {
+      const container = containerRef.current;
+      if (!container || isUserScrolledUp.current) return;
+      container.scrollTo({ top: container.scrollHeight, behavior: "auto" });
+    });
+    return () => cancelAnimationFrame(frame);
   }, [dependency]);
 
   // Detect user scroll
@@ -43,16 +40,24 @@ export function useAutoScroll(dependency: unknown) {
     const container = containerRef.current;
     if (!container) return;
 
+    const syncScrollState = () => {
+      scrollFrameRef.current = 0;
+      const distanceFromBottom = container.scrollHeight - container.scrollTop - container.clientHeight;
+      const atBottom = distanceFromBottom <= 200;
+      isUserScrolledUp.current = !atBottom;
+      setIsAtBottom((current) => current === atBottom ? current : atBottom);
+    };
     const handleScroll = () => {
-      const { scrollTop, scrollHeight, clientHeight } = container;
-      const distanceFromBottom = scrollHeight - scrollTop - clientHeight;
-      const scrolledUp = distanceFromBottom > 200;
-      isUserScrolledUp.current = scrolledUp;
-      setIsAtBottom(!scrolledUp);
+      if (scrollFrameRef.current) return;
+      scrollFrameRef.current = requestAnimationFrame(syncScrollState);
     };
 
-    container.addEventListener("scroll", handleScroll);
-    return () => container.removeEventListener("scroll", handleScroll);
+    container.addEventListener("scroll", handleScroll, { passive: true });
+    return () => {
+      container.removeEventListener("scroll", handleScroll);
+      if (scrollFrameRef.current) cancelAnimationFrame(scrollFrameRef.current);
+      scrollFrameRef.current = 0;
+    };
   }, []);
 
   return { containerRef, scrollToBottom, isAtBottom };

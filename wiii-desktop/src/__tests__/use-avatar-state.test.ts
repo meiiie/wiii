@@ -47,6 +47,7 @@ describe("useAvatarState — state derivation", () => {
   it("returns idle by default", () => {
     const { result } = renderHook(() => useAvatarState());
     expect(result.current.state).toBe("idle");
+    expect(vi.getTimerCount()).toBe(0);
   });
 
   it("returns listening when input is focused", () => {
@@ -261,18 +262,20 @@ describe("useAvatarState — soul emotion lifecycle", () => {
     expect(result.current.soulEmotion).toBeNull();
   });
 
-  it("polling activates for soul decay window", () => {
+  it("schedules one deadline wake-up for soul decay", () => {
     const soul = { mood: "excited" as const, face: {}, intensity: 0.5 };
     useCharacterStore.setState({ soulEmotion: soul, soulEmotionTimestamp: Date.now() });
 
     const { result } = renderHook(() => useAvatarState());
     expect(result.current.soulEmotion).toEqual(soul);
+    expect(vi.getTimerCount()).toBe(1);
 
     // Advance past 30s — polling should detect and decay
     act(() => {
       vi.advanceTimersByTime(31000);
     });
     expect(result.current.soulEmotion).toBeNull();
+    expect(vi.getTimerCount()).toBe(0);
   });
 });
 
