@@ -27,6 +27,7 @@ TARGET_TRUST_STATES = {
 }
 
 RELEASE_SCOPES = {
+    "windows": ("windows-x64",),
     "complete": tuple(TARGET_SUFFIXES),
     "windows-only-emergency": ("windows-x64",),
 }

@@ -88,6 +88,42 @@ class DesktopReleaseVerifierTests(unittest.TestCase):
             )
             self.assertEqual(result["targets"], ["windows-x64"])
 
+    def test_planned_windows_release_retains_all_integrity_checks(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            output_root = self._create_release(Path(directory), ("windows-x64",), "unsigned")
+            arguments = dict(root=output_root, version="1.2.0", git_sha=self.git_sha,
+                             release_scope="windows", windows_signing="unsigned")
+            result = verifier.verify_release_assets(**arguments)
+            self.assertEqual(result["targets"], ["windows-x64"])
+            self.assertEqual(len(result["binaries"]), 1)
+            self.assertEqual(len(result["manifests"]), 1)
+            with self.assertRaisesRegex(ValueError, "inventory mismatch"):
+                verifier.verify_release_assets(**{**arguments, "release_scope": "complete"})
+            with self.assertRaisesRegex(ValueError, "unexpected git_sha"):
+                verifier.verify_release_assets(**{**arguments, "git_sha": "d" * 40})
+            binary = next(output_root.rglob("*.exe"))
+            binary.write_bytes(b"tampered")
+            with self.assertRaisesRegex(ValueError, "checksum mismatch"):
+                verifier.verify_release_assets(**arguments)
+
+    def test_planned_windows_release_rejects_extra_platform_assets(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            output_root = self._create_release(Path(directory), ("windows-x64", "linux-x64"), "unsigned")
+            with self.assertRaisesRegex(ValueError, "unexpected:"):
+                verifier.verify_release_assets(root=output_root, version="1.2.0", git_sha=self.git_sha,
+                                               release_scope="windows", windows_signing="unsigned")
+
+    def test_planned_windows_release_does_not_allow_false_trust(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            output_root = self._create_release(Path(directory), ("windows-x64",), "unsigned")
+            manifest_path = next(output_root.rglob("*-release-manifest.json"))
+            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+            manifest["trust_state"] = "authenticode-signed"
+            manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+            with self.assertRaisesRegex(ValueError, "unexpected trust_state"):
+                verifier.verify_release_assets(root=output_root, version="1.2.0", git_sha=self.git_sha,
+                                               release_scope="windows", windows_signing="unsigned")
+
     def test_unsigned_complete_release_keeps_inventory_and_integrity_gates(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             output_root = self._create_release(Path(directory), tuple(verifier.TARGET_SUFFIXES), "unsigned")
