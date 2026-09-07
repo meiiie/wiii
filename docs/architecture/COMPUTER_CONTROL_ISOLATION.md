@@ -1,9 +1,10 @@
 # Computer control isolation — release correction #959
 
-Status: In progress; not a closed security finding or release acceptance.
+Status: Private transport and owned-input revocation verified locally;
+release integration and broader guest isolation remain separate.
 
-The owner approved completing the remaining runtime corrections before the
-official Windows/Linux/macOS release. The signed-in Computer and its volume
+The owner narrowed the first official release to Windows on 2026-09-07 and
+prioritized revocation of Wiii-scheduled input. The signed-in Computer and its volume
 are outside test scope. Use disposable environments only.
 
 ## First boundary: Wiii control transport
@@ -28,14 +29,46 @@ Profile storage and source mounts are unchanged. A new pack identity prevents
 silent reuse of the old listener; failed replacement retains the existing
 provider rollback behavior.
 
-## Remaining boundary — do not conflate with the first
+## Second boundary: revocable Wiii input execution
+
+Pack `semantic-v42` starts with no active input authority. The native seat
+service activates an opaque lease through the private transport; every action
+must present that exact lease again at execution time, after waiting in the
+semantic queue. A stale or revoked lease cannot reactivate itself.
+
+Seat transitions use a separate native mutex, not the mutex held by running
+actions. Human takeover and release first cancel provider input, then update
+the durable seat. Project revocation, switching, suspend, reset and removal
+also enter this barrier before waiting for active work. Ordinary source/Office
+work retains its separate Project authority; display handoff does not revoke it.
+
+The provider cancellation route bypasses the action queue. It invalidates the
+lease before waiting for the active action to become quiescent. Every CDP send,
+native accessibility mutation and app launch checks cancellation at dispatch;
+key holds and waits are interruptible. Cleanup releases keys/buttons even when
+their press response was lost. Owned stepped-clock workers are terminated and
+joined, and paused targets are resumed before acknowledging takeover.
+
+An acknowledgement means the old Wiii input executor is quiescent, including
+held-input cleanup. A timeout, mismatched active authority or unconfirmed cleanup
+must not return success or enable a new lease. Repeating release can reconcile
+an uncertain response without repeating the interrupted action. The action
+reports interruption, not rollback: effects already delivered may remain and a
+fresh observation is required. Observe itself never grants control.
+
+Profile files, sign-ins and ordinary application processes are preserved. The
+standalone semantic `act` CLI is no longer an authority bypass. Tiny scoped
+workstation observations preserve their scope when resolving a launcher action;
+the cancellation test must not disable stale-state checks to reach dispatch.
+
+## Separate threat boundary
 
 This transport correction alone does not isolate X11, AT-SPI, Chrome DevTools
 or arbitrary programs already launched inside the shared guest desktop.
-Human takeover of Wiii does not by itself stop an application's independent
-automation. #959 remains open until those control surfaces are addressed or
-a different explicitly approved execution boundary is implemented. Do not
-describe a private socket as a hostile-application sandbox.
+Human takeover stops Wiii's owned input execution, not an application's
+independent automation or arbitrary code it already runs. This pilot is a
+same-user desktop, not a hostile-application or multi-tenant sandbox. Do not
+claim cancellation of all guest programs from the private socket or input lease.
 
 ## Verification
 
@@ -57,5 +90,25 @@ describe a private socket as a hostile-application sandbox.
 - Windows: 132 native Neko unit cases passed, one Docker case ignored in that
   suite and then executed separately as above; 114 semantic cases ran with one
   POSIX-only case skipped. CI adds a separate Linux kernel-boundary job.
-- Separate retained-automation and takeover tests are mandatory before #959
-  can close. Current Windows host packaging does not prove Unix harness support.
+- 2026-09-07, v42: ten new input-revocation cases passed, including concurrent
+  HTTP action/revoke, queued old requests, lost press responses, cleanup failure,
+  mismatched authority and timeout reconciliation. Semantic contracts: 114
+  passed, one POSIX case skipped on Windows. Eight isolated Linux kernel/private
+  transport cases passed on the actual v42 image.
+- Native Windows + actual Chrome: a four-step/eight-second input sequence was
+  interrupted; every received key-down had a matching key-up. The final run
+  stopped after one key pair and acknowledged native takeover in 954 ms. An
+  earlier run with duplicate cleanup took 5,645 ms and stopped after two pairs.
+  These are individual native-call timings, not UI end-to-end or a latency SLA.
+  Both native and provider paths refused subsequent old-lease input; the page
+  event log did not change after acknowledgement. The fixture profile marker
+  survived. Only the disposable container, volume and temporary directory were
+  removed. No signed-in profile or user Computer was reset.
+- The first live attempts correctly failed on a scoped-launcher stale-state
+  defect before input delivery. Scope preservation was fixed with its own
+  regression; stale validation was not weakened to make the takeover test pass.
+- Final native Neko suite: 132 passed, two live tests ignored in the ordinary
+  suite, five unrelated cases filtered; the takeover live test ran separately
+  as above. Clippy passed with warnings denied. The v42 image was rebuilt.
+- Unix harness execution is deferred, not a blocker for Windows-only release.
+  Installed desktop/real ACP session acceptance is not inferred from these tests.

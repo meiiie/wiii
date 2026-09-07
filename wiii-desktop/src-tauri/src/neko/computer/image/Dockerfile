@@ -66,6 +66,7 @@ RUN useradd --create-home --uid 10001 --shell /bin/bash neko \
 COPY --chown=root:root wiii.html /usr/share/novnc/wiii.html
 COPY --chown=root:root semantic_bridge.py /usr/local/lib/wiii-computer/semantic_bridge.py
 COPY --chown=root:root control_transport.py /usr/local/lib/wiii-computer/control_transport.py
+COPY --chown=root:root input_authority.py /usr/local/lib/wiii-computer/input_authority.py
 COPY --chown=root:root work_plane_bridge.py /usr/local/lib/wiii-computer/work_plane_bridge.py
 COPY --chown=root:root project_paths.py /usr/local/lib/wiii-computer/project_paths.py
 COPY --chown=root:root panel.conf /usr/share/wiii-computer/panel.conf

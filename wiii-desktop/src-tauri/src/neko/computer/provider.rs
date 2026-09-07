@@ -8,7 +8,7 @@ use super::model::{
 use super::watcher::WatcherBatch;
 use super::work_plane::WorkPlaneAdapter;
 use serde::Serialize;
-use serde_json::Value;
+use serde_json::{json, Value};
 use std::ffi::{OsStr, OsString};
 use std::fs;
 use std::io::{Read, Write};
@@ -18,8 +18,9 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::thread;
 use std::time::{Duration, Instant};
 
-const IMAGE_REF: &str = "wiii/web-computer:semantic-v41";
-const OBSOLETE_IMAGE_REFS: [&str; 39] = [
+const IMAGE_REF: &str = "wiii/web-computer:semantic-v42";
+const OBSOLETE_IMAGE_REFS: [&str; 40] = [
+    "wiii/web-computer:semantic-v41",
     "wiii/web-computer:semantic-v40",
     "wiii/web-computer:semantic-v39",
     "wiii/web-computer:semantic-v38",
@@ -61,9 +62,9 @@ const OBSOLETE_IMAGE_REFS: [&str; 39] = [
     "wiii/local-computer:pilot-v1",
 ];
 const OWNER_LABEL: &str = "neko-computer-v1";
-const PACK_ID: &str = "web-computer-semantic-v41";
+const PACK_ID: &str = "web-computer-semantic-v42";
 const PACK_SCHEMA_VERSION: &str = "wiii-computer-pack.v2";
-const PACK_VERSION: &str = "semantic-v41";
+const PACK_VERSION: &str = "semantic-v42";
 const PACK_CHANNEL: &str = "preview";
 const PROFILE_SCHEMA_VERSION: u32 = 1;
 pub(crate) const CORE_PACKAGE_ID: &str = "web-computer-core";
@@ -140,6 +141,8 @@ pub(crate) trait ComputerProvider: Send + Sync {
         request: &SemanticObserveRequest,
     ) -> Result<SemanticSnapshot, String>;
     fn semantic_act(&self, request: &SemanticActRequest) -> Result<SemanticActResult, String>;
+    fn activate_input(&self, environment_id: &str, lease_id: &str) -> Result<(), String>;
+    fn revoke_input(&self, environment_id: &str, lease_id: &str) -> Result<(), String>;
     fn app_events_poll(
         &self,
         environment_id: &str,
@@ -148,7 +151,6 @@ pub(crate) trait ComputerProvider: Send + Sync {
         wait_ms: u32,
         stopped: Option<&AtomicBool>,
     ) -> Result<WatcherBatch, String>;
-    fn resume_realtime(&self, environment_id: &str) -> Result<(), String>;
     fn terminal_exec(
         &self,
         environment_id: &str,
@@ -724,6 +726,34 @@ impl LocalDockerComputerProvider {
             .map_err(|error| format!("decode {operation} failed: {error}"))
     }
 
+    fn input_authority(
+        &self,
+        environment_id: &str,
+        lease_id: &str,
+        revoke: bool,
+    ) -> Result<(), String> {
+        if revoke && !self.container_exists(&ProviderNames::new(environment_id).container)? {
+            return Ok(());
+        }
+        let response = self.semantic_bridge_request(
+            environment_id,
+            if revoke {
+                "input/revoke"
+            } else {
+                "input/activate"
+            },
+            &json!({ "leaseId": lease_id }),
+            "Computer input authority",
+            None,
+        )?;
+        if response.get("status").and_then(Value::as_str) != Some("ok")
+            || (revoke && response.get("quiescent").and_then(Value::as_bool) != Some(true))
+        {
+            return Err("Computer input authority was not confirmed".to_string());
+        }
+        Ok(())
+    }
+
     fn work_plane_bridge<T: Serialize>(
         &self,
         environment_id: &str,
@@ -760,33 +790,6 @@ impl LocalDockerComputerProvider {
             return Err("Work Plane provider rejected the request".to_string());
         }
         Ok(envelope)
-    }
-
-    pub(crate) fn resume_realtime(&self, environment_id: &str) -> Result<(), String> {
-        let docker = self.require_daemon()?;
-        let names = ProviderNames::new(environment_id);
-        if !self.container_exists(&names.container)? {
-            return Ok(());
-        }
-        let output = run_bounded(
-            docker,
-            [
-                OsString::from("exec"),
-                OsString::from("--user"),
-                OsString::from("10001:10001"),
-                OsString::from(&names.container),
-                OsString::from("python3"),
-                OsString::from("/usr/local/lib/wiii-computer/semantic_bridge.py"),
-                OsString::from("clock-resume"),
-            ],
-            None,
-            SEMANTIC_TIMEOUT,
-            MAX_CONTROL_OUTPUT,
-        )?;
-        if !output.success() {
-            return Err(nonempty_error("Computer realtime resume failed", &output));
-        }
-        Ok(())
     }
 
     pub(crate) fn terminal_exec(
@@ -889,7 +892,7 @@ impl LocalDockerComputerProvider {
     }
 
     fn materialize_build_context(&self) -> Result<PathBuf, String> {
-        let context = self.state_root.join("image-semantic-v41");
+        let context = self.state_root.join("image-semantic-v42");
         fs::create_dir_all(&context)
             .map_err(|error| format!("create Wiii computer image context failed: {error}"))?;
         write_if_changed(
@@ -915,6 +918,10 @@ impl LocalDockerComputerProvider {
         write_if_changed(
             &context.join("control_transport.py"),
             include_bytes!("image/control_transport.py"),
+        )?;
+        write_if_changed(
+            &context.join("input_authority.py"),
+            include_bytes!("image/input_authority.py"),
         )?;
         write_if_changed(
             &context.join("work_plane_bridge.py"),
@@ -1417,8 +1424,12 @@ impl ComputerProvider for LocalDockerComputerProvider {
         )
     }
 
-    fn resume_realtime(&self, environment_id: &str) -> Result<(), String> {
-        LocalDockerComputerProvider::resume_realtime(self, environment_id)
+    fn activate_input(&self, environment_id: &str, lease_id: &str) -> Result<(), String> {
+        self.input_authority(environment_id, lease_id, false)
+    }
+
+    fn revoke_input(&self, environment_id: &str, lease_id: &str) -> Result<(), String> {
+        self.input_authority(environment_id, lease_id, true)
     }
 
     fn terminal_exec(
@@ -1993,19 +2004,27 @@ mod tests {
                 known_node_versions: Vec::new(),
                 visual_ref: None,
             })?;
-            if !snapshot.nodes.iter().any(|node| node.node_ref == "app:browser") {
-                return Err("private control transport did not return the Browser launcher".to_string());
+            if !snapshot
+                .nodes
+                .iter()
+                .any(|node| node.node_ref == "app:browser")
+            {
+                return Err(
+                    "private control transport did not return the Browser launcher".to_string(),
+                );
             }
-            let ignored_config = provider.terminal_exec(
-                &environment_id,
-                "test ! -e /tmp/wiii-curlrc-bypass",
-            )?;
+            let ignored_config =
+                provider.terminal_exec(&environment_id, "test ! -e /tmp/wiii-curlrc-bypass")?;
             if ignored_config.exit_code != Some(0) {
-                return Err("privileged control consumed workload-owned curl configuration".to_string());
+                return Err(
+                    "privileged control consumed workload-owned curl configuration".to_string(),
+                );
             }
             let workload = provider.terminal_exec(&environment_id, "id -u")?;
             if workload.exit_code != Some(0) || workload.stdout.trim() != "10001" {
-                return Err("Terminal workload did not retain its unprivileged identity".to_string());
+                return Err(
+                    "Terminal workload did not retain its unprivileged identity".to_string()
+                );
             }
             let bypass = provider.terminal_exec(
                 &environment_id,

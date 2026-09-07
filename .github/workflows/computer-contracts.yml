@@ -8,6 +8,7 @@ on:
       - 'wiii-desktop/src-tauri/src/neko/computer/image/**'
       - 'wiii-desktop/scripts/test-semantic-bridge-contract.py'
       - 'wiii-desktop/scripts/test-computer-control-transport.py'
+      - 'wiii-desktop/scripts/test-computer-input-revocation.py'
       - 'wiii-desktop/scripts/test-work-plane-bridge.py'
   push:
     branches: [main]
@@ -16,6 +17,7 @@ on:
       - 'wiii-desktop/src-tauri/src/neko/computer/image/**'
       - 'wiii-desktop/scripts/test-semantic-bridge-contract.py'
       - 'wiii-desktop/scripts/test-computer-control-transport.py'
+      - 'wiii-desktop/scripts/test-computer-input-revocation.py'
       - 'wiii-desktop/scripts/test-work-plane-bridge.py'
 
 permissions:
@@ -37,6 +39,7 @@ jobs:
       - name: Verify semantic and work-plane contracts without a live Computer
         run: |
           python -B wiii-desktop/scripts/test-semantic-bridge-contract.py -v
+          python -B wiii-desktop/scripts/test-computer-input-revocation.py -v
           python -B wiii-desktop/scripts/test-work-plane-bridge.py -v
 
   control-isolation:

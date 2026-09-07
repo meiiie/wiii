@@ -28,6 +28,10 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard};
 
+#[cfg(test)]
+#[path = "service_revocation_tests.rs"]
+mod revocation_tests;
+
 #[derive(Clone)]
 pub struct NekoComputerService {
     history: ComputerHistory,
@@ -36,6 +40,7 @@ pub struct NekoComputerService {
     provider: Arc<dyn ComputerProvider>,
     work_plane: Arc<dyn WorkPlaneAdapter>,
     operations: Arc<Mutex<()>>,
+    seats: Arc<Mutex<()>>,
 }
 
 impl NekoComputerService {
@@ -55,6 +60,7 @@ impl NekoComputerService {
             provider: provider.clone(),
             work_plane: provider,
             operations: Arc::new(Mutex::new(())),
+            seats: Arc::new(Mutex::new(())),
         })
     }
 
@@ -127,6 +133,12 @@ impl NekoComputerService {
     }
 
     pub fn revoke_project(&self, request: ComputerProjectRevokeRequest) -> Result<(), String> {
+        let _seat_guard = self.seat_guard();
+        if let Some(binding) = self.journal.coworker_binding(&request.coworker_id)? {
+            if binding.active_project_id.as_deref() == Some(request.project_id.as_str()) {
+                self.revoke_active_input(&binding.environment_id)?;
+            }
+        }
         let _guard = self.operation_guard();
         let target = project_operation_target(&request.coworker_id, &request.project_id);
         match self
@@ -172,7 +184,7 @@ impl NekoComputerService {
     }
 
     pub fn ensure(&self, request: ComputerEnsureRequest) -> Result<ComputerEnvironment, String> {
-        let _guard = self.operation_guard();
+        let _seat_guard = self.seat_guard();
         let canonical = canonical_project(&request.project_path)?;
         let project_path = canonical.to_string_lossy().to_string();
         if !self
@@ -204,6 +216,10 @@ impl NekoComputerService {
             RequestDecision::Execute => {}
         }
 
+        if self.journal.environment(&environment_id)?.is_some() {
+            self.revoke_active_input(&environment_id)?;
+        }
+        let _guard = self.operation_guard();
         let project_name = requested_project_name(&request.project_name, &canonical);
         let doctor = self.provider.doctor();
         let resources = if let Some(existing) = self.journal.environment(&environment_id)? {
@@ -401,7 +417,7 @@ impl NekoComputerService {
     }
 
     pub fn remove(&self, request: ComputerRemoveRequest) -> Result<(), String> {
-        let _guard = self.operation_guard();
+        let _seat_guard = self.seat_guard();
         match self.journal.begin_request(
             &request.request_id,
             "computer/remove",
@@ -439,6 +455,8 @@ impl NekoComputerService {
             ));
         }
         self.journal.mark_side_effect_started(&request.request_id)?;
+        self.revoke_active_input(&request.environment_id)?;
+        let _guard = self.operation_guard();
         if let Err(error) = self.provider.destroy(&request.environment_id) {
             return Err(self.uncertain(&request.request_id, &request.environment_id, error));
         }
@@ -455,6 +473,8 @@ impl NekoComputerService {
         &self,
         request: ComputerLifecycleRequest,
     ) -> Result<ComputerEnvironment, String> {
+        let _seat_guard = self.seat_guard();
+        self.revoke_active_input(&request.environment_id)?;
         let _guard = self.operation_guard();
         let environment = self.require_environment(&request.environment_id)?;
         match self.journal.begin_request(
@@ -492,6 +512,7 @@ impl NekoComputerService {
     }
 
     pub fn resume(&self, request: ComputerLifecycleRequest) -> Result<ComputerEnvironment, String> {
+        let _seat_guard = self.seat_guard();
         let _guard = self.operation_guard();
         let environment = self.require_granted_environment(&request.environment_id)?;
         match self.journal.begin_request(
@@ -537,7 +558,7 @@ impl NekoComputerService {
     }
 
     pub fn reset(&self, request: ComputerResetRequest) -> Result<ComputerEnvironment, String> {
-        let _guard = self.operation_guard();
+        let _seat_guard = self.seat_guard();
         let environment = self.require_granted_environment(&request.environment_id)?;
         let expected = if self
             .journal
@@ -553,6 +574,8 @@ impl NekoComputerService {
                 "Type {expected:?} to reset only computer-owned state"
             ));
         }
+        self.revoke_active_input(&request.environment_id)?;
+        let _guard = self.operation_guard();
         match self.journal.begin_request(
             &request.request_id,
             "computer/reset",
@@ -601,8 +624,11 @@ impl NekoComputerService {
     }
 
     pub fn acquire_seat(&self, request: SeatAcquireRequest) -> Result<DisplaySeat, String> {
-        let _guard = self.operation_guard();
-        self.require_environment(&request.environment_id)?;
+        let _guard = self.seat_guard();
+        let environment = self.require_environment(&request.environment_id)?;
+        if environment.state != ComputerState::Ready {
+            return Err("Computer must be ready before acquiring control".to_string());
+        }
         match self.journal.begin_request(
             &request.request_id,
             "computer/seat/acquire",
@@ -620,7 +646,7 @@ impl NekoComputerService {
         }
         self.journal.mark_side_effect_started(&request.request_id)?;
         if request.user_controlled {
-            let _ = self.provider.resume_realtime(&request.environment_id);
+            self.revoke_active_input(&request.environment_id)?;
         }
         let seat = match self.journal.acquire_seat(
             &request.environment_id,
@@ -636,6 +662,16 @@ impl NekoComputerService {
                 ));
             }
         };
+        if !request.user_controlled {
+            if let Err(error) = self.provider.activate_input(
+                &request.environment_id,
+                seat.lease_id
+                    .as_deref()
+                    .ok_or("Computer lease is missing")?,
+            ) {
+                return Err(self.uncertain(&request.request_id, &request.environment_id, error));
+            }
+        }
         if let Err(error) = self.journal.complete_request(
             &request.request_id,
             &serde_json::to_value(&seat)
@@ -647,8 +683,8 @@ impl NekoComputerService {
     }
 
     pub fn release_seat(&self, request: SeatReleaseRequest) -> Result<DisplaySeat, String> {
-        let _guard = self.operation_guard();
-        self.require_environment(&request.environment_id)?;
+        let _guard = self.seat_guard();
+        let environment = self.require_environment(&request.environment_id)?;
         match self.journal.begin_request(
             &request.request_id,
             "computer/seat/release",
@@ -659,13 +695,18 @@ impl NekoComputerService {
                     .map_err(|error| format!("decode display release replay failed: {error}"));
             }
             RequestDecision::RecordedError(code) => return Err(code),
-            RequestDecision::UnknownOutcome => {
-                return Err(unknown_outcome(&request.environment_id))
-            }
+            RequestDecision::UnknownOutcome => {}
             RequestDecision::Execute => {}
         }
+        if environment.seat.lease_id.as_deref() != Some(request.lease_id.as_str()) {
+            return Err(self.record_local_rejection(
+                &request.request_id,
+                "seat_release_rejected",
+                "Computer display lease is no longer current".to_string(),
+            ));
+        }
         self.journal.mark_side_effect_started(&request.request_id)?;
-        let _ = self.provider.resume_realtime(&request.environment_id);
+        self.revoke_active_input(&request.environment_id)?;
         let seat = match self
             .journal
             .release_seat(&request.environment_id, &request.lease_id)
@@ -1288,6 +1329,27 @@ impl NekoComputerService {
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner())
     }
+
+    fn seat_guard(&self) -> MutexGuard<'_, ()> {
+        self.seats
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+    }
+
+    fn revoke_active_input(&self, environment_id: &str) -> Result<(), String> {
+        let environment = self.require_environment(environment_id)?;
+        if environment.seat.state == SeatState::AgentControlled {
+            self.provider.revoke_input(
+                environment_id,
+                environment
+                    .seat
+                    .lease_id
+                    .as_deref()
+                    .ok_or("Computer lease is missing")?,
+            )?;
+        }
+        Ok(())
+    }
 }
 
 fn apply_provider_environment(
@@ -1625,6 +1687,7 @@ mod tests {
             provider: provider.clone(),
             work_plane: provider,
             operations: Arc::new(Mutex::new(())),
+            seats: Arc::new(Mutex::new(())),
         }
     }
 
@@ -1655,6 +1718,7 @@ mod tests {
                 provider,
                 work_plane: work_plane.clone(),
                 operations: Arc::new(Mutex::new(())),
+                seats: Arc::new(Mutex::new(())),
             },
             work_plane,
         )
@@ -1684,6 +1748,7 @@ mod tests {
             provider: Arc::new(LocalDockerComputerProvider::new(std::env::temp_dir())),
             work_plane,
             operations: Arc::new(Mutex::new(())),
+            seats: Arc::new(Mutex::new(())),
         }
     }
 
@@ -1995,12 +2060,8 @@ mod tests {
     fn rejected_seat_mutations_are_recorded_instead_of_left_unknown() {
         let service = service_with_environment();
         service
-            .acquire_seat(SeatAcquireRequest {
-                request_id: "request-acquire-one".to_string(),
-                environment_id: "computer-abc".to_string(),
-                owner_id: "agent-session:one".to_string(),
-                user_controlled: false,
-            })
+            .journal
+            .acquire_seat("computer-abc", "agent-session:one", false)
             .unwrap();
 
         let rejected = SeatAcquireRequest {

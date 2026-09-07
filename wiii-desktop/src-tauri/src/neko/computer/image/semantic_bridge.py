@@ -26,6 +26,7 @@ from urllib.request import Request, urlopen
 import websocket
 
 from project_paths import protected_path
+from input_authority import InputAuthority, InputRevoked
 
 PROTOCOL_VERSION = "neko-computer.semantic.v1"
 AI_FRAME_VERSION = "wiii-ai-frame.v1"
@@ -120,6 +121,8 @@ pyatspi = None
 APP_EVENT_EPOCH = secrets.token_hex(8)
 APP_EVENT_LOCK = threading.Lock()
 SEMANTIC_CONTROL_LOCK = threading.Lock()
+INPUT_AUTHORITY = InputAuthority()
+REALTIME_CLOCK_WORKERS: dict[subprocess.Popen, dict[str, Any]] = {}
 APP_EVENT_CONDITION = threading.Condition(APP_EVENT_LOCK)
 APP_EVENT_BUFFER: deque[dict[str, Any]] = deque(maxlen=MAX_APP_EVENT_BUFFER)
 APP_EVENT_SEQUENCE = 0
@@ -596,6 +599,7 @@ class CdpConnection:
             suppress_origin=True,
         )
         self.message_id = 0
+        self.timeout = timeout
 
     def close(self) -> None:
         self.socket.close()
@@ -603,8 +607,14 @@ class CdpConnection:
     def call(self, method: str, params: dict[str, Any] | None = None) -> dict[str, Any]:
         self.message_id += 1
         message_id = self.message_id
-        self.socket.send(json.dumps({"id": message_id, "method": method, "params": params or {}}))
+        INPUT_AUTHORITY.dispatch(
+            self.socket.send,
+            json.dumps({"id": message_id, "method": method, "params": params or {}}),
+        )
+        deadline = time.monotonic() + self.timeout
         while True:
+            if time.monotonic() >= deadline:
+                raise TimeoutError("Computer browser response deadline exceeded")
             response = json.loads(self.socket.recv())
             if response.get("method") == "Page.javascriptDialogOpening":
                 dialog_type = bounded_text(response.get("params", {}).get("type"), 40) or "JavaScript"
@@ -903,9 +913,36 @@ def realtime_clock_resume_all() -> int:
         page = pages.get(target_id)
         if page is not None and realtime_clock_resume_page(page):
             resumed += 1
+        elif page is not None:
+            raise RuntimeError("Computer realtime cleanup is unconfirmed")
         elif isinstance(target_id, str):
             realtime_clock_clear(target_id)
     return resumed
+
+
+def spawn_clock_worker(page: dict[str, Any], argv: list[str]) -> subprocess.Popen:
+    for worker in tuple(REALTIME_CLOCK_WORKERS):
+        if worker.poll() is not None:
+            del REALTIME_CLOCK_WORKERS[worker]
+    worker = subprocess.Popen(
+        argv, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL, close_fds=True, start_new_session=True,
+    )
+    REALTIME_CLOCK_WORKERS[worker] = page
+    return worker
+
+
+def quiesce_realtime_clock() -> None:
+    pages = {page.get("id"): page for page in browser_pages()}
+    for worker in tuple(REALTIME_CLOCK_WORKERS):
+        if worker.poll() is None:
+            worker.terminate()
+        worker.wait(timeout=2)
+        page = pages.get(REALTIME_CLOCK_WORKERS[worker].get("id"))
+        if page is not None and not realtime_clock_resume_page(page):
+            raise RuntimeError("Computer realtime worker cleanup is unconfirmed")
+        del REALTIME_CLOCK_WORKERS[worker]
+    realtime_clock_resume_all()
 
 
 def realtime_clock_hold(page: dict[str, Any]) -> dict[str, Any]:
@@ -914,7 +951,8 @@ def realtime_clock_hold(page: dict[str, Any]) -> dict[str, Any]:
         raise RuntimeError("Realtime step clock requires a browser page target.")
     token = secrets.token_hex(16)
     deadline_ms = int(time.time() * 1000) + REALTIME_CLOCK_WATCHDOG_MS
-    process = subprocess.Popen(
+    process = INPUT_AUTHORITY.dispatch(spawn_clock_worker,
+        page,
         [
             sys.executable,
             os.path.abspath(__file__),
@@ -926,11 +964,6 @@ def realtime_clock_hold(page: dict[str, Any]) -> dict[str, Any]:
             "--deadline-ms",
             str(deadline_ms),
         ],
-        stdin=subprocess.DEVNULL,
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
-        close_fds=True,
-        start_new_session=True,
     )
     ready_deadline = time.monotonic() + 2.0
     while time.monotonic() < ready_deadline:
@@ -939,7 +972,7 @@ def realtime_clock_hold(page: dict[str, Any]) -> dict[str, Any]:
             break
         if process.poll() is not None:
             break
-        time.sleep(0.01)
+        INPUT_AUTHORITY.wait(0.01)
     else:
         state = None
     if state is None or state.get("token") != token:
@@ -991,7 +1024,7 @@ def wait_for_browser_navigation(
     while time.monotonic() < deadline:
         if browser_navigation_completed(target, before, target_id):
             return True
-        time.sleep(0.05)
+        INPUT_AUTHORITY.wait(0.05)
     return browser_navigation_completed(target, before, target_id)
 
 
@@ -1026,7 +1059,7 @@ def replace_browser_page(
         except Exception as error:
             creation_error = error
             if attempt == 0:
-                time.sleep(0.25)
+                INPUT_AUTHORITY.wait(0.25)
     if new_target_id is None:
         raise RuntimeError(
             "Chrome could not allocate a clean replacement page: "
@@ -1046,7 +1079,7 @@ def replace_browser_page(
             navigated = True
             break
         if attempt == 0:
-            time.sleep(0.2)
+            INPUT_AUTHORITY.wait(0.2)
     if not navigated:
         close_browser_target(new_target_id)
         raise RuntimeError("Chrome could not recover navigation from the busy page.")
@@ -1089,7 +1122,7 @@ def navigate_browser(target: str) -> dict[str, Any] | None:
                     page = None
                 if page is not None:
                     break
-                time.sleep(0.1)
+                INPUT_AUTHORITY.wait(0.1)
             if page is None:
                 raise RuntimeError("Chrome started but its navigation adapter is not ready.")
     before = {
@@ -1134,7 +1167,7 @@ def launch_application(launcher: dict[str, Any]) -> subprocess.Popen:
     argv = launcher["argv"]
     environment = os.environ.copy()
     environment.update(launcher.get("environment", {}))
-    return subprocess.Popen(
+    return INPUT_AUTHORITY.dispatch(subprocess.Popen,
         argv,
         cwd="/workspace/project",
         env=environment,
@@ -2780,8 +2813,11 @@ def cdp_invoke(cdp: CdpConnection, backend_node_id: int) -> None:
     y = sum(float(quad[index]) for index in (1, 3, 5, 7)) / 4
     common = {"x": x, "y": y, "button": "left", "clickCount": 1}
     cdp.call("Input.dispatchMouseEvent", {"type": "mouseMoved", "x": x, "y": y})
-    cdp.call("Input.dispatchMouseEvent", {"type": "mousePressed", **common})
-    cdp.call("Input.dispatchMouseEvent", {"type": "mouseReleased", **common})
+    try:
+        cdp.call("Input.dispatchMouseEvent", {"type": "mousePressed", **common})
+    finally:
+        with INPUT_AUTHORITY.cleanup():
+            cdp.call("Input.dispatchMouseEvent", {"type": "mouseReleased", **common})
 
 
 def cdp_focus(cdp: CdpConnection, backend_node_id: int, already_focused: bool = False) -> None:
@@ -3057,9 +3093,10 @@ def dispatch_input_sequence(cdp: CdpConnection, normalized: list[dict[str, Any]]
                 if event_type == "rawKeyDown":
                     event.pop("text", None)
                     event.pop("unmodifiedText", None)
-                cdp.call("Input.dispatchKeyEvent", event)
                 pressed.append((key, params))
-            time.sleep(step["holdMs"] / 1000)
+                INPUT_AUTHORITY.checkpoint()
+                cdp.call("Input.dispatchKeyEvent", event)
+            INPUT_AUTHORITY.wait(step["holdMs"] / 1000)
         except BaseException as error:
             pending_error = error
         finally:
@@ -3069,14 +3106,15 @@ def dispatch_input_sequence(cdp: CdpConnection, normalized: list[dict[str, Any]]
                     event = {"type": "keyUp", **params, "modifiers": modifiers}
                     event.pop("text", None)
                     event.pop("unmodifiedText", None)
-                    cdp.call("Input.dispatchKeyEvent", event)
+                    with INPUT_AUTHORITY.cleanup():
+                        cdp.call("Input.dispatchKeyEvent", event)
                 except BaseException as error:
                     if pending_error is None:
                         pending_error = error
         if pending_error is not None:
             raise pending_error
         if step["waitMs"]:
-            time.sleep(step["waitMs"] / 1000)
+            INPUT_AUTHORITY.wait(step["waitMs"] / 1000)
 
 
 def cdp_input_sequence(facts: dict[str, Any], steps: list[dict[str, Any]]) -> None:
@@ -3518,7 +3556,7 @@ def native_action_readback(
                 return True
             if time.monotonic() >= deadline:
                 return False
-            time.sleep(0.04)
+            INPUT_AUTHORITY.wait(0.04)
     return False
 
 
@@ -3548,7 +3586,7 @@ def wait_for_wechat_send_readback(
             return True
         if time.monotonic() >= deadline:
             return False
-        time.sleep(0.04)
+        INPUT_AUTHORITY.wait(0.04)
 
 
 def action_effect_version(
@@ -3610,7 +3648,7 @@ def native_action_snapshot(
     )
     if target_ref in targets:
         return snapshot, targets
-    time.sleep(0.04)
+    INPUT_AUTHORITY.wait(0.04)
     return observe(
         environment_id,
         1000,
@@ -3641,7 +3679,7 @@ def capture_then_hold_realtime(
     target_ref: str,
     target: tuple[Any, dict[str, Any]] | None,
 ) -> tuple[dict[str, Any] | None, dict[str, Any]]:
-    time.sleep(REALTIME_CLOCK_SETTLE_SECONDS)
+    INPUT_AUTHORITY.wait(REALTIME_CLOCK_SETTLE_SECONDS)
     visual_patch = requested_action_visual_patch(
         return_observation,
         target_ref,
@@ -3666,7 +3704,10 @@ def act(request: dict[str, Any]) -> dict[str, Any]:
             bounded_text(request.get("stateVersion"), 96),
         )
     launcher = APP_LAUNCHERS_BY_REF.get(target_ref)
-    fast_snapshot = workstation_snapshot(environment_id, len(APP_LAUNCHERS) + 1)
+    fast_snapshot = workstation_snapshot(
+        environment_id, len(APP_LAUNCHERS) + 1,
+        observed_scope if observed_scope == WORKSTATION_NODE["ref"] else None,
+    )
     fast_launcher = (
         launcher is not None
         and request.get("stateVersion") == fast_snapshot["stateVersion"]
@@ -3760,7 +3801,7 @@ def act(request: dict[str, Any]) -> dict[str, Any]:
             clock_active_started = time.monotonic()
         if clock_was_held:
             realtime_clock_resume_page(realtime_page)
-            time.sleep(REALTIME_CLOCK_RESUME_GRACE_SECONDS)
+            INPUT_AUTHORITY.wait(REALTIME_CLOCK_RESUME_GRACE_SECONDS)
 
     browser_target = None
     browser_navigation_before = None
@@ -3831,12 +3872,12 @@ def act(request: dict[str, Any]) -> dict[str, Any]:
                 }
             direct_browser_readback = cdp_act(facts, action, text)
     elif action == "focus":
-        facts["interfaces"]["focus"].grabFocus()
+        INPUT_AUTHORITY.dispatch(facts["interfaces"]["focus"].grabFocus)
     elif action == "set_text":
         text = request.get("text")
         if not isinstance(text, str):
             return reject(request, "semantic_text_required", "set_text requires text.", before_version)
-        facts["interfaces"]["set_text"].setTextContents(text)
+        INPUT_AUTHORITY.dispatch(facts["interfaces"]["set_text"].setTextContents, text)
     elif action == "invoke":
         pointer = facts["interfaces"].get("invoke_pointer")
         if pointer is not None:
@@ -3845,13 +3886,13 @@ def act(request: dict[str, Any]) -> dict[str, Any]:
                 raise RuntimeError("The semantic target has no visible activation bounds")
             x = int(extents.x + extents.width / 2)
             y = int(extents.y + extents.height / 2)
-            pyatspi.Registry.generateMouseEvent(x, y, "b1c")
+            INPUT_AUTHORITY.dispatch(pyatspi.Registry.generateMouseEvent, x, y, "b1c")
         else:
             action_iface = facts["interfaces"]["invoke"]
             count = int(action_iface.nActions)
             names = [bounded_text(action_iface.getName(index), 80).lower() for index in range(count)]
             preferred = next(index for index, name in enumerate(names) if name in ACCESSIBILITY_ACTIVATION_ACTIONS)
-            if not action_iface.doAction(preferred):
+            if not INPUT_AUTHORITY.dispatch(action_iface.doAction, preferred):
                 raise RuntimeError("AT-SPI rejected the invoke action")
     else:
         return reject(request, "semantic_action_invalid", "Unknown semantic action.", before_version)
@@ -3903,7 +3944,7 @@ def act(request: dict[str, Any]) -> dict[str, Any]:
                 navigation_target_id,
             )
             while not verified and time.monotonic() < deadline:
-                time.sleep(0.05)
+                INPUT_AUTHORITY.wait(0.05)
                 verified = browser_navigation_completed(
                     browser_target,
                     browser_navigation_before,
@@ -3928,7 +3969,7 @@ def act(request: dict[str, Any]) -> dict[str, Any]:
                     )
                 if verified or (launched_process.poll() not in (None, 0)):
                     break
-                time.sleep(0.05)
+                INPUT_AUTHORITY.wait(0.05)
         after_version = fast_snapshot["stateVersion"]
     elif is_browser_target_ref(target_ref) and action == "invoke":
         verified = False
@@ -3949,7 +3990,7 @@ def act(request: dict[str, Any]) -> dict[str, Any]:
         verified = False
         after_version = before_version
     else:
-        time.sleep(0.25 if launcher is not None else 0.08)
+        INPUT_AUTHORITY.wait(0.25 if launcher is not None else 0.08)
         verification_deadline = time.monotonic() + (
             1.8 if is_browser_target_ref(target_ref) and action == "invoke"
             else 1.0 if action == "invoke"
@@ -3984,7 +4025,7 @@ def act(request: dict[str, Any]) -> dict[str, Any]:
                 )
             if verified or time.monotonic() >= verification_deadline:
                 break
-            time.sleep(0.08)
+            INPUT_AUTHORITY.wait(0.08)
         if launcher is not None and action in {"press_key", "input_sequence"}:
             verified = after_version != before_version
         elif launcher is not None:
@@ -4079,7 +4120,23 @@ def bridge_request(path: str, request: dict[str, Any]) -> dict[str, Any]:
         )
         return {"status": "ok", "snapshot": snapshot}
     if path == "/act":
-        return act(request)
+        try:
+            return INPUT_AUTHORITY.run(request.get("leaseId"), lambda: act(request))
+        except InputRevoked:
+            result = reject(
+                request, "semantic_lease_revoked",
+                "Control was revoked. Earlier effects may have occurred; observe before any new action.",
+                bounded_text(request.get("stateVersion"), 96),
+            )
+            result["result"]["effect"] = "interrupted"
+            result["result"]["escalation"] = "human_takeover"
+            return result
+    if path == "/input/activate":
+        INPUT_AUTHORITY.activate(request.get("leaseId"))
+        return {"status": "ok"}
+    if path == "/input/revoke":
+        INPUT_AUTHORITY.revoke(request.get("leaseId"), cleanup=quiesce_realtime_clock)
+        return {"status": "ok", "quiescent": True}
     if path == "/events":
         return poll_app_events(request)
     raise ValueError("Unknown semantic bridge route.")
@@ -4100,7 +4157,7 @@ class SemanticBridgeHandler(BaseHTTPRequestHandler):
             request = json.loads(self.rfile.read(content_length).decode("utf-8-sig"))
             if not isinstance(request, dict):
                 raise ValueError("The semantic bridge request must be an object.")
-            if self.path == "/events":
+            if self.path in {"/events", "/input/activate", "/input/revoke"}:
                 response = bridge_request(self.path, request)
             else:
                 with SEMANTIC_CONTROL_LOCK:
@@ -4148,7 +4205,7 @@ def serve() -> None:
         except FileNotFoundError:
             if time.monotonic() >= deadline:
                 raise TimeoutError("Computer accessibility session is unavailable")
-            time.sleep(0.05)
+            INPUT_AUTHORITY.wait(0.05)
     start_app_event_watcher()
     with server:
         server.serve_forever()
@@ -4193,8 +4250,7 @@ def main() -> int:
             )
             payload = {"status": "ok", "snapshot": snapshot}
         elif args.command == "act":
-            request = json.loads(sys.stdin.buffer.read().decode("utf-8-sig"))
-            payload = act(request)
+            raise RuntimeError("Actions require the private host input lease transport")
         elif args.command == "clock-watchdog":
             realtime_clock_watchdog(args.target_id, args.token, args.deadline_ms)
             payload = {"status": "ok"}
