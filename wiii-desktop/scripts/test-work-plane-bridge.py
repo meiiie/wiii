@@ -104,6 +104,23 @@ class WorkPlaneBridgeContractTests(unittest.TestCase):
         self.assertIs(entries["unrelated"], untouched)
         charts.removeByName.assert_called_once_with("target")
 
+    def test_csv_does_not_advertise_or_execute_rich_workbook_mutations(self) -> None:
+        path = self.root / "data.csv"
+        path.write_text("Region,Sales\nNorth,10\n", encoding="utf-8")
+        with patch.object(BRIDGE, "spreadsheet_available", return_value=True):
+            resource = BRIDGE.file_resource(self.root, path)
+        self.assertEqual(resource["resourceType"], "project.file")
+        self.assertFalse(any(capability.startswith("spreadsheet.") for capability in resource["capabilities"]))
+        before = path.read_bytes()
+        with patch.object(BRIDGE, "OfficeSession") as office:
+            with self.assertRaisesRegex(BRIDGE.BridgeError, "unsupported_resource"):
+                BRIDGE.execute(self.transaction(
+                    "spreadsheet.chart.upsert", resource["ref"], resource["revision"],
+                    {"sheet": "Sheet1", "name": "Chart", "chartType": "column", "sourceRange": "A1:B2", "anchorRange": "D1:H9"},
+                ))
+            office.assert_not_called()
+        self.assertEqual(path.read_bytes(), before)
+
     def test_file_slice_preserves_unrelated_source_state(self) -> None:
         before_unchanged = (self.root / "unchanged.bin").read_bytes()
         root_revision = BRIDGE.root_resource(self.root)["revision"]

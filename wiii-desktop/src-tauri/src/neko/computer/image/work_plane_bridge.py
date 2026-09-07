@@ -27,7 +27,7 @@ MAX_FILES = 10_000
 MAX_FILE_BYTES = 128 * 1024
 MAX_QUERY_BYTES = 64 * 1024
 MAX_CELLS = 512
-SPREADSHEET_EXTENSIONS = {".ods", ".xlsx", ".xls", ".csv"}
+SPREADSHEET_EXTENSIONS = {".ods", ".xlsx", ".xls"}
 CELL_RANGE = re.compile(r"^\$?([A-Z]{1,3})\$?([1-9][0-9]{0,6})(?::\$?([A-Z]{1,3})\$?([1-9][0-9]{0,6}))?$")
 FORMULA_CHARACTERS = re.compile(r"^=[A-Za-z0-9_.$:+\-*/(),; <>=]+$")
 FORMULA_FUNCTION = re.compile(r"([A-Za-z_][A-Za-z0-9_.]*)\s*\(")
