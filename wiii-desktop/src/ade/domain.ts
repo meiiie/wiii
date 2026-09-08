@@ -35,6 +35,10 @@ export interface AdeTask {
   title: string;
   description?: string;
   state: AdeTaskState;
+  /** Optional decomposition owned by Wiii, never by a provider session. */
+  parentTaskId?: string;
+  /** Task identities that must finish before this task can be dispatched. */
+  dependencyTaskIds?: string[];
 }
 
 export interface AdeSpec {
@@ -79,8 +83,7 @@ export type AdeAgentRole =
   | "planner"
   | "implementer"
   | "reviewer"
-  | "specialist"
-  | "subagent";
+  | "specialist";
 
 export interface AdeAgentSession {
   id: string;
@@ -181,7 +184,13 @@ export type AdeGraphDiagnosticCode =
   | "missing_task"
   | "missing_environment"
   | "cross_project_environment"
+  | "cross_project_task"
+  | "task_cycle"
+  | "duplicate_task_dependency"
   | "missing_run"
+  | "multiple_active_task_runs"
+  | "multiple_run_sessions"
+  | "provider_subagent_not_top_level"
   | "missing_agent_session"
   | "missing_artifact"
   | "cross_run_artifact"
@@ -229,6 +238,59 @@ function missing(
   diagnostics.push({ code, entityKind, entityId, field, referenceId });
 }
 
+const ACTIVE_RUN_STATES = new Set<AdeRunState>([
+  "queued",
+  "starting",
+  "running",
+  "waiting",
+  "verifying",
+  "review",
+]);
+
+const PARALLEL_RUN_STRATEGIES = new Set<AdeRunStrategy>([
+  "best_of_n",
+  "specialist",
+]);
+
+function taskEdges(task: AdeTask): string[] {
+  return [
+    ...(task.parentTaskId ? [task.parentTaskId] : []),
+    ...(task.dependencyTaskIds ?? []),
+  ];
+}
+
+function findTaskCycle(tasks: Map<string, AdeTask>): string[] | null {
+  const visited = new Set<string>();
+  const visiting = new Set<string>();
+  const path: string[] = [];
+
+  const visit = (taskId: string): string[] | null => {
+    if (visiting.has(taskId)) {
+      const start = path.indexOf(taskId);
+      return [...path.slice(start), taskId];
+    }
+    if (visited.has(taskId)) return null;
+    const task = tasks.get(taskId);
+    if (!task) return null;
+    visiting.add(taskId);
+    path.push(taskId);
+    for (const targetId of taskEdges(task)) {
+      const cycle = visit(targetId);
+      if (cycle) return cycle;
+    }
+    path.pop();
+    visiting.delete(taskId);
+    visited.add(taskId);
+    return null;
+  };
+
+  for (const taskId of tasks.keys()) {
+    const cycle = visit(taskId);
+    if (cycle) return cycle;
+  }
+  return null;
+}
+
 /** Validate references without mutating or guessing repairs for the graph. */
 export function validateAdeGraph(graph: AdeGraph): AdeGraphDiagnostic[] {
   const diagnostics: AdeGraphDiagnostic[] = [];
@@ -253,6 +315,41 @@ export function validateAdeGraph(graph: AdeGraph): AdeGraphDiagnostic[] {
     if (!projects.has(task.projectId)) {
       missing(diagnostics, "missing_project", "task", task.id, "projectId", task.projectId);
     }
+    const relatedTaskIds = [
+      ...(task.parentTaskId ? [{ field: "parentTaskId", id: task.parentTaskId }] : []),
+      ...(task.dependencyTaskIds ?? []).map((id) => ({ field: "dependencyTaskIds", id })),
+    ];
+    const seenDependencies = new Set<string>();
+    for (const related of relatedTaskIds) {
+      const target = tasks.get(related.id);
+      if (!target) {
+        missing(diagnostics, "missing_task", "task", task.id, related.field, related.id);
+      } else if (target.projectId !== task.projectId) {
+        missing(diagnostics, "cross_project_task", "task", task.id, related.field, related.id);
+      }
+      if (related.field === "dependencyTaskIds") {
+        if (seenDependencies.has(related.id)) {
+          diagnostics.push({
+            code: "duplicate_task_dependency",
+            entityKind: "task",
+            entityId: task.id,
+            field: related.field,
+            referenceId: related.id,
+          });
+        }
+        seenDependencies.add(related.id);
+      }
+    }
+  }
+  const taskCycle = findTaskCycle(tasks);
+  if (taskCycle) {
+    diagnostics.push({
+      code: "task_cycle",
+      entityKind: "task",
+      entityId: taskCycle[0],
+      field: "parentTaskId/dependencyTaskIds",
+      referenceId: taskCycle.join(" -> "),
+    });
   }
   for (const spec of graph.specs) {
     if (!tasks.has(spec.taskId)) {
@@ -296,9 +393,51 @@ export function validateAdeGraph(graph: AdeGraph): AdeGraphDiagnostic[] {
       );
     }
   }
+  const activeRunsByTask = new Map<string, AdeRun[]>();
+  for (const run of graph.runs) {
+    if (!ACTIVE_RUN_STATES.has(run.state)) continue;
+    const active = activeRunsByTask.get(run.taskId) ?? [];
+    active.push(run);
+    activeRunsByTask.set(run.taskId, active);
+  }
+  for (const [taskId, activeRuns] of activeRunsByTask) {
+    if (
+      activeRuns.length > 1 &&
+      activeRuns.some((run) => !PARALLEL_RUN_STRATEGIES.has(run.strategy))
+    ) {
+      diagnostics.push({
+        code: "multiple_active_task_runs",
+        entityKind: "task",
+        entityId: taskId,
+        field: "runs",
+      });
+    }
+  }
+  const sessionsByRun = new Map<string, AdeAgentSession[]>();
   for (const session of graph.agentSessions) {
     if (!runs.has(session.runId)) {
       missing(diagnostics, "missing_run", "agent_session", session.id, "runId", session.runId);
+    }
+    const sessionsForRun = sessionsByRun.get(session.runId) ?? [];
+    sessionsForRun.push(session);
+    sessionsByRun.set(session.runId, sessionsForRun);
+    if ((session.role as string) === "subagent") {
+      diagnostics.push({
+        code: "provider_subagent_not_top_level",
+        entityKind: "agent_session",
+        entityId: session.id,
+        field: "role",
+      });
+    }
+  }
+  for (const [runId, runSessions] of sessionsByRun) {
+    if (runSessions.length > 1) {
+      diagnostics.push({
+        code: "multiple_run_sessions",
+        entityKind: "run",
+        entityId: runId,
+        field: "agentSessions",
+      });
     }
   }
   for (const artifact of graph.artifacts) {

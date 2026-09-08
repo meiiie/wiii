@@ -1,5 +1,6 @@
 import { open } from "@tauri-apps/plugin-dialog";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { invoke } from "@tauri-apps/api/core";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   chooseWorkspaceFolder,
   isAbsoluteWorkspacePath,
@@ -8,10 +9,20 @@ import {
 } from "@/neko-chill/workspace";
 
 vi.mock("@tauri-apps/plugin-dialog", () => ({ open: vi.fn() }));
+vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn() }));
 
 describe("Neko Chill workspace selection", () => {
   beforeEach(() => {
     vi.mocked(open).mockReset();
+    vi.mocked(invoke).mockReset();
+    Object.defineProperty(window, "__TAURI_INTERNALS__", {
+      configurable: true,
+      value: {},
+    });
+  });
+
+  afterEach(() => {
+    Reflect.deleteProperty(window, "__TAURI_INTERNALS__");
   });
 
   it("preserves the exact selected path and derives a cross-platform label", () => {
@@ -28,6 +39,7 @@ describe("Neko Chill workspace selection", () => {
 
   it("opens a single-directory native dialog and returns its exact path", async () => {
     vi.mocked(open).mockResolvedValue("C:\\work\\neko" as never);
+    vi.mocked(invoke).mockResolvedValue({ path: "C:\\work\\neko", name: "neko" });
 
     await expect(chooseWorkspaceFolder()).resolves.toEqual({
       path: "C:\\work\\neko",
@@ -37,6 +49,9 @@ describe("Neko Chill workspace selection", () => {
       directory: true,
       multiple: false,
       title: "Chọn thư mục dự án cho Neko Chill",
+    });
+    expect(invoke).toHaveBeenCalledWith("neko_resolve_workspace", {
+      workspace: "C:\\work\\neko",
     });
   });
 

@@ -8,10 +8,18 @@
 
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import type { DriverEvent } from "@/neko-chill/drivers/types";
 import type { AcpTransport } from "@/neko-chill/drivers/acp/client";
 import { AcpDriver } from "@/neko-chill/drivers/acp/driver";
+import {
+  WIII_COMPUTER_AGENT_METHODS,
+  WIII_COMPUTER_HISTORY_AGENT_METHODS,
+  WIII_COMPUTER_PROCEDURE_AGENT_METHODS,
+  WIII_SIGNAL_INBOX_AGENT_METHODS,
+  WIII_WORK_PLANE_AGENT_METHODS,
+  type AgentComputerBridge,
+} from "@/neko-computer/agent-bridge";
 
 type Frame = Record<string, any>;
 
@@ -71,12 +79,13 @@ function agentMidTurnFrames(): Frame[] {
   ).map((r) => r.frame!);
 }
 
-async function startDriver(events: DriverEvent[], transport: FakeTransport): Promise<AcpDriver> {
+async function startDriver(events: DriverEvent[], transport: FakeTransport, computerBridge?: AgentComputerBridge): Promise<AcpDriver> {
   const driver = new AcpDriver({
     sessionId: "local-1",
     cwd: "C:/tmp/project",
     transport,
     onEvent: (event) => events.push(event),
+    computerBridge,
   });
   const [initResp, newResp] = agentResponses();
   const starting = driver.start();
@@ -155,6 +164,164 @@ async function startDurableDriver(
 }
 
 describe("AcpDriver golden replay (real neko-core v0.24.0 fixture)", () => {
+  it("does not overwrite fatal Computer cleanup failure with normal turn completion", async () => {
+    const transport = new FakeTransport();
+    const events: DriverEvent[] = [];
+    const computerBridge: AgentComputerBridge = {
+      handles: () => true,
+      handle: vi.fn(async () => ({})),
+      dispose: vi.fn().mockRejectedValueOnce(new Error("lease cleanup unconfirmed")),
+    };
+    const driver = await startDriver(events, transport, computerBridge);
+    const turn = driver.prompt("fixture");
+    await tick();
+    const request = transport.sent.find((frame) => frame.method === "session/prompt")!;
+    transport.inject({ jsonrpc: "2.0", id: request.id, result: { stopReason: "end_turn" } });
+    await turn;
+    expect(events).toContainEqual({ type: "error", sessionId: "local-1", fatal: true,
+      message: "lease cleanup unconfirmed" });
+    expect(events.some((event) => event.type === "turn-finished")).toBe(false);
+    transport.inject({ jsonrpc: "2.0", id: 950, method: WIII_COMPUTER_AGENT_METHODS.act, params: {} });
+    await tick();
+    expect(transport.sent.find((frame) => frame.id === 950)?.error.message).toContain("computer_turn_inactive");
+    await driver.dispose();
+  });
+
+  it("denies out-of-turn mutations and releases an acquisition that completes during cancellation", async () => {
+    const transport = new FakeTransport();
+    let finishAcquire!: () => void;
+    let signal: AbortSignal | undefined;
+    let leased = false;
+    const computerBridge: AgentComputerBridge = {
+      handles: () => true,
+      handle: vi.fn(async (method, _params, authority) => {
+        if (method !== WIII_COMPUTER_AGENT_METHODS.acquire) return {};
+        signal = authority;
+        await new Promise<void>((resolve) => { finishAcquire = resolve; });
+        leased = true;
+        return { acquired: true };
+      }),
+      dispose: vi.fn(async () => { leased = false; }),
+    };
+    const driver = await startDriver([], transport, computerBridge);
+    for (const [index, method] of [WIII_COMPUTER_AGENT_METHODS.acquire, WIII_COMPUTER_AGENT_METHODS.act,
+      WIII_WORK_PLANE_AGENT_METHODS.execute, WIII_COMPUTER_PROCEDURE_AGENT_METHODS.run].entries()) {
+      transport.inject({ jsonrpc: "2.0", id: 800 + index, method, params: {} });
+    }
+    await tick();
+    expect(transport.sent.filter((frame) => frame.id >= 800).every((frame) => frame.error?.message.includes("computer_turn_inactive"))).toBe(true);
+    const turn = driver.prompt("test");
+    await tick();
+    transport.inject({ jsonrpc: "2.0", id: 900, method: WIII_COMPUTER_AGENT_METHODS.acquire, params: {} });
+    await tick();
+    const cancelling = driver.cancel();
+    expect(signal?.aborted).toBe(true);
+    transport.inject({ jsonrpc: "2.0", id: 901, method: WIII_COMPUTER_AGENT_METHODS.act, params: {} });
+    await tick();
+    expect(transport.sent.find((frame) => frame.id === 901)?.error.message).toContain("computer_turn_inactive");
+    finishAcquire();
+    await cancelling;
+    expect(leased).toBe(false);
+    const prompt = transport.sent.find((frame) => frame.method === "session/prompt")!;
+    transport.inject({ jsonrpc: "2.0", id: prompt.id, result: { stopReason: "cancelled" } });
+    await turn;
+    await driver.dispose();
+  });
+  it("routes only the typed Wiii Computer extension through the host bridge", async () => {
+    const events: DriverEvent[] = [];
+    const transport = new FakeTransport();
+    const computerBridge: AgentComputerBridge = {
+      handles: (method) => method === WIII_COMPUTER_AGENT_METHODS.status,
+      handle: vi.fn(async () => ({ available: true, code: "ready" })),
+      dispose: vi.fn(async () => {}),
+    };
+    const driver = new AcpDriver({
+      sessionId: "local-computer",
+      cwd: "C:/tmp/project",
+      transport,
+      onEvent: (event) => events.push(event),
+      computerBridge,
+    });
+
+    transport.inject({
+      jsonrpc: "2.0",
+      id: 800,
+      method: WIII_COMPUTER_AGENT_METHODS.status,
+      params: {},
+    });
+    await tick();
+
+    expect(transport.sent.find((frame) => frame.id === 800)).toMatchObject({
+      result: { available: true, code: "ready" },
+    });
+    expect(computerBridge.handle).toHaveBeenCalledWith(WIII_COMPUTER_AGENT_METHODS.status, {});
+    await driver.dispose();
+    expect(computerBridge.dispose).toHaveBeenCalledOnce();
+  });
+
+  it("places a bounded Signal Inbox consultation in initialize deterministically", async () => {
+    const events: DriverEvent[] = [];
+    const transport = new FakeTransport();
+    const computerBridge: AgentComputerBridge = {
+      handles: (method) => method === WIII_SIGNAL_INBOX_AGENT_METHODS.consult,
+      handle: vi.fn(async () => ({
+        protocolVersion: "wiii-signal-inbox.v1",
+        encrypted: true,
+        itemCount: 3,
+        readyCount: 1,
+        gapCount: 0,
+        counts: [],
+        pendingRefs: ["signal-opaque-1"],
+      })),
+      dispose: vi.fn(async () => {}),
+    };
+    const driver = new AcpDriver({
+      sessionId: "local-signal-preflight",
+      cwd: "C:/tmp/project",
+      transport,
+      onEvent: (event) => events.push(event),
+      computerBridge,
+    });
+
+    const starting = driver.start();
+    await tick();
+    expect(computerBridge.handle).toHaveBeenCalledWith(
+      WIII_SIGNAL_INBOX_AGENT_METHODS.consult,
+      { maxRefs: 8 },
+    );
+    expect(transport.sent[0]).toMatchObject({
+      method: "initialize",
+      params: {
+        clientCapabilities: {
+          _meta: {
+            "dev.wiii.signal-inbox.v1": {
+              protocolVersion: "wiii-signal-inbox.v1",
+              methods: [WIII_SIGNAL_INBOX_AGENT_METHODS.consult],
+              contentFree: true,
+              deterministicPreflight: {
+                readyCount: 1,
+                pendingRefs: ["signal-opaque-1"],
+              },
+            },
+          },
+        },
+      },
+    });
+    transport.inject({
+      jsonrpc: "2.0",
+      id: transport.sent[0].id,
+      result: { protocolVersion: 1 },
+    });
+    await tick();
+    transport.inject({
+      jsonrpc: "2.0",
+      id: transport.sent[1].id,
+      result: { sessionId: "agent-signal-preflight", configOptions: [] },
+    });
+    await starting;
+    await driver.dispose();
+  });
+
   it("creates a durable ACP session when the agent advertises resume", async () => {
     const events: DriverEvent[] = [];
     const transport = new FakeTransport();
@@ -163,6 +330,38 @@ describe("AcpDriver golden replay (real neko-core v0.24.0 fixture)", () => {
     expect(transport.sent[1]).toMatchObject({
       method: "session/new",
       params: { cwd: "C:/tmp/project", mcpServers: [] },
+    });
+    expect(transport.sent[0]).toMatchObject({
+      method: "initialize",
+      params: {
+        clientCapabilities: {
+          fs: { readTextFile: false, writeTextFile: false },
+          terminal: false,
+          _meta: {
+            "dev.wiii.computer.v1": {
+              semanticProtocol: "neko-computer.semantic.v1",
+              methods: Object.values(WIII_COMPUTER_AGENT_METHODS),
+            },
+            "dev.wiii.computer-history.v1": {
+              schemaVersion: "wiii-computer-history.v1",
+              methods: Object.values(WIII_COMPUTER_HISTORY_AGENT_METHODS),
+              encryptedAtRest: true,
+            },
+            "dev.wiii.work-plane.v1": {
+              protocolVersion: "wiii-work-plane.preview.v1",
+              methods: Object.values(WIII_WORK_PLANE_AGENT_METHODS),
+              sourceAuthority: "source_application",
+              displayLeaseRequired: false,
+            },
+            "dev.wiii.computer-procedures.v1": {
+              protocolVersion: "wiii-computer-procedures.v1",
+              methods: Object.values(WIII_COMPUTER_PROCEDURE_AGENT_METHODS),
+              maxSteps: 16,
+              runtimeValuesStored: false,
+            },
+          },
+        },
+      },
     });
     expect(driver.backendSessionId).toBe("neko-durable-new");
     expect(driver.runtime.contextContinuity).toBe("resumable");

@@ -6,6 +6,7 @@
  * Sprint 233: Resizable split-panel layout — artifacts/preview push chat left.
  */
 import { lazy, Suspense, useEffect, useState } from "react";
+import { useShallow } from "zustand/react/shallow";
 import { Group, Panel, Separator } from "react-resizable-panels";
 import { AnimatePresence, motion } from "motion/react";
 import { WifiOff, RefreshCw, Menu, Laptop } from "lucide-react";
@@ -111,7 +112,12 @@ function useIsMobile(breakpoint = 768) {
 
 export function AppShell({ onOpenLocal }: { onOpenLocal?: () => void }) {
   const { sidebarOpen, activeView, setSidebarOpen, toggleSidebar } =
-    useUIStore();
+    useUIStore(useShallow((state) => ({
+      sidebarOpen: state.sidebarOpen,
+      activeView: state.activeView,
+      setSidebarOpen: state.setSidebarOpen,
+      toggleSidebar: state.toggleSidebar,
+    })));
   const hasRightPanel = useUIStore((s) => s.hasRightPanel());
   const rightPane = useUIStore((s) => s.rightPane);
   const closeWorkspacePane = useUIStore((s) => s.closeWorkspacePane);
@@ -119,7 +125,12 @@ export function AppShell({ onOpenLocal }: { onOpenLocal?: () => void }) {
   const [workspaceConversationId, setWorkspaceConversationId] = useState<string | null>(
     activeConversationId,
   );
-  const { status, isChecking, errorMessage, checkHealth } = useConnectionStore();
+  const { status, isChecking, errorMessage, checkHealth } = useConnectionStore(useShallow((state) => ({
+    status: state.status,
+    isChecking: state.isChecking,
+    errorMessage: state.errorMessage,
+    checkHealth: state.checkHealth,
+  })));
   const serverUrl = useSettingsStore((state) => state.settings.server_url);
   const isMobile = useIsMobile();
 

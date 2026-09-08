@@ -40,6 +40,7 @@ function file(path: string, content = path) {
 describe("neko workspace store", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    useNekoWorkspaceStore.getState().clearSession("session-1");
     useNekoWorkspaceStore.setState({ sessions: {} });
     listWorkspaceFiles.mockResolvedValue({
       entries: [{ path: "src/App.tsx", name: "App.tsx", size: 10, modifiedAt: 1, language: "typescript" }],
@@ -133,7 +134,27 @@ describe("neko workspace store", () => {
       .toBe("src/Second.ts");
   });
 
-  it("ignores an older workspace refresh that finishes last", async () => {
+  it("coalesces duplicate refreshes for the same session workspace", async () => {
+    let resolveFiles!: (value: { entries: any[]; truncated: boolean }) => void;
+    let resolveChanges!: (value: { isGit: boolean; changes: any[] }) => void;
+    listWorkspaceFiles.mockImplementationOnce(
+      () => new Promise((resolve) => { resolveFiles = resolve; }),
+    );
+    listWorkspaceChanges.mockImplementationOnce(
+      () => new Promise((resolve) => { resolveChanges = resolve; }),
+    );
+
+    const first = useNekoWorkspaceStore.getState().refresh("session-1", WORKSPACE);
+    const duplicate = useNekoWorkspaceStore.getState().refresh("session-1", WORKSPACE);
+    expect(listWorkspaceFiles).toHaveBeenCalledTimes(1);
+    expect(listWorkspaceChanges).toHaveBeenCalledTimes(1);
+
+    resolveFiles({ entries: [], truncated: false });
+    resolveChanges({ isGit: true, changes: [] });
+    await Promise.all([first, duplicate]);
+  });
+
+  it("ignores an older workspace refresh after the session changes workspace", async () => {
     let resolveOldFiles!: (value: { entries: any[]; truncated: boolean }) => void;
     let resolveOldChanges!: (value: { isGit: boolean; changes: any[] }) => void;
     listWorkspaceFiles
@@ -147,7 +168,11 @@ describe("neko workspace store", () => {
       .mockResolvedValueOnce({ isGit: true, changes: [] });
 
     const older = useNekoWorkspaceStore.getState().refresh("session-1", WORKSPACE);
-    const newer = useNekoWorkspaceStore.getState().refresh("session-1", WORKSPACE);
+    const newer = useNekoWorkspaceStore.getState().refresh(
+      "session-1",
+      { path: "C:/work/other", name: "other" },
+      { force: true },
+    );
     await newer;
     resolveOldFiles({
       entries: [{ path: "src/Old.ts", name: "Old.ts", size: 1, modifiedAt: 1, language: "typescript" }],

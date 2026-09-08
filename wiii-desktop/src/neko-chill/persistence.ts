@@ -23,6 +23,7 @@ import type { NekoMessage, NekoSession } from "./stores/neko-session-store";
 import type { DriverCommand, DriverConfigOption } from "./drivers/types";
 import type { AgentLaunchProfile } from "./stores/neko-agent-store";
 import type { NekoExecutionBinding } from "@/neko/control-client";
+import type { NekoTopLevelSessionKind } from "@/neko/session-ownership";
 import { isAbsoluteWorkspacePath, type WorkspaceRef } from "./workspace";
 import {
   isNativeRuntimeSessionEvent,
@@ -49,6 +50,9 @@ export interface SessionIndexEntry {
   updatedAt: number;
   workspace?: WorkspaceRef | null;
   launchProfile?: AgentLaunchProfile | null;
+  /** Additive v2 metadata. Older desktop builds ignore these fields. */
+  kind?: NekoTopLevelSessionKind;
+  projectId?: string | null;
   /** Wiii Task/Run/Environment identity; absent for manual legacy sessions. */
   execution?: NekoExecutionBinding | null;
   /** Provider-owned durable ACP id used to resume across process restarts. */
@@ -175,6 +179,10 @@ function isSessionIndexEntry(value: unknown, expectedId?: string): value is Sess
     (entry.launchProfile === undefined ||
       entry.launchProfile === null ||
       isLaunchProfile(entry.launchProfile)) &&
+    (entry.kind === undefined || ["worker", "coordinator", "scratch"].includes(entry.kind)) &&
+    (entry.projectId === undefined || entry.projectId === null || (
+      typeof entry.projectId === "string" && entry.projectId.length > 0
+    )) &&
     (entry.execution === undefined ||
       entry.execution === null ||
       isExecutionBinding(entry.execution)) &&
@@ -229,6 +237,7 @@ function isNekoContentBlock(value: unknown): value is ContentBlock {
   if (block.type === "tool_execution") {
     return (
       (block.status === "pending" || block.status === "completed") &&
+      (block.outcome === undefined || block.outcome === "completed" || block.outcome === "failed" || block.outcome === "cancelled") &&
       isToolCall(block.tool)
     );
   }
@@ -336,6 +345,8 @@ async function writeSession(session: NekoSession, strict: boolean): Promise<void
     updatedAt: session.updatedAt,
     workspace: session.workspace,
     launchProfile: session.launchProfile,
+    kind: session.kind ?? (session.execution ? "worker" : "scratch"),
+    projectId: session.projectId ?? null,
     execution: session.execution,
     backendSessionId: session.backendSessionId,
     controls: session.controls,

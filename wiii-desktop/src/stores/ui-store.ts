@@ -25,6 +25,8 @@ export type RightPaneSurface =
 interface UIState {
   /** Sprint 192: Which view is displayed in the main content area */
   activeView: ActiveView;
+  /** Optional provider selected when entering the user-facing connection manager. */
+  wiiiConnectFocusProvider: string | null;
   sidebarOpen: boolean;
   sourcesPanelOpen: boolean;
   selectedSourceIndex: number | null;
@@ -85,7 +87,7 @@ interface UIState {
   openSoulBridge: () => void;
   closeSoulBridge: () => void;
   /** Wiii Connect capability page */
-  openWiiiConnect: () => void;
+  openWiiiConnect: (providerSlug?: string) => void;
   closeWiiiConnect: () => void;
   /** Code Studio panel actions */
   openCodeStudio: () => void;
@@ -121,6 +123,7 @@ function canFollowWorkspace(state: Pick<UIState, "workspaceFollowAgent" | "works
 
 export const useUIStore = create<UIState>((set, get) => ({
   activeView: "chat" as ActiveView,
+  wiiiConnectFocusProvider: null,
   sidebarOpen: true,
   sourcesPanelOpen: false,
   selectedSourceIndex: null,
@@ -220,7 +223,11 @@ export const useUIStore = create<UIState>((set, get) => ({
   closeWorkspacePane: () => set({ ...rightPanePatch({ kind: "closed" }), workspacePinned: false }),
   openSoulBridge: () => set({ activeView: "soul-bridge" as ActiveView, commandPaletteOpen: false }),
   closeSoulBridge: () => set({ activeView: "chat" as ActiveView }),
-  openWiiiConnect: () => set({ activeView: "wiii-connect" as ActiveView, commandPaletteOpen: false }),
+  openWiiiConnect: (providerSlug) => set({
+    activeView: "wiii-connect" as ActiveView,
+    commandPaletteOpen: false,
+    wiiiConnectFocusProvider: providerSlug?.trim().toLowerCase() || null,
+  }),
   closeWiiiConnect: () => set({ activeView: "chat" as ActiveView, commandPaletteOpen: false }),
   navigateToChat: () => set({ activeView: "chat" as ActiveView, orgManagerTargetOrgId: null }),
   closeAll: () =>

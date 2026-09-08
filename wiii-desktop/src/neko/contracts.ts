@@ -26,7 +26,11 @@ export type NekoProviderIntegration =
   | "pty";
 export type NekoProviderAuthOwner = "provider" | "wiii" | "user-credential" | "none";
 export type NekoProviderExtensionValue = string | number | boolean | null;
-export type NekoProviderAvailability = "available" | "not_installed" | "host_unsupported";
+export type NekoProviderAvailability =
+  | "available"
+  | "not_installed"
+  | "host_unsupported"
+  | "probe_failed";
 
 export interface NekoDetectedProvider {
   id: string;
@@ -35,6 +39,8 @@ export interface NekoDetectedProvider {
   found: boolean;
   availability: NekoProviderAvailability;
   supportsProfiles: boolean;
+  /** Provider-scoped probe failure; safe metadata only, never command output. */
+  detail?: string | null;
 }
 
 export interface NekoLaunchProfile {
@@ -42,6 +48,29 @@ export interface NekoLaunchProfile {
   provider: string;
   model: string | null;
   active: boolean;
+}
+
+export type NekoProviderSessionScope = "all" | "known_projects";
+
+/** Read-only projection of one conversation owned by a provider/harness. */
+export interface NekoProviderSessionRecord {
+  providerId: string;
+  nativeSessionId: string;
+  title: string;
+  workspacePath: string | null;
+  createdAt: string | null;
+  updatedAt: string | null;
+  model: string | null;
+  state: string | null;
+  canResume: boolean;
+}
+
+export interface NekoProviderSessionCatalog {
+  providerId: string;
+  scope: NekoProviderSessionScope;
+  complete: boolean;
+  detail: string | null;
+  sessions: NekoProviderSessionRecord[];
 }
 
 export interface NekoProviderCapabilitySnapshot {

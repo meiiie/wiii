@@ -11,9 +11,12 @@ import { CodexAppServerDriver } from "./codex/driver";
 import type { Driver, DriverEventHandler } from "./types";
 import type { DetectedAgent } from "../stores/neko-agent-store";
 import { isAbsoluteWorkspacePath, type WorkspaceRef } from "../workspace";
+import { createComputerAgentBridge } from "@/neko-computer/agent-bridge";
 
 export interface DriverLaunchConfig {
   workspace: WorkspaceRef;
+  /** Stable Wiii Project identity. Computer remains unavailable for unassigned legacy sessions. */
+  projectId?: string | null;
   /** Wiii-owned work identity. Omitted only for manual/legacy Neko sessions. */
   execution?: NekoExecutionBinding;
   /** One RuntimeRegistry replacement attempt; creates a fresh Neko Run. */
@@ -30,6 +33,9 @@ export async function createDriverForAgent(
   ownDriver?: (driver: Driver) => void,
 ): Promise<Driver> {
   const provider = requireProviderDefinition(agent.id);
+  if (!provider.launchable) {
+    throw new Error(`${provider.name} hiện chỉ hỗ trợ xem chỉ mục phiên trong Wiii.`);
+  }
   if (!isAbsoluteWorkspacePath(launch.workspace.path)) {
     throw new Error("Hãy chọn thư mục dự án trước khi bắt đầu.");
   }
@@ -58,6 +64,12 @@ export async function createDriverForAgent(
         resumeSessionId: launch.backendSessionId,
         transport,
         onEvent,
+        ...(launch.projectId ? {
+          computerBridge: createComputerAgentBridge({
+            sessionId,
+            projectId: launch.projectId,
+          }),
+        } : {}),
       });
   driver.runtime.providerVersion = spawned.provider.version;
   driver.runtime.providerExtensions = {

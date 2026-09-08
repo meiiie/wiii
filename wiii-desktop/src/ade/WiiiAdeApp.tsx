@@ -20,7 +20,7 @@ import { TitleBar } from "@/components/layout/TitleBar";
 import { WiiiMark } from "@/components/common/WiiiMark";
 import { getNekoControlClient } from "@/neko/control-client";
 import NekoChillApp from "@/neko-chill/NekoChillApp";
-import type { NekoTaskLaunchRequest } from "@/neko-chill/components/NewSessionView";
+import type { NekoTaskLaunchRequest } from "@/neko-chill/components/ProjectHome";
 import { useNekoSessionStore } from "@/neko-chill/stores/neko-session-store";
 import { chooseWorkspaceFolder, workspaceFromPath, type WorkspaceRef } from "@/neko-chill/workspace";
 import type { AdeRun, AdeRunState, AdeTask } from "./domain";
@@ -371,6 +371,7 @@ export default function WiiiAdeApp({ onOpenManaged = () => {} }: { onOpenManaged
     return (
       <NekoChillApp
         onOpenManaged={onOpenManaged}
+        showWorkNavigation
         onOpenWork={() => {
           setPendingLaunch(null);
           setSurface("work");
@@ -416,8 +417,8 @@ export default function WiiiAdeApp({ onOpenManaged = () => {} }: { onOpenManaged
             )) : <p className="px-2 py-2 text-[11.5px] leading-5 text-[var(--nk-ghost)]">Project xuất hiện khi bạn tạo công việc đầu tiên.</p>}
           </div>
           <div className="border-t border-[var(--nk-border)] p-2">
-            <button type="button" data-testid="open-neko" className="flex min-h-10 w-full items-center gap-2 rounded-lg px-2.5 text-left hover:bg-[var(--nk-overlay)]" onClick={() => openNeko()}><Bot aria-hidden="true" className="h-3.5 w-3.5 text-[var(--nk-text-3)]" /><span><strong className="block text-[12.5px] font-medium">Neko Chill</strong><small className="block text-[10px] text-[var(--nk-ghost)]">Agent Fabric · phiên thủ công</small></span></button>
-            <button type="button" className="mt-1 flex min-h-10 w-full items-center gap-2 rounded-lg px-2.5 text-left hover:bg-[var(--nk-overlay)]" onClick={onOpenManaged}><Cloud aria-hidden="true" className="h-3.5 w-3.5 text-[var(--nk-text-3)]" /><span><strong className="block text-[12.5px] font-medium">Wiii Service</strong><small className="block text-[10px] text-[var(--nk-ghost)]">Kết nối tùy chọn</small></span></button>
+            <button type="button" data-testid="open-neko" className="flex min-h-10 w-full items-center gap-2 rounded-lg px-2.5 text-left hover:bg-[var(--nk-overlay)]" onClick={() => openNeko()}><Bot aria-hidden="true" className="h-3.5 w-3.5 text-[var(--nk-text-3)]" /><span><strong className="block text-[12.5px] font-medium">Neko Chill</strong><small className="block text-[10px] text-[var(--nk-ghost)]">Theo dõi agent và phiên thủ công</small></span></button>
+            <button type="button" className="mt-1 flex min-h-10 w-full items-center gap-2 rounded-lg px-2.5 text-left hover:bg-[var(--nk-overlay)]" onClick={onOpenManaged}><Cloud aria-hidden="true" className="h-3.5 w-3.5 text-[var(--nk-text-3)]" /><span><strong className="block text-[12.5px] font-medium">Wiii Service</strong><small className="block text-[10px] text-[var(--nk-ghost)]">Đồng bộ và tri thức · tùy chọn</small></span></button>
           </div>
         </aside>
 

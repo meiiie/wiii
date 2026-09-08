@@ -4,27 +4,13 @@ import path from "path";
 
 const isEmbed = process.env.BUILD_TARGET === "embed";
 const isWeb = process.env.BUILD_TARGET === "web";
+const forceSingleDesktopBundle = process.env.WIII_DESKTOP_SINGLE_BUNDLE === "1";
 
 function manualChunks(id: string) {
   const normalizedId = id.replace(/\\/g, "/");
 
   if (!normalizedId.includes("/node_modules/")) {
     return undefined;
-  }
-
-  if (normalizedId.includes("/node_modules/plotly.js") || normalizedId.includes("/node_modules/react-plotly.js/")) {
-    return "vendor-plotly";
-  }
-
-  if (normalizedId.includes("/node_modules/mermaid/") || normalizedId.includes("/node_modules/@mermaid-js/")) {
-    return "vendor-mermaid";
-  }
-
-  if (
-    normalizedId.includes("/node_modules/@codesandbox/")
-    || normalizedId.includes("/node_modules/@stitches/")
-  ) {
-    return "vendor-sandpack";
   }
 
   if (normalizedId.includes("/node_modules/monaco-editor/")) {
@@ -39,26 +25,6 @@ function manualChunks(id: string) {
   const shikiLangMatch = normalizedId.match(/\/node_modules\/@shikijs\/langs\/dist\/([^/]+)\.mjs$/);
   if (shikiLangMatch) {
     return `vendor-syntax-lang-${shikiLangMatch[1]}`;
-  }
-
-  if (
-    normalizedId.includes("/node_modules/react-shiki/")
-    || normalizedId.includes("/node_modules/shiki/")
-    || normalizedId.includes("/node_modules/@shikijs/core/")
-    || normalizedId.includes("/node_modules/@shikijs/types/")
-    || normalizedId.includes("/node_modules/@shikijs/engine-javascript/")
-    || normalizedId.includes("/node_modules/@shikijs/vscode-textmate/")
-    || normalizedId.includes("/node_modules/refractor/")
-  ) {
-    return "vendor-syntax-core";
-  }
-
-  if (normalizedId.includes("/node_modules/cytoscape/") || normalizedId.includes("/node_modules/cose-bilkent/")) {
-    return "vendor-diagrams";
-  }
-
-  if (normalizedId.includes("/node_modules/katex/")) {
-    return "vendor-katex";
   }
 
   // React-facing state primitives must initialize before feature chunks.
@@ -89,6 +55,9 @@ export default defineConfig({
   server: {
     port: isEmbed ? 1421 : 1420,
     strictPort: true,
+    warmup: {
+      clientFiles: ["./src/main.tsx"],
+    },
     watch: {
       // Tell vite to ignore watching `src-tauri`
       ignored: ["**/src-tauri/**"],
@@ -117,17 +86,13 @@ export default defineConfig({
       input: isEmbed
         ? { embed: path.resolve(__dirname, "embed.html") }
         : undefined,
-      // Tauri (default target): ONE bundle. Rolldown's automatic splitting
-      // emitted circularly-initialized chunks (settings-store imported
-      // zustand's `create` from the index chunk before it initialized →
-      // "create is not a function" → white screen on every production
-      // window; first seen the first time a release was built after the
-      // Vite 8 bump). The desktop app loads from disk, so code splitting
-      // buys nothing there. Embed/Web stay split for network delivery.
+      // Pin React/Zustand to one stable chunk. Optional engines stay under their
+      // lazy feature import; naming them here can pull shared dependencies into
+      // the entry graph. The rollback switch remains for packaging diagnostics.
       output:
-        isEmbed || isWeb
-          ? { manualChunks }
-          : { inlineDynamicImports: true },
+        !isEmbed && !isWeb && forceSingleDesktopBundle
+          ? { codeSplitting: false }
+          : { manualChunks },
       // Tauri-only plugins resolved at runtime (dynamic import with try/catch fallback)
       // Web + Embed: bundle everything (Tauri APIs fail gracefully via try/catch)
       external: isEmbed || isWeb ? [] : ["@fabianlars/tauri-plugin-oauth"],

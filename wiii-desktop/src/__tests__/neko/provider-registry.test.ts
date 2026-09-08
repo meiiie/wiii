@@ -38,6 +38,34 @@ describe("Neko provider registry", () => {
         protocol: "codex-app-server",
         authOwner: "provider",
       },
+      {
+        id: "opencode",
+        capabilityId: "opencode",
+        integration: "acp",
+        protocol: "acp-v1",
+        authOwner: "provider",
+      },
+      {
+        id: "claude",
+        capabilityId: "claude-code",
+        integration: "structured-cli",
+        protocol: "claude-code-jsonl-catalog",
+        authOwner: "provider",
+      },
+      {
+        id: "cursor",
+        capabilityId: "cursor-agent",
+        integration: "acp",
+        protocol: "acp-v1",
+        authOwner: "provider",
+      },
+      {
+        id: "copilot",
+        capabilityId: "github-copilot-cli",
+        integration: "acp",
+        protocol: "acp-v1",
+        authOwner: "provider",
+      },
     ]);
 
     for (const provider of listProviderDefinitions()) {
@@ -46,6 +74,8 @@ describe("Neko provider registry", () => {
       expect(provider).not.toHaveProperty("binary");
       expect(provider).not.toHaveProperty("executable");
       expect(provider).not.toHaveProperty("command");
+      expect(provider).not.toHaveProperty("activeSessionId");
+      expect(provider).not.toHaveProperty("sessions");
     }
   });
 

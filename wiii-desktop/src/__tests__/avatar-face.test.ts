@@ -456,16 +456,15 @@ describe("Backward compatibility (Sprint 129)", () => {
     expect(code).toContain("memo(WiiiAvatarInner)");
   });
 
-  it("existing 8 usage sites still work (import WiiiAvatar)", async () => {
+  it("animated conversation surfaces still import WiiiAvatar", async () => {
     const files = [
-      "@/App?raw",
       "@/components/settings/SettingsPage?raw",
       "@/components/chat/MessageList?raw",
       "@/components/chat/WelcomeScreen?raw",
       "@/components/chat/MessageBubble?raw",
       "@/components/layout/Sidebar?raw",
       "@/components/layout/StatusBar?raw",
-      "@/components/common/ErrorBoundary?raw",
+      "@/components/layout/CharacterPanel?raw",
     ];
     for (const file of files) {
       const src = await import(/* @vite-ignore */ file);

@@ -235,21 +235,33 @@ describe("Backward compatibility", () => {
     expect(code).toContain("STATE_CONFIG");
   });
 
-  it("all 8 usage sites import from components/common/WiiiAvatar", async () => {
+  it("keeps animated conversation surfaces on the compatibility import", async () => {
     const files = [
-      "@/App?raw",
       "@/components/settings/SettingsPage?raw",
       "@/components/chat/MessageList?raw",
       "@/components/chat/WelcomeScreen?raw",
       "@/components/chat/MessageBubble?raw",
       "@/components/layout/Sidebar?raw",
       "@/components/layout/StatusBar?raw",
-      "@/components/common/ErrorBoundary?raw",
+      "@/components/layout/CharacterPanel?raw",
     ];
     for (const file of files) {
       const src = await import(/* @vite-ignore */ file);
       const code = (src as any).default || src;
       expect(code).toContain("WiiiAvatar");
+    }
+  });
+
+  it("keeps boot and fatal-error paths on the lightweight product mark", async () => {
+    const files = [
+      "@/workbench/WorkbenchBoot?raw",
+      "@/components/common/ErrorBoundary?raw",
+    ];
+    for (const file of files) {
+      const src = await import(/* @vite-ignore */ file);
+      const code = (src as any).default || src;
+      expect(code).toContain("WiiiMark");
+      expect(code).not.toContain("WiiiAvatar");
     }
   });
 });

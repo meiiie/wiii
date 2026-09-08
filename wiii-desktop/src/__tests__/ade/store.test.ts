@@ -132,4 +132,25 @@ describe("Wiii ADE work store", () => {
       useAdeWorkStore.getState().transitionRun(created.runId, "completed"),
     ).rejects.toThrow(/không thể chuyển/i);
   });
+
+  it("requires a new Run before another top-level agent can own the work", async () => {
+    const created = await useAdeWorkStore.getState().createTaskRun({
+      workspace: { name: "Wiii", path: "C:\\src\\wiii" },
+      title: "Keep one worker owner",
+    });
+    await useAdeWorkStore.getState().attachAgentSession({
+      id: "worker-1",
+      runId: created.runId,
+      providerId: "codex",
+      providerSessionId: "thread-1",
+    });
+
+    await expect(useAdeWorkStore.getState().attachAgentSession({
+      id: "worker-2",
+      runId: created.runId,
+      providerId: "neko",
+      providerSessionId: "session-2",
+    })).rejects.toThrow(/tạo Run mới/i);
+    expect(useAdeWorkStore.getState().graph.agentSessions).toHaveLength(1);
+  });
 });

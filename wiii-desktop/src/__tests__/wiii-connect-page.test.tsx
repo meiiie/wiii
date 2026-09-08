@@ -583,6 +583,7 @@ describe("WiiiConnectPage", () => {
     });
     useUIStore.setState({
       activeView: "wiii-connect",
+      wiiiConnectFocusProvider: null,
       commandPaletteOpen: false,
       sidebarOpen: true,
     });
@@ -675,7 +676,7 @@ describe("WiiiConnectPage", () => {
     expect(screen.queryByText("host_action.execute")).toBeNull();
     expect(screen.queryByText("approval-token")).toBeNull();
 
-    fireEvent.click(screen.getByRole("button", { name: /Path policy/i }));
+    fireEvent.click(screen.getByRole("button", { name: /Quyền truy cập/i }));
 
     expect(screen.getByText("document_grounded_answer")).toBeTruthy();
     expect(await screen.findByText("lms_document_apply")).toBeTruthy();
@@ -692,8 +693,8 @@ describe("WiiiConnectPage", () => {
     render(<WiiiConnectPage />);
 
     expect(screen.getAllByText("Chưa có snapshot").length).toBeGreaterThan(0);
-    expect(screen.getByText("Danh bạ kết nối")).toBeTruthy();
-    expect(screen.getByText("Đang dùng fallback local")).toBeTruthy();
+    expect(screen.getByText("Ứng dụng và tài khoản")).toBeTruthy();
+    expect(screen.getByText("Chế độ ngoại tuyến")).toBeTruthy();
     expect(screen.getAllByText("Máy chủ Wiii").length).toBeGreaterThan(0);
 
     fireEvent.click(screen.getByRole("button", { name: /Composio/i }));
@@ -713,6 +714,35 @@ describe("WiiiConnectPage", () => {
     expect(screen.getByRole("button", { name: /Facebook/i })).toBeTruthy();
     expect(screen.queryByRole("button", { name: /Gmail/i })).toBeNull();
     expect(screen.queryByText("ui.highlight")).toBeNull();
+  });
+
+  it("opens the Gmail connection guide from a Neko provider intent", async () => {
+    useUIStore.setState({ wiiiConnectFocusProvider: "gmail" });
+    mockFetchWiiiConnectProviders.mockResolvedValue({
+      version: "wiii_connect_provider_registry.v1",
+      adapter_version: "wiii_connect_adapter.v1",
+      providers: [{
+        slug: "gmail",
+        label: "Gmail",
+        provider_kind: "composio",
+        auth_mode: "oauth2",
+        enabled: true,
+        agent_ready: false,
+        category: "productivity",
+        description: "Gmail thử nghiệm của Neko.",
+        requirements: ["scope_policy", "execution_gateway"],
+        action_count: 1,
+      }],
+    });
+
+    render(<WiiiConnectPage />);
+
+    expect(screen.getByTestId("gmail-connection-guide").textContent).toContain(
+      "không tự cấp quyền API",
+    );
+    expect(await screen.findByText("Danh mục đã đồng bộ")).toBeTruthy();
+    expect(await screen.findByRole("button", { name: "Kết nối qua Wiii" })).toBeTruthy();
+    expect(screen.getAllByText("Gmail thử nghiệm của Neko.").length).toBeGreaterThan(0);
   });
 
   it("uses backend runtime snapshot when no chat lifecycle snapshot exists", async () => {
@@ -800,14 +830,19 @@ describe("WiiiConnectPage", () => {
 
     render(<WiiiConnectPage />);
 
-    expect(await screen.findByText("2/2 agent-ready")).toBeTruthy();
+    expect(await screen.findByText("2/2 sẵn sàng")).toBeTruthy();
     expect(mockFetchWiiiConnectSnapshot).toHaveBeenCalledWith({ surface: "desktop" });
-    fireEvent.click(screen.getByRole("button", { name: /Snapshot/i }));
+    fireEvent.click(
+      within(screen.getByRole("navigation", { name: "Kết nối" })).getByRole(
+        "button",
+        { name: /Đã kết nối/i },
+      ),
+    );
 
     expect(screen.getAllByText("Wiii backend").length).toBeGreaterThan(0);
-    expect(screen.queryByText(/fallback local/i)).toBeNull();
+    expect(screen.queryByText(/Chế độ ngoại tuyến/i)).toBeNull();
 
-    fireEvent.click(screen.getByRole("button", { name: /Path policy/i }));
+    fireEvent.click(screen.getByRole("button", { name: /Quyền truy cập/i }));
     const capabilitySummary = await screen.findByTestId("wiii-connect-capability-summary");
     expect(capabilitySummary.textContent).toContain("facebook");
     expect(capabilitySummary.textContent).toContain("read, preview, apply");
@@ -854,8 +889,8 @@ describe("WiiiConnectPage", () => {
 
     render(<WiiiConnectPage />);
 
-    expect(await screen.findByText("1/2 agent-ready")).toBeTruthy();
-    expect(screen.queryByText("2/2 agent-ready")).toBeNull();
+    expect(await screen.findByText("1/2 sẵn sàng")).toBeTruthy();
+    expect(screen.queryByText("2/2 sẵn sàng")).toBeNull();
   });
 
   it("polls the runtime snapshot and doctor as a live control-plane", async () => {
@@ -942,7 +977,7 @@ describe("WiiiConnectPage", () => {
       await Promise.resolve();
       await Promise.resolve();
     });
-    expect(screen.getByText("1/1 agent-ready")).toBeTruthy();
+    expect(screen.getByText("1/1 sẵn sàng")).toBeTruthy();
 
     await act(async () => {
       await vi.advanceTimersByTimeAsync(5_000);
@@ -952,7 +987,7 @@ describe("WiiiConnectPage", () => {
 
     expect(mockFetchWiiiConnectSnapshot).toHaveBeenCalledTimes(2);
     expect(mockFetchWiiiConnectDoctor).toHaveBeenCalledTimes(2);
-    expect(screen.getByText("2/2 agent-ready")).toBeTruthy();
+    expect(screen.getByText("2/2 sẵn sàng")).toBeTruthy();
   });
 
   it("uses backend provider registry when available", async () => {
@@ -977,7 +1012,7 @@ describe("WiiiConnectPage", () => {
 
     render(<WiiiConnectPage />);
 
-    expect(await screen.findByText("Registry backend")).toBeTruthy();
+    expect(await screen.findByText("Danh mục đã đồng bộ")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: /Composio/i }));
     fireEvent.click(screen.getByRole("button", { name: /Facebook/i }));
     expect(screen.getAllByText("Facebook provider from backend registry.").length).toBeGreaterThan(0);
@@ -1050,7 +1085,7 @@ describe("WiiiConnectPage", () => {
 
     render(<WiiiConnectPage />);
 
-    expect(await screen.findByText("Registry backend")).toBeTruthy();
+    expect(await screen.findByText("Danh mục đã đồng bộ")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: /Composio/i }));
     fireEvent.click(screen.getByRole("button", { name: /Gmail/i }));
 
@@ -1158,7 +1193,7 @@ describe("WiiiConnectPage", () => {
 
     const { container } = render(<WiiiConnectPage />);
 
-    expect(await screen.findByText("Registry backend")).toBeTruthy();
+    expect(await screen.findByText("Danh mục đã đồng bộ")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: /Composio/i }));
     fireEvent.click(screen.getByRole("button", { name: /Facebook/i }));
 
@@ -1265,7 +1300,7 @@ describe("WiiiConnectPage", () => {
 
     const { container } = render(<WiiiConnectPage />);
 
-    expect(await screen.findByText("Registry backend")).toBeTruthy();
+    expect(await screen.findByText("Danh mục đã đồng bộ")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: /Composio/i }));
     fireEvent.click(screen.getByRole("button", { name: /Facebook/i }));
 
@@ -1423,7 +1458,7 @@ describe("WiiiConnectPage", () => {
 
     const { container } = render(<WiiiConnectPage />);
 
-    expect(await screen.findByText("Registry backend")).toBeTruthy();
+    expect(await screen.findByText("Danh mục đã đồng bộ")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: /Composio/i }));
     fireEvent.click(screen.getByRole("button", { name: /Facebook/i }));
     const loadPagesButton = await screen.findByRole("button", { name: /Page/i });
@@ -1550,7 +1585,7 @@ describe("WiiiConnectPage", () => {
 
     const { container } = render(<WiiiConnectPage />);
 
-    expect(await screen.findByText("Registry backend")).toBeTruthy();
+    expect(await screen.findByText("Danh mục đã đồng bộ")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: /Composio/i }));
     fireEvent.click(screen.getByRole("button", { name: /Gmail/i }));
 
@@ -1565,7 +1600,7 @@ describe("WiiiConnectPage", () => {
       ),
     ).toBeTruthy();
     expect(screen.getAllByText("allowed").length).toBeGreaterThan(0);
-    expect(container.textContent?.replace(/\s+/g, "")).toContain("Agent-readyCó");
+    expect(container.textContent?.replace(/\s+/g, "")).toContain("NekodùngđượcCó");
     expect(container.textContent).not.toContain("wcn_live_gmail_1");
     expect(container.textContent).not.toContain("secret-refresh-token");
     expect(container.textContent).not.toContain("secret-action-key");
@@ -1619,7 +1654,7 @@ describe("WiiiConnectPage", () => {
 
     render(<WiiiConnectPage />);
 
-    expect(await screen.findByText("Registry backend")).toBeTruthy();
+    expect(await screen.findByText("Danh mục đã đồng bộ")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: /Composio/i }));
     fireEvent.click(screen.getByRole("button", { name: /Facebook/i }));
     fireEvent.click(screen.getByRole("button", { name: "Kiểm tra policy" }));
@@ -1716,7 +1751,7 @@ describe("WiiiConnectPage", () => {
 
     const { container } = render(<WiiiConnectPage />);
 
-    expect(await screen.findByText("Registry backend")).toBeTruthy();
+    expect(await screen.findByText("Danh mục đã đồng bộ")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: /Composio/i }));
     fireEvent.click(screen.getByRole("button", { name: /Facebook/i }));
     fireEvent.click(screen.getByRole("button", { name: "Kết nối qua Wiii" }));
@@ -1886,7 +1921,7 @@ describe("WiiiConnectPage", () => {
 
     const { container } = render(<WiiiConnectPage />);
 
-    expect(await screen.findByText("Registry backend")).toBeTruthy();
+    expect(await screen.findByText("Danh mục đã đồng bộ")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: /Composio/i }));
     fireEvent.click(screen.getByRole("button", { name: /Facebook/i }));
     fireEvent.click(screen.getByRole("button", { name: "Kết nối qua Wiii" }));
@@ -2044,7 +2079,7 @@ describe("WiiiConnectPage", () => {
 
     const { container } = render(<WiiiConnectPage />);
 
-    expect(await screen.findByText("Registry backend")).toBeTruthy();
+    expect(await screen.findByText("Danh mục đã đồng bộ")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: /Composio/i }));
     fireEvent.click(screen.getByRole("button", { name: /Facebook/i }));
 
@@ -2144,7 +2179,7 @@ describe("WiiiConnectPage", () => {
 
     render(<WiiiConnectPage />);
 
-    expect(await screen.findByText("Registry backend")).toBeTruthy();
+    expect(await screen.findByText("Danh mục đã đồng bộ")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: /Composio/i }));
     fireEvent.click(screen.getByRole("button", { name: /Facebook/i }));
     fireEvent.click(screen.getByRole("button", { name: /qua Wiii$/ }));
@@ -2317,9 +2352,9 @@ describe("WiiiConnectPage", () => {
     const { container } = render(<WiiiConnectPage />);
 
     fireEvent.click(
-      within(screen.getByRole("navigation", { name: "Wiii Connect" })).getByRole(
+      within(screen.getByRole("navigation", { name: "Kết nối" })).getByRole(
         "button",
-        { name: /Runtime/i },
+        { name: /Chẩn đoán/i },
       ),
     );
 
@@ -2749,9 +2784,9 @@ describe("WiiiConnectPage", () => {
     const { container } = render(<WiiiConnectPage />);
 
     fireEvent.click(
-      within(screen.getByRole("navigation", { name: "Wiii Connect" })).getByRole(
+      within(screen.getByRole("navigation", { name: "Kết nối" })).getByRole(
         "button",
-        { name: /Runtime/i },
+        { name: /Chẩn đoán/i },
       ),
     );
 
@@ -2885,9 +2920,9 @@ describe("WiiiConnectPage", () => {
     const { container } = render(<WiiiConnectPage />);
 
     fireEvent.click(
-      within(screen.getByRole("navigation", { name: "Wiii Connect" })).getByRole(
+      within(screen.getByRole("navigation", { name: "Kết nối" })).getByRole(
         "button",
-        { name: /Runtime/i },
+        { name: /Chẩn đoán/i },
       ),
     );
 
@@ -3027,9 +3062,9 @@ describe("WiiiConnectPage", () => {
     const { container } = render(<WiiiConnectPage />);
 
     fireEvent.click(
-      within(screen.getByRole("navigation", { name: "Wiii Connect" })).getByRole(
+      within(screen.getByRole("navigation", { name: "Kết nối" })).getByRole(
         "button",
-        { name: /Runtime/i },
+        { name: /Chẩn đoán/i },
       ),
     );
 

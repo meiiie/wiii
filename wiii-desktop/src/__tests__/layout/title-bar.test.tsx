@@ -135,4 +135,14 @@ describe("shared desktop titlebar", () => {
     const { container } = render(<TitleBar />);
     expect(container.innerHTML).toBe("");
   });
+
+  it("shares workbench controls in browser mode without native caption actions", () => {
+    delete (window as typeof window & { __TAURI_INTERNALS__?: object }).__TAURI_INTERNALS__;
+    const search = vi.fn();
+    render(<TitleBar browserVisible minimal commandCenter={{ label: "Tìm phiên", onClick: search }} />);
+    fireEvent.click(screen.getByRole("button", { name: "Tìm phiên" }));
+    expect(search).toHaveBeenCalledTimes(1);
+    expect(screen.queryByRole("button", { name: "Đóng cửa sổ" })).toBeNull();
+    expect(native.appWindow.onResized).not.toHaveBeenCalled();
+  });
 });

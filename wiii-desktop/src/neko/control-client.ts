@@ -1,8 +1,10 @@
 import { v4 as uuidv4 } from "uuid";
-import type { AcpTransport } from "@/neko-chill/drivers/acp/client";
+import type { AcpTransport } from "./acp-transport";
 import type {
   NekoDetectedProvider,
   NekoLaunchProfile,
+  NekoProviderSessionCatalog,
+  NekoProviderSessionRecord,
 } from "./contracts";
 import type {
   NekoControlEvent,
@@ -33,6 +35,12 @@ export interface NekoProviderSpawnRequest {
 export interface NekoProviderProfileRequest {
   providerId: string;
   workspacePath: string;
+}
+
+export interface NekoProviderSessionRequest {
+  providerId: string;
+  /** Known projects are required only by providers with project-scoped discovery. */
+  workspacePaths?: string[];
 }
 
 export interface NekoNativeSessionRecord {
@@ -105,8 +113,9 @@ export interface NekoSpawnedProvider {
 
 /** Replaceable bridge from Wiii clients to Neko's native authority. */
 export interface NekoControlClient {
-  listProviders(): Promise<NekoDetectedProvider[]>;
+  listProviders(providerId?: string): Promise<NekoDetectedProvider[]>;
   listProfiles(request: NekoProviderProfileRequest): Promise<NekoLaunchProfile[]>;
+  listProviderSessions(request: NekoProviderSessionRequest): Promise<NekoProviderSessionCatalog>;
   listSessions(runId?: string): Promise<NekoNativeSessionRecord[]>;
   readEvents(streamId: string, afterSeq?: number, limit?: number): Promise<NekoControlReplayPage>;
   unresolvedStartSessionIds(): string[];
@@ -164,12 +173,18 @@ class TauriNekoControlClient implements NekoControlClient {
     return [...identities].sort();
   }
 
-  async listProviders(): Promise<NekoDetectedProvider[]> {
+  async listProviders(providerId?: string): Promise<NekoDetectedProvider[]> {
+    if (providerId) requireProviderDefinition(providerId);
     try {
       const { invoke } = await import("@tauri-apps/api/core");
-      const providers = await invoke<unknown>("neko_control_provider_list");
+      const providers = providerId
+        ? await invoke<unknown>("neko_control_provider_list", { providerId })
+        : await invoke<unknown>("neko_control_provider_list");
       if (!Array.isArray(providers) || !providers.every(isDetectedProvider)) {
         throw new Error("Neko returned an invalid provider registry response.");
+      }
+      if (providerId && (providers.length !== 1 || providers[0].id !== providerId)) {
+        throw new Error("Neko returned a mismatched provider scope.");
       }
       return providers.flatMap((provider) => {
         const definition = findProviderDefinition(provider.id);
@@ -197,6 +212,37 @@ class TauriNekoControlClient implements NekoControlClient {
       return profiles;
     } catch (error) {
       if (!hasNativeAuthority()) return [];
+      throw error;
+    }
+  }
+
+  async listProviderSessions(
+    request: NekoProviderSessionRequest,
+  ): Promise<NekoProviderSessionCatalog> {
+    requireProviderDefinition(request.providerId);
+    const workspacePaths = [...new Set(request.workspacePaths ?? [])]
+      .filter((path) => typeof path === "string" && path.length > 0)
+      .slice(0, 32);
+    try {
+      const { invoke } = await import("@tauri-apps/api/core");
+      const catalog = await invoke<unknown>("neko_control_provider_sessions", {
+        providerId: request.providerId,
+        workspacePaths,
+      });
+      if (!isProviderSessionCatalog(catalog, request.providerId)) {
+        throw new Error("Neko returned an invalid provider session catalog.");
+      }
+      return catalog;
+    } catch (error) {
+      if (!hasNativeAuthority()) {
+        return {
+          providerId: request.providerId,
+          scope: request.providerId === "gemini" ? "known_projects" : "all",
+          complete: false,
+          detail: "Bản xem trước trình duyệt không có quyền đọc phiên của harness trên máy.",
+          sessions: [],
+        };
+      }
       throw error;
     }
   }
@@ -789,9 +835,10 @@ function isDetectedProvider(value: unknown): value is NekoDetectedProvider {
     typeof provider.name === "string" &&
     (provider.version === null || typeof provider.version === "string") &&
     typeof provider.found === "boolean" &&
-    ["available", "not_installed", "host_unsupported"].includes(availability as string) &&
+    ["available", "not_installed", "host_unsupported", "probe_failed"].includes(availability as string) &&
     (provider.found === (availability === "available")) &&
-    typeof provider.supportsProfiles === "boolean"
+    typeof provider.supportsProfiles === "boolean" &&
+    (provider.detail === undefined || provider.detail === null || typeof provider.detail === "string")
   );
 }
 
@@ -803,6 +850,41 @@ function isLaunchProfile(value: unknown): value is NekoLaunchProfile {
     typeof profile.provider === "string" &&
     (profile.model === null || typeof profile.model === "string") &&
     typeof profile.active === "boolean"
+  );
+}
+
+function isProviderSessionRecord(value: unknown): value is NekoProviderSessionRecord {
+  if (!value || typeof value !== "object") return false;
+  const session = value as Record<string, unknown>;
+  return (
+    typeof session.providerId === "string" &&
+    typeof session.nativeSessionId === "string" &&
+    session.nativeSessionId.length > 0 &&
+    typeof session.title === "string" &&
+    (session.workspacePath === null || typeof session.workspacePath === "string") &&
+    (session.createdAt === null || typeof session.createdAt === "string") &&
+    (session.updatedAt === null || typeof session.updatedAt === "string") &&
+    (session.model === null || typeof session.model === "string") &&
+    (session.state === null || typeof session.state === "string") &&
+    typeof session.canResume === "boolean"
+  );
+}
+
+function isProviderSessionCatalog(
+  value: unknown,
+  providerId: string,
+): value is NekoProviderSessionCatalog {
+  if (!value || typeof value !== "object") return false;
+  const catalog = value as Record<string, unknown>;
+  return (
+    catalog.providerId === providerId &&
+    (catalog.scope === "all" || catalog.scope === "known_projects") &&
+    typeof catalog.complete === "boolean" &&
+    (catalog.detail === null || typeof catalog.detail === "string") &&
+    Array.isArray(catalog.sessions) &&
+    catalog.sessions.every(
+      (session) => isProviderSessionRecord(session) && session.providerId === providerId,
+    )
   );
 }
 
