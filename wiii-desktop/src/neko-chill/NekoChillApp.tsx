@@ -427,6 +427,8 @@ export default function NekoChillApp({
   const refreshProviderSessions = useNekoProviderSessionStore((state) => state.refresh);
   const projects = useNekoProjectStore((state) => state.projects);
   const projectsHydrated = useNekoProjectStore((state) => state.hydrated);
+  const projectLoadError = useNekoProjectStore((state) => state.error);
+  const [retryingProjects, setRetryingProjects] = useState(false);
   const hydrateProjects = useNekoProjectStore((state) => state.hydrate);
   const ensureWorkspaceProjects = useNekoProjectStore((state) => state.ensureWorkspaceProjects);
   const createProject = useNekoProjectStore((state) => state.createProject);
@@ -685,8 +687,15 @@ export default function NekoChillApp({
       void refreshWorkspace(session.id, session.workspace, { force: true });
       return;
     }
-    const workspace = await chooseWorkspaceFolder();
-    if (workspace) await attachWorkspace(session.id, workspace);
+    try {
+      const workspace = await chooseWorkspaceFolder();
+      if (workspace) await attachWorkspace(session.id, workspace);
+    } catch (cause) {
+      useNekoSessionStore.getState().handleEvent({
+        type: "error", sessionId: session.id, fatal: false,
+        message: `Không thể mở thư mục. Hãy thử lại: ${cause instanceof Error ? cause.message : String(cause)}`,
+      });
+    }
   };
 
   const workspaceSessionId = session?.id;
@@ -907,6 +916,19 @@ export default function NekoChillApp({
           onConnections={onOpenConnections} /></>}
         commandCenter={false}
       />
+      {!projectsHydrated && projectLoadError ? (
+        <div role="alert" className="flex shrink-0 items-center justify-between gap-3 border-b border-[var(--nk-border)] bg-[var(--nk-raised)] px-4 py-2 text-xs">
+          <span>Chưa đọc được danh sách Project. Dữ liệu đã lưu được giữ nguyên.</span>
+          <button type="button" disabled={retryingProjects}
+            className="shrink-0 rounded-md border border-[var(--nk-border)] px-3 py-1.5 disabled:opacity-50"
+            onClick={async () => {
+              setRetryingProjects(true);
+              try { await hydrateProjects(); } finally { setRetryingProjects(false); }
+            }}>
+            {retryingProjects ? "Đang thử lại…" : "Thử tải lại Project"}
+          </button>
+        </div>
+      ) : null}
       <div className="relative flex min-h-0 flex-1">
         {!hydrated ? (
           <SessionRecoveryState

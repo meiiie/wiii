@@ -16,6 +16,12 @@ if (typeof globalThis.ResizeObserver === "undefined") {
   } as typeof ResizeObserver;
 }
 
+// jsdom has no modal top layer; browser tests cover focus containment.
+if (typeof HTMLDialogElement.prototype.showModal === "undefined") {
+  HTMLDialogElement.prototype.showModal = function () { this.open = true; };
+  HTMLDialogElement.prototype.close = function () { this.open = false; };
+}
+
 afterEach(() => {
   // Force DOM cleanup after every test — prevents rendered components from
   // one test leaking into the next when all files run in the same fork.

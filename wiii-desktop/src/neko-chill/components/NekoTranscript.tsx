@@ -115,8 +115,7 @@ export function groupTranscriptBlocks(blocks: ContentBlock[]): TranscriptBlockGr
 }
 
 export function toolActivityFailed(block: ToolExecutionBlockData): boolean {
-  return block.status !== "pending"
-    && /\b(?:failed|error|cancelled|canceled)\b|\bexit\s+[1-9]\d*\b/i.test(block.tool.result ?? "");
+  return block.outcome === "failed" || block.outcome === "cancelled";
 }
 
 export function ThinkingDisclosure({

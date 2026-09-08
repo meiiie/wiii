@@ -284,15 +284,18 @@ export function ProjectHome({
         selectedRoot,
         profile,
         taskLaunch
-          ? { execution: taskLaunch.execution, title: taskLaunch.title }
+          ? { projectId: project.id, execution: taskLaunch.execution, title: taskLaunch.title }
           : { projectId: project.id },
       );
       await taskLaunch?.onSessionCreated?.(sessionId);
       if (!taskLaunch && prompt) {
-        await useNekoSessionStore.getState().sendPrompt(prompt);
+        await useNekoSessionStore.getState().sendPrompt(prompt, () => {
+          if (readNekoComposerDraft(draftScope).trim() === prompt) {
+            clearNekoComposerDraft(draftScope);
+          }
+          setDraftState((current) => current.trim() === prompt ? "" : current);
+        });
       }
-      clearNekoComposerDraft(draftScope);
-      setDraftState("");
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause));
       try {
@@ -302,6 +305,7 @@ export function ProjectHome({
           ? classificationError.message
           : String(classificationError));
       }
+    } finally {
       setStarting(false);
     }
   };

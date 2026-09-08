@@ -503,15 +503,19 @@ export class AcpDriver implements Driver {
         fatal: false,
       });
     } finally {
+      let cleanupSucceeded = false;
       try {
         await this.revokeComputer();
+        cleanupSucceeded = true;
       } catch (error) {
         stopReason = "error";
         this.emitEvent({ type: "error", sessionId: this.sessionId, fatal: true,
           message: error instanceof Error ? error.message : String(error) });
       } finally {
         this.turnRunning = false;
-        this.emitEvent({ type: "turn-finished", sessionId: this.sessionId, stopReason });
+        if (cleanupSucceeded) {
+          this.emitEvent({ type: "turn-finished", sessionId: this.sessionId, stopReason });
+        }
       }
     }
   }

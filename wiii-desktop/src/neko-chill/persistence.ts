@@ -237,6 +237,7 @@ function isNekoContentBlock(value: unknown): value is ContentBlock {
   if (block.type === "tool_execution") {
     return (
       (block.status === "pending" || block.status === "completed") &&
+      (block.outcome === undefined || block.outcome === "completed" || block.outcome === "failed" || block.outcome === "cancelled") &&
       isToolCall(block.tool)
     );
   }

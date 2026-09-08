@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Folder, FolderPlus, LoaderCircle, X } from "lucide-react";
 import type { NekoProject } from "../stores/neko-project-store";
 import { workspaceKey } from "../stores/neko-project-store";
@@ -21,6 +21,20 @@ export function ProjectDialog({
   const [roots, setRoots] = useState<WorkspaceRef[]>(project?.roots ?? []);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const dialogRef = useRef<HTMLDialogElement>(null);
+  const nameRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    const dialog = dialogRef.current;
+    if (!dialog) return;
+    const opener = document.activeElement;
+    dialog.showModal();
+    nameRef.current?.focus();
+    return () => {
+      dialog.close();
+      if (opener instanceof HTMLElement && opener.isConnected) opener.focus();
+    };
+  }, []);
 
   useEffect(() => {
     setName(project?.name ?? "");
@@ -66,17 +80,30 @@ export function ProjectDialog({
   };
 
   return (
+    <dialog ref={dialogRef} aria-labelledby="project-dialog-title"
+      className="fixed inset-0 m-0 h-full max-h-none w-full max-w-none overflow-y-auto border-0 bg-transparent p-0"
+      onKeyDown={(event) => {
+        if (event.key !== "Tab") return;
+        const items = [...event.currentTarget.querySelectorAll<HTMLElement>("button:not(:disabled), input:not(:disabled)")];
+        const first = items[0];
+        const last = items[items.length - 1];
+        if (!first || (event.shiftKey ? document.activeElement === first : document.activeElement === last)) {
+          event.preventDefault();
+          (event.shiftKey ? last : first)?.focus();
+        }
+      }}
+      onCancel={(event) => {
+        event.preventDefault();
+        if (!saving) onCancel();
+      }}>
     <div
-      className="fixed inset-0 z-50 grid place-items-center overflow-y-auto bg-[rgba(29,27,24,0.18)] p-5"
+      className="grid min-h-full place-items-center bg-[rgba(29,27,24,0.18)] p-5"
       role="presentation"
       onMouseDown={(event) => {
         if (event.target === event.currentTarget && !saving) onCancel();
       }}
     >
       <section
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="project-dialog-title"
         className="w-full max-w-[560px] rounded-[22px] border border-[var(--nk-border-strong)] bg-[var(--nk-composer)] p-6 shadow-[0_24px_80px_rgba(55,47,39,0.18)]"
         data-testid="project-dialog"
       >
@@ -105,11 +132,11 @@ export function ProjectDialog({
           <div className="nk-input-field mt-2 flex h-11 items-center rounded-xl border border-[var(--nk-border-strong)] bg-[var(--nk-composer)]">
             <Folder aria-hidden="true" className="mx-3 h-4 w-4 shrink-0 text-[var(--nk-text-3)]" />
             <input
+              ref={nameRef}
               id="project-name"
               value={name}
               maxLength={80}
               disabled={saving}
-              autoFocus
               className="min-w-0 flex-1 bg-transparent pr-3 text-[13px] text-[var(--nk-text)] outline-none placeholder:text-[var(--nk-ghost)]"
               placeholder="Ví dụ: Wiii"
               onChange={(event) => setName(event.target.value)}
@@ -118,7 +145,6 @@ export function ProjectDialog({
                   event.preventDefault();
                   void submit();
                 }
-                if (event.key === "Escape" && !saving) onCancel();
               }}
             />
           </div>
@@ -165,6 +191,7 @@ export function ProjectDialog({
               <button
                 type="button"
                 className="flex min-h-[96px] w-full flex-col items-center justify-center gap-2 text-[11.5px] text-[var(--nk-text-3)] transition-colors hover:bg-[var(--nk-overlay)] hover:text-[var(--nk-text)]"
+                disabled={saving}
                 onClick={() => void addRoot()}
               >
                 <FolderPlus aria-hidden="true" className="h-5 w-5" />
@@ -201,5 +228,6 @@ export function ProjectDialog({
         </footer>
       </section>
     </div>
+    </dialog>
   );
 }

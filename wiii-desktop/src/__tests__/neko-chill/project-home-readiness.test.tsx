@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { ProjectHome } from "@/neko-chill/components/ProjectHome";
 import { HarnessSetupNotice } from "@/neko-chill/components/HarnessSetupNotice";
 import { NekoOverview } from "@/neko-chill/components/NekoOverview";
-import { clearNekoComposerDraft } from "@/neko-chill/composer-drafts";
+import { clearNekoComposerDraft, readNekoComposerDraft, writeNekoComposerDraft } from "@/neko-chill/composer-drafts";
 import { useNekoAgentStore, type DetectedAgent } from "@/neko-chill/stores/neko-agent-store";
 import { useNekoProjectStore } from "@/neko-chill/stores/neko-project-store";
 import { useNekoSessionStore } from "@/neko-chill/stores/neko-session-store";
@@ -50,6 +50,41 @@ beforeEach(() => {
 });
 
 describe("Project Home readiness and missing Neko recovery", () => {
+  it("retains the Project draft when sendPrompt returns without acceptance", async () => {
+    home([gemini]);
+    fireEvent.change(screen.getByRole("combobox", { name: "Chọn Harness" }), { target: { value: "gemini" } });
+    await vi.waitFor(() => expect(sendButton().disabled).toBe(false));
+    await act(async () => { fireEvent.click(sendButton()); });
+    await vi.waitFor(() => expect(useNekoSessionStore.getState().sendPrompt).toHaveBeenCalledOnce());
+    expect(readNekoComposerDraft(`project:${project.id}`)).toBe("Bản nháp cần được giữ");
+    expect((screen.getByRole("textbox", { name: "Lời nhắn đầu tiên" }) as HTMLTextAreaElement).value).toBe("Bản nháp cần được giữ");
+    await vi.waitFor(() => expect(sendButton().disabled).toBe(false));
+  });
+
+  it("clears only an accepted Project draft", async () => {
+    useNekoSessionStore.setState({ sendPrompt: vi.fn(async (_text, accepted) => { accepted?.(); }) });
+    home([gemini]);
+    fireEvent.change(screen.getByRole("combobox", { name: "Chọn Harness" }), { target: { value: "gemini" } });
+    await vi.waitFor(() => expect(sendButton().disabled).toBe(false));
+    await act(async () => { fireEvent.click(sendButton()); });
+    await vi.waitFor(() => expect(readNekoComposerDraft(`project:${project.id}`)).toBe(""));
+    expect((screen.getByRole("textbox", { name: "Lời nhắn đầu tiên" }) as HTMLTextAreaElement).value).toBe("");
+  });
+
+  it("binds a task session to its Project without deleting the manual draft", async () => {
+    const execution = { taskId: "task-test", runId: "run-test", environmentId: "environment-test" };
+    writeNekoComposerDraft(`project:${project.id}`, "Manual draft");
+    useNekoAgentStore.setState({ agents: [gemini] });
+    render(<ProjectHome project={{ ...project, preferredHarnessId: "gemini" }} resetToken={0}
+      taskLaunch={{ execution, workspace: project.roots[0], title: "Task fixture" }} />);
+    fireEvent.click(sendButton());
+    await vi.waitFor(() => expect(useNekoSessionStore.getState().createSession).toHaveBeenCalledWith(
+      gemini, project.roots[0], null, { projectId: project.id, execution, title: "Task fixture" },
+    ));
+    expect(readNekoComposerDraft(`project:${project.id}`)).toBe("Manual draft");
+    expect(useNekoSessionStore.getState().sendPrompt).not.toHaveBeenCalled();
+  });
+
   it("removes all four starter actions, keeping the heading and composer", () => {
     home([gemini]);
     expect(screen.getByRole("heading", { name: /Bạn muốn làm gì trong Wiii/ })).toBeTruthy();

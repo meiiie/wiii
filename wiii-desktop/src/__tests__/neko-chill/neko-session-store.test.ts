@@ -487,6 +487,7 @@ describe("neko-session-store", () => {
     // Tool upsert: one block, terminal state renders completed + detail kept.
     expect(blocks[1]).toMatchObject({
       status: "completed",
+      outcome: "failed",
       tool: { name: "Write(hello.txt)", result: "Denied by user" },
     });
     expect(blocks[2]).toMatchObject({ content: "Chào bạn!" });

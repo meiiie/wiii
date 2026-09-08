@@ -164,6 +164,29 @@ async function startDurableDriver(
 }
 
 describe("AcpDriver golden replay (real neko-core v0.24.0 fixture)", () => {
+  it("does not overwrite fatal Computer cleanup failure with normal turn completion", async () => {
+    const transport = new FakeTransport();
+    const events: DriverEvent[] = [];
+    const computerBridge: AgentComputerBridge = {
+      handles: () => true,
+      handle: vi.fn(async () => ({})),
+      dispose: vi.fn().mockRejectedValueOnce(new Error("lease cleanup unconfirmed")),
+    };
+    const driver = await startDriver(events, transport, computerBridge);
+    const turn = driver.prompt("fixture");
+    await tick();
+    const request = transport.sent.find((frame) => frame.method === "session/prompt")!;
+    transport.inject({ jsonrpc: "2.0", id: request.id, result: { stopReason: "end_turn" } });
+    await turn;
+    expect(events).toContainEqual({ type: "error", sessionId: "local-1", fatal: true,
+      message: "lease cleanup unconfirmed" });
+    expect(events.some((event) => event.type === "turn-finished")).toBe(false);
+    transport.inject({ jsonrpc: "2.0", id: 950, method: WIII_COMPUTER_AGENT_METHODS.act, params: {} });
+    await tick();
+    expect(transport.sent.find((frame) => frame.id === 950)?.error.message).toContain("computer_turn_inactive");
+    await driver.dispose();
+  });
+
   it("denies out-of-turn mutations and releases an acquisition that completes during cancellation", async () => {
     const transport = new FakeTransport();
     let finishAcquire!: () => void;
