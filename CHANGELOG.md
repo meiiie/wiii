@@ -28,9 +28,10 @@ always `wiii-v<version>` and requires a dated matching section below.
   social surfaces.
 - A repository-wide release tool for synchronized versions, release notes,
   checksums, and machine-readable artifact manifests.
-- Governed Linux x64 (`.deb` and `.AppImage`) plus macOS Apple Silicon and
-  Intel (`.dmg`) desktop release candidates, with platform-specific checksums
-  and manifests.
+- An optional persistent Linux Computer through Docker Desktop, with separate
+  browser profiles, explicit Project grants and a human/agent control handoff.
+- A Windows installation and recovery guide covering Neko Core setup, unsigned
+  package checks, manual updates and privacy-safe feedback.
 
 ### Changed
 
@@ -56,15 +57,18 @@ always `wiii-v<version>` and requires a dated matching section below.
   inspectable artifacts, and resilient local-first interaction.
 - Unified backend package/runtime and desktop metadata under the repository
   `VERSION` source of truth.
-- Desktop release validation now runs once before a fail-independent platform
-  matrix; stable publication attests and checks the complete artifact set.
+- Desktop release validation runs before packaging; stable publication attests
+  and verifies the exact artifact inventory for the declared release scope.
 - Stable publication now verifies exact filenames, sidecars, manifest
   version/commit bindings and the declared Windows trust state (including the
   signer thumbprint for Authenticode builds), with a protected
   and publicly disclosed Windows-only break-glass path for hosted-runner
   outages.
-- Linux AppImage packaging now includes the media framework needed for Wiii
-  voice playback.
+- Neko Core is the default harness without silently replacing an existing
+  explicit choice. Harness diagnosis belongs in Overview; a failed probe is
+  distinguished from a missing installation.
+- Refined desktop menus, resizable tool panes, Project dialogs and keyboard
+  focus recovery, with reduced-motion support.
 
 ### Fixed
 
@@ -78,6 +82,10 @@ always `wiii-v<version>` and requires a dated matching section below.
   provider continuation state, usage, tool calls, and cursor-based replay.
 - Tool calls are checkpointed before side effects; interrupted mutations are
   restored as `unknown_outcome` and are never silently replayed.
+- Prevented provider stdin backpressure from blocking its timeout, bounded
+  session-discovery frames while reading, and made event-pump shutdown wake
+  reliably.
+- Preserved drafts and recoverable Project/dialog state after failed actions.
 
 ### Security
 
@@ -90,7 +98,24 @@ always `wiii-v<version>` and requires a dated matching section below.
   subscription login.
 - Durable session storage uses a single-writer lease, backup checkpoint
   recovery, and process-scoped permission grants.
-- Release policy distinguishes unsigned internal candidates from signed public
-  stable builds and requires provenance plus checksums for published binaries.
+- Computer control uses a private root-peer socket instead of a guest-accessible
+  TCP control port. Revocation invalidates queued actions, interrupts owned
+  input and waits for held-key cleanup before acknowledging takeover.
+- Browser and Terminal execution reject a revoked Project grant.
+- Release policy explicitly discloses unsigned Windows packages and requires
+  provenance plus checksums. An unsigned stable release does not establish
+  Authenticode publisher identity.
+
+### Known limitations
+
+- Windows x64 only; Linux/macOS local harness execution is not supported.
+- Neko Core requires separate installation and model/account configuration.
+  Automatic Wiii and Neko installation/updates are not enabled together.
+- Computer is an optional experimental same-user workstation, not a sandbox
+  for hostile apps. Revocation cannot undo delivered effects or stop arbitrary
+  independent guest programs.
+- No human-level benchmark, universal app coverage or end-to-end latency SLA
+  is claimed. Background-app and load-sensitive follow-ups remain tracked in
+  [#964](https://github.com/meiiie/wiii/issues/964).
 
 [Unreleased]: https://github.com/meiiie/wiii/commits/main
