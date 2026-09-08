@@ -2,6 +2,9 @@
 
 Release target: 1.2.0 · Windows x64 · unsigned installer
 
+Status: preparing; not published. These instructions describe the planned
+stable installer. Candidate builds are for acceptance testing only.
+
 ## Install
 
 1. Download the installer and its matching `.sha256` file from

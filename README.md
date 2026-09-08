@@ -35,6 +35,11 @@ and separate from local desktop work.
 
 ## Downloads and support
 
+**1.2.0 is being prepared and is not published yet.** The Windows candidate
+has been built, but installed-desktop acceptance and the stable publication
+gates are still pending. The filename below describes the planned release,
+not an installer currently available from GitHub Releases.
+
 Official stable installers are published only on
 [GitHub Releases](https://github.com/meiiie/wiii/releases). Check that the release
 contains an installer, its SHA-256 sidecar and a release manifest; a source
@@ -117,6 +122,7 @@ npm run build:embed
 npm run tauri -- build --bundles nsis
 
 # From the repository root
+cd ..
 python tools/release/wiii_release.py check
 ```
 
