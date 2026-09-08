@@ -188,17 +188,16 @@ pub async fn neko_computer_browser_navigate(
 }
 
 #[tauri::command]
-pub fn neko_computer_events_read(
+pub async fn neko_computer_events_read(
     service: State<'_, ComputerAvailability>,
     environment_id: String,
     after_seq: u64,
     limit: u32,
 ) -> Result<ComputerReplayPage, String> {
-    service
-        .inner()
-        .as_ref()
-        .map_err(Clone::clone)?
-        .replay(&environment_id, after_seq, limit)
+    let service = service.inner().as_ref().map_err(Clone::clone)?.clone();
+    tauri::async_runtime::spawn_blocking(move || service.replay(&environment_id, after_seq, limit))
+        .await
+        .map_err(|error| format!("Neko computer event replay task failed: {error}"))?
 }
 
 #[tauri::command]

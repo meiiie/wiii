@@ -147,7 +147,11 @@ impl RpcProbe {
                 let mut reader = BufReader::new(stdout);
                 loop {
                     let mut line = String::new();
-                    match reader.read_line(&mut line) {
+                    match reader
+                        .by_ref()
+                        .take((MAX_RPC_FRAME_BYTES + 1) as u64)
+                        .read_line(&mut line)
+                    {
                         Ok(0) => {
                             let _ = sender.send(Err("provider discovery stream closed".into()));
                             return;

@@ -36,7 +36,9 @@ impl AppEventPump {
                     }
                     let (lock, condition) = &*worker_wake;
                     let guard = lock.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
-                    drop(condition.wait_timeout(guard, IDLE_RECHECK));
+                    drop(condition.wait_timeout_while(guard, IDLE_RECHECK, |_| {
+                        !worker_stopped.load(Ordering::Acquire)
+                    }));
                 }
             })
             .map_err(|error| format!("start Wiii app-event pump failed: {error}"))?;
@@ -48,8 +50,15 @@ impl AppEventPump {
     }
 
     pub fn shutdown(&self) {
-        self.stopped.store(true, Ordering::Release);
-        self.wake.1.notify_all();
+        {
+            let _guard = self
+                .wake
+                .0
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner());
+            self.stopped.store(true, Ordering::Release);
+            self.wake.1.notify_all();
+        }
         let worker = self
             .worker
             .lock()

@@ -4,6 +4,7 @@ from __future__ import annotations
 import importlib.util
 import io
 import http.client
+from http.server import ThreadingHTTPServer
 import json
 from pathlib import Path
 import subprocess
@@ -33,6 +34,26 @@ SPEC.loader.exec_module(BRIDGE)
 
 
 class StableWorkstationContractTest(unittest.TestCase):
+    def test_scoped_workstation_launcher_keeps_its_observed_precondition(self):
+        snapshot = BRIDGE.bridge_request("/observe", {
+            "environmentId": "fixture-scoped-launcher", "maxNodes": 4,
+            "scopeRef": BRIDGE.WORKSTATION_NODE["ref"],
+        })["snapshot"]
+        browser = next(node for node in snapshot["nodes"] if node["ref"] == "app:browser")
+        request = {
+            "environmentId": "fixture-scoped-launcher", "stateVersion": snapshot["stateVersion"],
+            "targetRef": browser["ref"], "expectedRole": browser["role"],
+            "expectedName": browser["name"], "action": "set_text", "text": "https://example.com/",
+        }
+        with patch.object(BRIDGE, "navigate_browser", return_value=None) as navigate, \
+             patch.object(BRIDGE, "browser_navigation_completed", return_value=True), \
+             patch.object(BRIDGE, "browser_state_token", return_value="fixture"), \
+             patch.object(BRIDGE, "browser_pages", return_value=[]), \
+             patch.object(BRIDGE, "observe", side_effect=AssertionError("unnecessary desktop scan")):
+            result = BRIDGE.act(request)["result"]
+        navigate.assert_called_once_with("https://example.com/")
+        self.assertEqual(result["outcome"], "completed")
+
     def setUp(self) -> None:
         with BRIDGE.APP_EVENT_LOCK:
             BRIDGE.APP_EVENT_BUFFER.clear()
@@ -200,7 +221,7 @@ class StableWorkstationContractTest(unittest.TestCase):
                     raise TimeoutError("test failed to release event poll")
             return {"status": "ok"}
 
-        with BRIDGE.ThreadingHTTPServer(("127.0.0.1", 0), BRIDGE.SemanticBridgeHandler) as server:
+        with ThreadingHTTPServer(("127.0.0.1", 0), BRIDGE.SemanticBridgeHandler) as server:
             host, port = server.server_address
             server_thread = threading.Thread(target=server.serve_forever, daemon=True)
             server_thread.start()
@@ -458,6 +479,7 @@ class StableWorkstationContractTest(unittest.TestCase):
         connection = object.__new__(BRIDGE.CdpConnection)
         connection.socket = FakeSocket()
         connection.message_id = 0
+        connection.timeout = 5
         with self.assertRaisesRegex(RuntimeError, "confirm dialog requires human takeover"):
             connection.call("Runtime.callFunctionOn")
 

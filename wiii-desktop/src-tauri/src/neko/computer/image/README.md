@@ -5,9 +5,12 @@ multi-tenant sandbox. The desktop native `NekoComputerService` owns Project
 grants, environment routing, leases, durable request IDs and unknown outcomes.
 `DockerComputerProvider` invokes these private adapters only after that gate.
 
-The semantic HTTP endpoint binds only to guest loopback. It is reached through
-`docker exec` into the environment selected by the native provider; port 9234
-must not be published. The Work Plane bridge is a one-request stdin/stdout
+The semantic HTTP endpoint uses a filesystem Unix socket in a root-owned 0700
+tmpfs directory. Only the native provider's privileged `docker exec` can connect;
+the server also checks kernel peer credentials, drops UID/GID and protects its
+open descriptors before serving. Guest loopback has no semantic TCP listener.
+Terminal, browser and Work Plane execs explicitly use unprivileged UID 10001.
+The Work Plane bridge is a one-request stdin/stdout
 process, not a public service. Its `optimistic_idempotent` descriptor describes
 the end-to-end native contract, not independent replay protection in this
 Python process. Do not connect a harness directly to either adapter.
