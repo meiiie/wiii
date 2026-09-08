@@ -1706,15 +1706,6 @@ where
     let mut child = command
         .spawn()
         .map_err(|error| format!("start Docker CLI failed: {error}"))?;
-    if let Some(input) = input {
-        let mut stdin = child
-            .stdin
-            .take()
-            .ok_or_else(|| "open Docker stdin failed".to_string())?;
-        stdin
-            .write_all(input)
-            .map_err(|error| format!("write Docker stdin failed: {error}"))?;
-    }
     let stdout = child
         .stdout
         .take()
@@ -1726,6 +1717,16 @@ where
     let stdout_reader = thread::spawn(move || read_bounded_stream(stdout, max_output));
     let stderr_reader = thread::spawn(move || read_bounded_stream(stderr, max_output));
     let deadline = Instant::now() + timeout;
+    let stdin_writer = input.map(|input| {
+        let stdin = child.stdin.take();
+        let input = input.to_vec();
+        thread::spawn(move || {
+            stdin
+                .ok_or_else(|| "open Docker stdin failed".to_string())?
+                .write_all(&input)
+                .map_err(|error| format!("write Docker stdin failed: {error}"))
+        })
+    });
     let status = loop {
         if stopped.is_some_and(|flag| flag.load(Ordering::Acquire)) {
             let _ = child.kill();
@@ -1753,7 +1754,15 @@ where
     let (stderr, stderr_truncated) = stderr_reader
         .join()
         .map_err(|_| "Docker stderr reader failed".to_string())??;
+    let written = stdin_writer.map(|writer| {
+        writer
+            .join()
+            .map_err(|_| "Docker stdin writer failed".to_string())?
+    });
     let status = status?;
+    if let Some(written) = written {
+        written?;
+    }
     Ok(BoundedOutput {
         status,
         stdout,
@@ -1793,6 +1802,65 @@ fn nonempty_error(prefix: &str, output: &BoundedOutput) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    #[ignore = "subprocess fixture for bounded stdin tests"]
+    fn bounded_stdin_blocked_fixture() {
+        thread::sleep(Duration::from_secs(3));
+    }
+
+    #[test]
+    #[ignore = "subprocess fixture for simultaneous pipe tests"]
+    fn bounded_stdin_duplex_fixture() {
+        std::io::stdout()
+            .write_all(&vec![b'o'; 2 * 1024 * 1024])
+            .unwrap();
+        let mut input = Vec::new();
+        std::io::stdin().read_to_end(&mut input).unwrap();
+        assert_eq!(input, vec![b'i'; 2 * 1024 * 1024]);
+    }
+
+    #[test]
+    fn bounded_stdin_obeys_deadline_when_child_never_reads() {
+        let started = Instant::now();
+        let error = run_bounded_with_input(
+            &std::env::current_exe().unwrap(),
+            [
+                "--exact",
+                "neko::computer::provider::tests::bounded_stdin_blocked_fixture",
+                "--ignored",
+                "--nocapture",
+            ],
+            None,
+            Duration::from_millis(250),
+            1024,
+            &vec![b'i'; 2 * 1024 * 1024],
+        )
+        .expect_err("blocked stdin must time out");
+        assert!(error.contains("timed out"), "{error}");
+        assert!(started.elapsed() < Duration::from_secs(2));
+    }
+
+    #[test]
+    fn bounded_stdin_drains_output_while_writing() {
+        let output = run_bounded_with_input(
+            &std::env::current_exe().unwrap(),
+            [
+                "--exact",
+                "neko::computer::provider::tests::bounded_stdin_duplex_fixture",
+                "--ignored",
+                "--nocapture",
+            ],
+            None,
+            Duration::from_secs(5),
+            1024,
+            &vec![b'i'; 2 * 1024 * 1024],
+        )
+        .unwrap();
+        assert!(output.status.success(), "{}", output.stderr_text());
+        assert!(output.truncated);
+        assert_eq!(output.stdout.len(), 1024);
+    }
 
     #[test]
     fn provider_names_are_stable_and_scoped() {

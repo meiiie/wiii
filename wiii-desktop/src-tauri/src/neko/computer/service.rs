@@ -454,9 +454,9 @@ impl NekoComputerService {
                 "Computer removal confirmation must equal {expected}"
             ));
         }
-        self.journal.mark_side_effect_started(&request.request_id)?;
         self.revoke_active_input(&request.environment_id)?;
         let _guard = self.operation_guard();
+        self.journal.mark_side_effect_started(&request.request_id)?;
         if let Err(error) = self.provider.destroy(&request.environment_id) {
             return Err(self.uncertain(&request.request_id, &request.environment_id, error));
         }
@@ -735,7 +735,7 @@ impl NekoComputerService {
         request: TerminalExecRequest,
     ) -> Result<TerminalExecResult, String> {
         let _guard = self.operation_guard();
-        let environment = self.require_environment(&request.environment_id)?;
+        let environment = self.require_granted_environment(&request.environment_id)?;
         if environment.state != ComputerState::Ready {
             return Err("Computer must be running before Terminal can execute".to_string());
         }
@@ -807,7 +807,7 @@ impl NekoComputerService {
 
     pub fn browser_navigate(&self, request: BrowserNavigateRequest) -> Result<(), String> {
         let _guard = self.operation_guard();
-        let environment = self.require_environment(&request.environment_id)?;
+        let environment = self.require_granted_environment(&request.environment_id)?;
         if environment.state != ComputerState::Ready {
             return Err("Computer must be running before Browser can navigate".to_string());
         }
@@ -1861,9 +1861,27 @@ mod tests {
             .unwrap_err();
         assert!(resume.starts_with("project_access_denied:"));
         assert!(reset.starts_with("project_access_denied:"));
+        let terminal = service
+            .terminal_exec(TerminalExecRequest {
+                request_id: "revoked-terminal".into(),
+                environment_id: "computer-abc".into(),
+                command: "echo forbidden".into(),
+            })
+            .unwrap_err();
+        let browser = service
+            .browser_navigate(BrowserNavigateRequest {
+                request_id: "revoked-browser".into(),
+                environment_id: "computer-abc".into(),
+                url: "https://example.com".into(),
+            })
+            .unwrap_err();
+        assert!(terminal.starts_with("project_access_denied:"));
+        assert!(browser.starts_with("project_access_denied:"));
         for (id, method) in [
             ("revoked-resume", "computer/resume"),
             ("revoked-reset", "computer/reset"),
+            ("revoked-terminal", "computer/terminal/exec"),
+            ("revoked-browser", "computer/browser/navigate"),
         ] {
             assert!(service
                 .journal
