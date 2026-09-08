@@ -1,6 +1,11 @@
 #!/bin/sh
 set -eu
 
+if [ "$(id -u)" -eq 0 ]; then
+  python3 /usr/local/lib/wiii-computer/semantic_bridge.py serve &
+  exec setpriv --reuid=10001 --regid=10001 --clear-groups /usr/bin/tini -- "$0"
+fi
+
 if [ ! -r /run/secrets/wiii-vnc-password ]; then
   echo "Wiii computer display credential is unavailable" >&2
   exit 70
@@ -91,9 +96,6 @@ display_pid=$!
 cleanup() {
   kill "$display_pid" 2>/dev/null || true
   kill "$office_pid" 2>/dev/null || true
-  if [ -n "${semantic_bridge_pid:-}" ]; then
-    kill "$semantic_bridge_pid" 2>/dev/null || true
-  fi
 }
 trap cleanup EXIT INT TERM
 
@@ -116,19 +118,5 @@ wiii-browser \
   --window-position=150,40 \
   --window-size=1120,760 \
   about:blank >/tmp/google-chrome.log 2>&1 &
-
-python3 /usr/local/lib/wiii-computer/semantic_bridge.py serve \
-  >/tmp/wiii-semantic-bridge.log 2>&1 &
-semantic_bridge_pid=$!
-
-tries=0
-while ! curl --fail --silent --max-time 1 http://127.0.0.1:9234/health >/dev/null; do
-  tries=$((tries + 1))
-  if [ "$tries" -gt 100 ] || ! kill -0 "$semantic_bridge_pid" 2>/dev/null; then
-    echo "Wiii semantic bridge did not become ready" >&2
-    exit 72
-  fi
-  sleep 0.05
-done
 
 exec websockify --web=/usr/share/novnc 0.0.0.0:6080 localhost:5900

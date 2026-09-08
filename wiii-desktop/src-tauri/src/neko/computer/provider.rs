@@ -8,7 +8,7 @@ use super::model::{
 use super::watcher::WatcherBatch;
 use super::work_plane::WorkPlaneAdapter;
 use serde::Serialize;
-use serde_json::Value;
+use serde_json::{json, Value};
 use std::ffi::{OsStr, OsString};
 use std::fs;
 use std::io::{Read, Write};
@@ -18,8 +18,11 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::thread;
 use std::time::{Duration, Instant};
 
-const IMAGE_REF: &str = "wiii/web-computer:semantic-v40";
-const OBSOLETE_IMAGE_REFS: [&str; 38] = [
+const IMAGE_REF: &str = "wiii/web-computer:semantic-v43";
+const OBSOLETE_IMAGE_REFS: [&str; 42] = [
+    "wiii/web-computer:semantic-v42",
+    "wiii/web-computer:semantic-v41",
+    "wiii/web-computer:semantic-v40",
     "wiii/web-computer:semantic-v39",
     "wiii/web-computer:semantic-v38",
     "wiii/web-computer:semantic-v37",
@@ -41,6 +44,7 @@ const OBSOLETE_IMAGE_REFS: [&str; 38] = [
     "wiii/web-computer:semantic-v21",
     "wiii/web-computer:semantic-v20",
     "wiii/web-computer:semantic-v19",
+    "wiii/web-computer:semantic-v18",
     "wiii/web-computer:semantic-v17",
     "wiii/web-computer:semantic-v16",
     "wiii/web-computer:semantic-v15",
@@ -60,9 +64,9 @@ const OBSOLETE_IMAGE_REFS: [&str; 38] = [
     "wiii/local-computer:pilot-v1",
 ];
 const OWNER_LABEL: &str = "neko-computer-v1";
-const PACK_ID: &str = "web-computer-semantic-v40";
+const PACK_ID: &str = "web-computer-semantic-v43";
 const PACK_SCHEMA_VERSION: &str = "wiii-computer-pack.v2";
-const PACK_VERSION: &str = "semantic-v40";
+const PACK_VERSION: &str = "semantic-v43";
 const PACK_CHANNEL: &str = "preview";
 const PROFILE_SCHEMA_VERSION: u32 = 1;
 pub(crate) const CORE_PACKAGE_ID: &str = "web-computer-core";
@@ -139,6 +143,8 @@ pub(crate) trait ComputerProvider: Send + Sync {
         request: &SemanticObserveRequest,
     ) -> Result<SemanticSnapshot, String>;
     fn semantic_act(&self, request: &SemanticActRequest) -> Result<SemanticActResult, String>;
+    fn activate_input(&self, environment_id: &str, lease_id: &str) -> Result<(), String>;
+    fn revoke_input(&self, environment_id: &str, lease_id: &str) -> Result<(), String>;
     fn app_events_poll(
         &self,
         environment_id: &str,
@@ -147,7 +153,6 @@ pub(crate) trait ComputerProvider: Send + Sync {
         wait_ms: u32,
         stopped: Option<&AtomicBool>,
     ) -> Result<WatcherBatch, String>;
-    fn resume_realtime(&self, environment_id: &str) -> Result<(), String>;
     fn terminal_exec(
         &self,
         environment_id: &str,
@@ -692,8 +697,13 @@ impl LocalDockerComputerProvider {
             [
                 OsString::from("exec"),
                 OsString::from("--interactive"),
+                OsString::from("--user"),
+                OsString::from("0:0"),
                 OsString::from(&names.container),
-                OsString::from("curl"),
+                OsString::from("/usr/bin/curl"),
+                OsString::from("--disable"),
+                OsString::from("--unix-socket"),
+                OsString::from("/run/wiii-control/semantic.sock"),
                 OsString::from("--fail"),
                 OsString::from("--silent"),
                 OsString::from("--show-error"),
@@ -703,7 +713,7 @@ impl LocalDockerComputerProvider {
                 OsString::from("Content-Type: application/json"),
                 OsString::from("--data-binary"),
                 OsString::from("@-"),
-                OsString::from(format!("http://127.0.0.1:9234/{route}")),
+                OsString::from(format!("http://localhost/{route}")),
             ],
             None,
             SEMANTIC_TIMEOUT,
@@ -716,6 +726,34 @@ impl LocalDockerComputerProvider {
         }
         serde_json::from_slice(&output.stdout)
             .map_err(|error| format!("decode {operation} failed: {error}"))
+    }
+
+    fn input_authority(
+        &self,
+        environment_id: &str,
+        lease_id: &str,
+        revoke: bool,
+    ) -> Result<(), String> {
+        if revoke && !self.container_exists(&ProviderNames::new(environment_id).container)? {
+            return Ok(());
+        }
+        let response = self.semantic_bridge_request(
+            environment_id,
+            if revoke {
+                "input/revoke"
+            } else {
+                "input/activate"
+            },
+            &json!({ "leaseId": lease_id }),
+            "Computer input authority",
+            None,
+        )?;
+        if response.get("status").and_then(Value::as_str) != Some("ok")
+            || (revoke && response.get("quiescent").and_then(Value::as_bool) != Some(true))
+        {
+            return Err("Computer input authority was not confirmed".to_string());
+        }
+        Ok(())
     }
 
     fn work_plane_bridge<T: Serialize>(
@@ -733,6 +771,8 @@ impl LocalDockerComputerProvider {
             [
                 OsString::from("exec"),
                 OsString::from("--interactive"),
+                OsString::from("--user"),
+                OsString::from("10001:10001"),
                 OsString::from(&names.container),
                 OsString::from("python3"),
                 OsString::from("/usr/local/lib/wiii-computer/work_plane_bridge.py"),
@@ -754,31 +794,6 @@ impl LocalDockerComputerProvider {
         Ok(envelope)
     }
 
-    pub(crate) fn resume_realtime(&self, environment_id: &str) -> Result<(), String> {
-        let docker = self.require_daemon()?;
-        let names = ProviderNames::new(environment_id);
-        if !self.container_exists(&names.container)? {
-            return Ok(());
-        }
-        let output = run_bounded(
-            docker,
-            [
-                OsString::from("exec"),
-                OsString::from(&names.container),
-                OsString::from("python3"),
-                OsString::from("/usr/local/lib/wiii-computer/semantic_bridge.py"),
-                OsString::from("clock-resume"),
-            ],
-            None,
-            SEMANTIC_TIMEOUT,
-            MAX_CONTROL_OUTPUT,
-        )?;
-        if !output.success() {
-            return Err(nonempty_error("Computer realtime resume failed", &output));
-        }
-        Ok(())
-    }
-
     pub(crate) fn terminal_exec(
         &self,
         environment_id: &str,
@@ -793,6 +808,8 @@ impl LocalDockerComputerProvider {
             docker,
             [
                 OsString::from("exec"),
+                OsString::from("--user"),
+                OsString::from("10001:10001"),
                 OsString::from("--workdir"),
                 OsString::from("/workspace/project"),
                 OsString::from(&names.container),
@@ -818,6 +835,8 @@ impl LocalDockerComputerProvider {
         self.docker_checked_owned(
             vec![
                 OsString::from("exec"),
+                OsString::from("--user"),
+                OsString::from("10001:10001"),
                 OsString::from("--env"),
                 OsString::from("DISPLAY=:1"),
                 OsString::from(&names.container),
@@ -875,7 +894,7 @@ impl LocalDockerComputerProvider {
     }
 
     fn materialize_build_context(&self) -> Result<PathBuf, String> {
-        let context = self.state_root.join("image-semantic-v40");
+        let context = self.state_root.join("image-semantic-v43");
         fs::create_dir_all(&context)
             .map_err(|error| format!("create Wiii computer image context failed: {error}"))?;
         write_if_changed(
@@ -897,6 +916,14 @@ impl LocalDockerComputerProvider {
         write_if_changed(
             &context.join("semantic_bridge.py"),
             include_bytes!("image/semantic_bridge.py"),
+        )?;
+        write_if_changed(
+            &context.join("control_transport.py"),
+            include_bytes!("image/control_transport.py"),
+        )?;
+        write_if_changed(
+            &context.join("input_authority.py"),
+            include_bytes!("image/input_authority.py"),
         )?;
         write_if_changed(
             &context.join("work_plane_bridge.py"),
@@ -1057,9 +1084,15 @@ impl LocalDockerComputerProvider {
             OsString::from(resources.shared_memory_bytes.to_string()),
             OsString::from("--cap-drop"),
             OsString::from("ALL"),
+            OsString::from("--cap-add"),
+            OsString::from("SETUID"),
+            OsString::from("--cap-add"),
+            OsString::from("SETGID"),
             OsString::from("--security-opt"),
             OsString::from("no-new-privileges:true"),
             OsString::from("--read-only"),
+            OsString::from("--tmpfs"),
+            OsString::from("/run/wiii-control:rw,nosuid,nodev,noexec,mode=0700,size=1m"),
             OsString::from("--tmpfs"),
             OsString::from(format!(
                 "/tmp:rw,nosuid,nodev,size={}",
@@ -1393,8 +1426,12 @@ impl ComputerProvider for LocalDockerComputerProvider {
         )
     }
 
-    fn resume_realtime(&self, environment_id: &str) -> Result<(), String> {
-        LocalDockerComputerProvider::resume_realtime(self, environment_id)
+    fn activate_input(&self, environment_id: &str, lease_id: &str) -> Result<(), String> {
+        self.input_authority(environment_id, lease_id, false)
+    }
+
+    fn revoke_input(&self, environment_id: &str, lease_id: &str) -> Result<(), String> {
+        self.input_authority(environment_id, lease_id, true)
     }
 
     fn terminal_exec(
@@ -1669,15 +1706,6 @@ where
     let mut child = command
         .spawn()
         .map_err(|error| format!("start Docker CLI failed: {error}"))?;
-    if let Some(input) = input {
-        let mut stdin = child
-            .stdin
-            .take()
-            .ok_or_else(|| "open Docker stdin failed".to_string())?;
-        stdin
-            .write_all(input)
-            .map_err(|error| format!("write Docker stdin failed: {error}"))?;
-    }
     let stdout = child
         .stdout
         .take()
@@ -1689,6 +1717,16 @@ where
     let stdout_reader = thread::spawn(move || read_bounded_stream(stdout, max_output));
     let stderr_reader = thread::spawn(move || read_bounded_stream(stderr, max_output));
     let deadline = Instant::now() + timeout;
+    let stdin_writer = input.map(|input| {
+        let stdin = child.stdin.take();
+        let input = input.to_vec();
+        thread::spawn(move || {
+            stdin
+                .ok_or_else(|| "open Docker stdin failed".to_string())?
+                .write_all(&input)
+                .map_err(|error| format!("write Docker stdin failed: {error}"))
+        })
+    });
     let status = loop {
         if stopped.is_some_and(|flag| flag.load(Ordering::Acquire)) {
             let _ = child.kill();
@@ -1716,7 +1754,15 @@ where
     let (stderr, stderr_truncated) = stderr_reader
         .join()
         .map_err(|_| "Docker stderr reader failed".to_string())??;
+    let written = stdin_writer.map(|writer| {
+        writer
+            .join()
+            .map_err(|_| "Docker stdin writer failed".to_string())?
+    });
     let status = status?;
+    if let Some(written) = written {
+        written?;
+    }
     Ok(BoundedOutput {
         status,
         stdout,
@@ -1756,6 +1802,65 @@ fn nonempty_error(prefix: &str, output: &BoundedOutput) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    #[ignore = "subprocess fixture for bounded stdin tests"]
+    fn bounded_stdin_blocked_fixture() {
+        thread::sleep(Duration::from_secs(3));
+    }
+
+    #[test]
+    #[ignore = "subprocess fixture for simultaneous pipe tests"]
+    fn bounded_stdin_duplex_fixture() {
+        std::io::stdout()
+            .write_all(&vec![b'o'; 2 * 1024 * 1024])
+            .unwrap();
+        let mut input = Vec::new();
+        std::io::stdin().read_to_end(&mut input).unwrap();
+        assert_eq!(input, vec![b'i'; 2 * 1024 * 1024]);
+    }
+
+    #[test]
+    fn bounded_stdin_obeys_deadline_when_child_never_reads() {
+        let started = Instant::now();
+        let error = run_bounded_with_input(
+            &std::env::current_exe().unwrap(),
+            [
+                "--exact",
+                "neko::computer::provider::tests::bounded_stdin_blocked_fixture",
+                "--ignored",
+                "--nocapture",
+            ],
+            None,
+            Duration::from_millis(250),
+            1024,
+            &vec![b'i'; 2 * 1024 * 1024],
+        )
+        .expect_err("blocked stdin must time out");
+        assert!(error.contains("timed out"), "{error}");
+        assert!(started.elapsed() < Duration::from_secs(2));
+    }
+
+    #[test]
+    fn bounded_stdin_drains_output_while_writing() {
+        let output = run_bounded_with_input(
+            &std::env::current_exe().unwrap(),
+            [
+                "--exact",
+                "neko::computer::provider::tests::bounded_stdin_duplex_fixture",
+                "--ignored",
+                "--nocapture",
+            ],
+            None,
+            Duration::from_secs(5),
+            1024,
+            &vec![b'i'; 2 * 1024 * 1024],
+        )
+        .unwrap();
+        assert!(output.status.success(), "{}", output.stderr_text());
+        assert!(output.truncated);
+        assert_eq!(output.stdout.len(), 1024);
+    }
 
     #[test]
     fn provider_names_are_stable_and_scoped() {
@@ -1854,7 +1959,7 @@ mod tests {
         assert!(dockerfile.contains("--interval=30s"));
         assert!(dockerfile.contains("--start-interval=1s"));
         assert!(dockerfile.contains("--timeout=5s"));
-        assert!(dockerfile.contains("http://127.0.0.1:9234/health"));
+        assert!(dockerfile.contains("--unix-socket /run/wiii-control/semantic.sock"));
         assert!(dockerfile.contains("http://127.0.0.1:9222/json/version"));
         assert!(!dockerfile.contains("--interval=2s"));
     }
@@ -1896,6 +2001,8 @@ mod tests {
             provider.docker_checked(
                 [
                     "exec",
+                    "--user",
+                    "10001:10001",
                     &names.container,
                     "sh",
                     "-lc",
@@ -1933,6 +2040,8 @@ mod tests {
             provider.docker_checked(
                 [
                     "exec",
+                    "--user",
+                    "10001:10001",
                     &names.container,
                     "sh",
                     "-lc",
@@ -1949,6 +2058,52 @@ mod tests {
                 return Err("reconciled pack did not publish the active version".to_string());
             }
 
+            let config = provider.terminal_exec(
+                &environment_id,
+                "printf 'output = /tmp/wiii-curlrc-bypass\\n' > /home/neko/.curlrc",
+            )?;
+            if config.exit_code != Some(0) {
+                return Err("could not prepare workload-owned curl config fixture".to_string());
+            }
+            let snapshot = provider.semantic_observe(&SemanticObserveRequest {
+                environment_id: environment_id.clone(),
+                max_nodes: 4,
+                scope_ref: Some("workstation:main".to_string()),
+                continuation: None,
+                since_state_version: None,
+                known_node_versions: Vec::new(),
+                visual_ref: None,
+            })?;
+            if !snapshot
+                .nodes
+                .iter()
+                .any(|node| node.node_ref == "app:browser")
+            {
+                return Err(
+                    "private control transport did not return the Browser launcher".to_string(),
+                );
+            }
+            let ignored_config =
+                provider.terminal_exec(&environment_id, "test ! -e /tmp/wiii-curlrc-bypass")?;
+            if ignored_config.exit_code != Some(0) {
+                return Err(
+                    "privileged control consumed workload-owned curl configuration".to_string(),
+                );
+            }
+            let workload = provider.terminal_exec(&environment_id, "id -u")?;
+            if workload.exit_code != Some(0) || workload.stdout.trim() != "10001" {
+                return Err(
+                    "Terminal workload did not retain its unprivileged identity".to_string()
+                );
+            }
+            let bypass = provider.terminal_exec(
+                &environment_id,
+                "curl --unix-socket /run/wiii-control/semantic.sock --fail --silent --max-time 2 http://localhost/health",
+            )?;
+            if bypass.exit_code == Some(0) || !bypass.stdout.is_empty() {
+                return Err("Terminal workload reached the private control endpoint".to_string());
+            }
+
             if provider.container_exists(&names.rollback_container)? {
                 return Err("successful reconciliation left a rollback shell behind".to_string());
             }
@@ -1961,6 +2116,8 @@ mod tests {
             provider.docker_checked(
                 [
                     "exec",
+                    "--user",
+                    "10001:10001",
                     &names.container,
                     "sh",
                     "-lc",
