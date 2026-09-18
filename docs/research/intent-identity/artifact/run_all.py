@@ -23,7 +23,7 @@ def main() -> None:
         [PY, "experiments/e_belief.py"],
     ]
     if not quick:
-        steps.append([PY, "experiments/runtime_studies.py", "I1", "I2", "I3", "I4"])
+        steps.append([PY, "experiments/runtime_studies.py", "I1", "I2", "I3", "I4", "I5"])
     for cmd in steps:
         print("::", " ".join(cmd), flush=True)
         subprocess.run(cmd, cwd=str(ROOT), check=True)

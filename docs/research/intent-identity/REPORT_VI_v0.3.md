@@ -79,7 +79,19 @@ Nguồn của "tương quan" trong v0.2 mục V hóa ra không hề lạ: đó l
 | tiền tố (xử lý tuần tự, dừng khi lỗi) | các tiền tố | ⌈log₂(n+1)⌉ − (2^⌈log₂(n+1)⌉ − (n+1))/(n+1); n = 8 → 3,22 | n |
 | đúng k (tổng hợp đáng tin) | các k-tập | công thức v0.2; n = 8, k = 4 → 6,4 | n |
 
-Oracle động quy hoạch chính xác khớp mọi công thức đóng đến n = 10. Chi phí giữ thông tin này: một trường mỗi yêu cầu. Kết luận vẫn giữ đúng phạm vi: thông tin bị bỏ đi bởi phép chiếu ba trạng thái, không phải mọi journal ba trạng thái đều không thể mở rộng.
+Oracle động quy hoạch chính xác khớp mọi công thức đóng đến n = 10. Chi phí giữ thông tin này: một trường mỗi yêu cầu.
+
+**Đã kiểm chứng trên runtime (I5, 68 lượt):** worker gửi một yêu cầu batch rồi bị SIGKILL trước khi đọc phản hồi; provider làm lỗi các entry theo "thế giới" được chọn; mọi thế giới của mỗi lớp đều được chạy một lần. Successor khôi phục từ journal ba trạng thái hoặc journal có cấu trúc:
+
+| Lớp / n | Journal ba trạng thái (probe TB) | Journal có cấu trúc (probe TB) | Oracle E4 |
+| --- | --- | --- | --- |
+| độc lập / 4 | 4,00 | 4,00 | 4,00 |
+| nguyên tử / 4 | 4,00 | 1,00 | 1,00 |
+| tiền tố / 4 | 4,00 | 2,40 | 2,40 |
+| tiền tố / 8 | 8,00 | 3,22 | 3,22 |
+| nguyên tử / 8 | 8,00 | 1,00 | 1,00 |
+
+Toàn bộ 68 lượt đều exactly-once và hoàn thành đủ (entry vắng mặt được gửi lại bằng khóa mới sau khi đã xác định thế giới). Số probe đo được trùng khớp kỳ vọng của oracle ở mọi ô. Kết luận vẫn giữ đúng phạm vi: thông tin bị bỏ đi bởi phép chiếu ba trạng thái, không phải mọi journal ba trạng thái đều không thể mở rộng.
 
 ## 3. Đóng góp được viết lại như thế nào
 
@@ -110,8 +122,8 @@ Không được viết: "Bộ xác minh của chúng tôi vượt idempotency." 
 
 ## 6. Gói bàn giao
 
-- `paper/main.tex`, `paper/main.pdf`: bản thảo v0.3, IEEEtran, 8 trang, 6 bảng, 1 hình TikZ, 15 tài liệu tham khảo (6 nguồn tài liệu nhà cung cấp mới có URL và ngày truy cập).
-- `artifact/`: mã (7 module), 26 kiểm thử kernel, 5 driver thí nghiệm, `run_all.py` tái lập toàn bộ (~10 phút), kết quả thô: 404 lượt tiến trình với mã trả về, marker crash, tóm tắt successor và số đếm phía provider; các phép liệt kê vét cạn; witness của bộ duyệt mô hình.
+- `paper/main.tex`, `paper/main.pdf`: bản thảo v0.3, IEEEtran, 8 trang, 7 bảng, 1 hình TikZ, 15 tài liệu tham khảo (6 nguồn tài liệu nhà cung cấp mới có URL và ngày truy cập).
+- `artifact/`: mã (7 module), 29 kiểm thử kernel, 5 driver thí nghiệm, `run_all.py` tái lập toàn bộ (~12 phút), kết quả thô: 472 lượt tiến trình với mã trả về, marker crash, tóm tắt successor và số đếm phía provider; các phép liệt kê vét cạn; witness của bộ duyệt mô hình.
 - `PROVIDER_CONTRACTS.md`: trích dẫn nguyên văn có ngày.
 - `EVIDENCE_SUMMARY_v0.3.json`: mọi con số trong bài dưới dạng máy đọc.
 

@@ -117,12 +117,113 @@ class Worker:
         plan = Plan.from_dict(json.loads(open(self.a.plan).read()))
         if self.a.start_delay:
             time.sleep(self.a.start_delay)
+        if self.a.journal:
+            self.reconcile_requests()
         for group in self.approved_groups(plan):
+            if self.a.batch_transport and len(group) > 1:
+                self.dispatch_batch(group)
+                continue
             for occ_id in group:
                 self.handle(occ_id)
         self.summary["final_states"] = self.ledger.states(self.a.instance)
         self.summary["effects_seen"] = self.effects_seen
         return self.summary
+
+    # -- multi-entry request transport (I5) --------------------------------
+
+    def dispatch_batch(self, group: list[str]) -> None:
+        """Send one wrapper group as a single multi-entry request and journal
+        its membership, order and processing class before transport."""
+        a = self.a
+        reserved = []
+        for occ_id in group:
+            was_held, occ = self.ledger.reserve(a.instance, occ_id, a.lease_seconds, a.retention_seconds, a.predecessor)
+            if occ.state == "held" and occ.worker_id == a.worker_id and not was_held:
+                reserved.append(occ)
+        if not reserved:
+            return
+        request_id = f"{a.worker_id}-{int(time.time() * 1e6)}"
+        self.ledger.record_request(request_id, a.instance, a.batch_transport, [o.occurrence_id for o in reserved])
+        fail_set = set(filter(None, (a.fail_set or "").split(",")))
+        entries = []
+        for occ in reserved:
+            payload, payload_hash = self.payload_for(occ.occurrence_id)
+            entries.append({"key": occ.effect_key, "instance_id": a.instance, "occurrence_id": occ.occurrence_id, "payload": payload, "payload_hash": payload_hash, "fail": occ.occurrence_id in fail_set})
+        if a.fault_point == "during-first-transport":
+            threading.Timer(a.transport_kill_ms / 1000.0, _die).start()
+        code, resp = self.http.post("/execute-batch", {"batch_class": a.batch_transport, "entries": entries, "delay_ms": a.delay_ms})
+        for r in resp.get("results", []):
+            if r.get("status") in ("committed", "duplicate"):
+                occ = self.ledger.get(a.instance, r["occurrence_id"])
+                _, payload_hash = self.payload_for(occ.occurrence_id)
+                self.ledger.confirm(a.instance, occ.occurrence_id, r["receipt"], payload_hash, occ.effect_key)
+            self.summary["actions"].append({"occurrence": r["occurrence_id"], "outcome": r.get("status")})
+        self.ledger.close_request(request_id)
+
+    def reconcile_requests(self) -> None:
+        """Recover held members of journaled requests whose response was lost.
+
+        ``ternary`` journal: probe every held member. ``structured`` journal:
+        rebuild the belief family from (members, order, class) and probe
+        adaptively with the exact oracle. Finality of the old request is a
+        study assumption here (the successor starts after the provider has
+        finished); the count of interest is decision probes.
+        """
+        from . import belief
+
+        a = self.a
+        probes = 0
+        for request_id, batch_class, members in self.ledger.open_requests(a.instance):
+            held = [m for m in members if self.ledger.get(a.instance, m).state == "held"]
+            if not held:
+                self.ledger.close_request(request_id)
+                continue
+            for m in held:
+                self.ledger.reserve(a.instance, m, a.lease_seconds, a.retention_seconds, a.predecessor)
+            idx = {m: i for i, m in enumerate(held)}
+            n = len(held)
+            if a.journal == "ternary":
+                B = belief.independent_family(n)
+            elif batch_class == "independent":
+                B = belief.independent_family(n)
+            elif batch_class == "atomic":
+                B = belief.atomic_family(n)
+            elif batch_class == "prefix":
+                B = belief.prefix_family(n)
+            else:
+                raise ValueError(batch_class)
+            receipts: dict[str, str] = {}
+            while len(B) > 1:
+                best = None
+                for i in sorted(belief.unresolved(B)):
+                    b1 = belief.condition(B, i, True)
+                    b0 = belief.condition(B, i, False)
+                    c = 1.0 + (len(b1) / len(B)) * belief.optimal_probe_cost(b1) + (len(b0) / len(B)) * belief.optimal_probe_cost(b0)
+                    if best is None or c < best[0]:
+                        best = (c, i)
+                i = best[1]
+                m = held[i]
+                code, resp = self.http.get(f"/lookup?key={self.ledger.get(a.instance, m).effect_key}")
+                probes += 1
+                committed = bool(resp.get("committed"))
+                if committed:
+                    receipts[m] = resp["receipt"]
+                B = belief.condition(B, i, committed)
+            (world,) = B
+            for m in held:
+                occ = self.ledger.get(a.instance, m)
+                _, payload_hash = self.payload_for(m)
+                if idx[m] in world:
+                    self.ledger.confirm(a.instance, m, receipts.get(m, f"inferred:{batch_class}"), payload_hash, occ.effect_key)
+                    self.summary["actions"].append({"occurrence": m, "outcome": "reconciled-committed" if m in receipts else "reconciled-inferred-committed"})
+                else:
+                    gen = occ.generation + 1
+                    new_key = obligation_key(a.instance, f"{m}#g{gen}")
+                    self.ledger.rekey(a.instance, m, new_key, gen)
+                    self.summary["actions"].append({"occurrence": m, "outcome": "reconciled-absent-fresh-key"})
+                    self.dispatch(self.ledger.get(a.instance, m))
+            self.ledger.close_request(request_id)
+        self.summary["probes"] = probes
 
     def handle(self, occ_id: str) -> None:
         occ = self.ledger.get(self.a.instance, occ_id)
@@ -242,6 +343,9 @@ def parse(argv=None) -> argparse.Namespace:
     ap.add_argument("--transport-kill-ms", type=float, default=150.0)
     ap.add_argument("--delay-ms", type=float, default=0.0)
     ap.add_argument("--start-delay", type=float, default=0.0)
+    ap.add_argument("--batch-transport", choices=("independent", "atomic", "prefix"), default=None)
+    ap.add_argument("--fail-set", default=None, help="comma-separated occurrence ids the provider should fail (test hook)")
+    ap.add_argument("--journal", choices=("ternary", "structured"), default=None)
     return ap.parse_args(argv)
 
 

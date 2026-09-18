@@ -131,6 +131,38 @@ class Sink:
                 raise
         return 200, {"status": "committed", "receipt": receipt}
 
+    def execute_batch(self, req: dict) -> tuple[int, dict]:
+        """One request carrying several entries, processed per ``batch_class``.
+
+        * ``independent``: each entry commits unless it carries ``fail``;
+        * ``atomic``: all entries commit or none (any ``fail`` aborts all);
+        * ``prefix``: entries are processed in order and processing stops at
+          the first entry carrying ``fail``.
+
+        ``fail`` is a test hook standing in for a per-entry provider error.
+        The response is per-entry, like SQS SendMessageBatch; the takeover
+        study loses it by killing the client.
+        """
+        cls = req["batch_class"]
+        entries = req["entries"]
+        delay = float(req.get("delay_ms", 0)) / 1000.0
+        if delay:
+            time.sleep(delay)
+        if cls == "atomic" and any(e.get("fail") for e in entries):
+            return 200, {"results": [{"occurrence_id": e["occurrence_id"], "status": "failed"} for e in entries]}
+        results = []
+        for e in entries:
+            if e.get("fail"):
+                results.append({"occurrence_id": e["occurrence_id"], "status": "failed"})
+                if cls == "prefix":
+                    for rest in entries[len(results):]:
+                        results.append({"occurrence_id": rest["occurrence_id"], "status": "not-attempted"})
+                    break
+                continue
+            code, resp = self.execute({k: e[k] for k in ("key", "instance_id", "occurrence_id", "payload", "payload_hash")})
+            results.append({"occurrence_id": e["occurrence_id"], "status": resp.get("status", f"http-{code}"), "receipt": resp.get("receipt")})
+        return 200, {"results": results}
+
     def _call(self, ts: float, key: str, occ: str, outcome: str) -> None:
         self.conn.execute(
             "INSERT INTO calls(ts, effect_key, occurrence_id, outcome) VALUES (?,?,?,?)", (ts, key, occ, outcome)
@@ -201,6 +233,8 @@ def make_handler(sink: Sink):
             body = json.loads(self.rfile.read(n) or b"{}")
             if self.path == "/execute":
                 self._send(*sink.execute(body))
+            elif self.path == "/execute-batch":
+                self._send(*sink.execute_batch(body))
             elif self.path == "/fence":
                 self._send(*sink.fence(body["key"]))
             else:

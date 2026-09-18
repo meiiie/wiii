@@ -81,9 +81,9 @@ class Provider:
         self.log.close()
 
 
-def new_instance(workdir: Path, tag: str) -> tuple[Path, str, object]:
+def new_instance(workdir: Path, tag: str, n: int = 4) -> tuple[Path, str, object]:
     db = workdir / f"controller-{tag}.sqlite"
-    specs = [EffectSpec("notify", f"recipient-{i}@example.test", f"deployment notice {i} for {tag}") for i in range(1, 5)]
+    specs = [EffectSpec("notify", f"recipient-{i}@example.test", f"deployment notice {i} for {tag}") for i in range(1, n + 1)]
     contract = create_contract("principal-a", f"approval-{tag}", specs)
     ledger = Ledger(db, "orchestrator")
     ledger.register_contract(contract)
@@ -123,13 +123,14 @@ def oracle(prov: Provider, db: Path, instance: str) -> dict:
     ledger = Ledger(db, "oracle")
     states = ledger.states(instance)
     ledger.close()
+    occ = tuple(sorted(states))
     return {
         "effects": dict(eff),
         "states": states,
-        "duplicate": any(eff[o] > 1 for o in OCC),
-        "incomplete_world": any(eff[o] == 0 for o in OCC),
-        "all_done": all(states[o] == "done" for o in OCC),
-        "unresolved": [o for o in OCC if states[o] == "unresolved"],
+        "duplicate": any(eff[o] > 1 for o in occ),
+        "incomplete_world": any(eff[o] == 0 for o in occ),
+        "all_done": all(states[o] == "done" for o in occ),
+        "unresolved": [o for o in occ if states[o] == "unresolved"],
     }
 
 
@@ -265,8 +266,70 @@ def study_i4(workdir: Path, out, reps: int) -> dict:
     return rows
 
 
+def study_i5(workdir: Path, out) -> dict:
+    """Lost response to a multi-entry request: ternary vs structured journal.
+
+    The crashed worker sends one batch request whose per-entry outcome is set
+    by the world (which entries the provider fails). The successor starts
+    after the provider finished, reconciles from its journal and completes.
+    Measured: decision probes (lookups) and exactly-once/completion oracle.
+    """
+    from itertools import combinations
+
+    from intent_identity.belief import atomic_family, independent_family, optimal_probe_cost, prefix_family
+
+    def worlds(cls, n):
+        occ = [f"o{i}" for i in range(1, n + 1)]
+        if cls == "independent":
+            return [",".join(c) for r in range(n + 1) for c in combinations(occ, r)]
+        if cls == "atomic":
+            return ["", occ[0]]
+        if cls == "prefix":
+            return [""] + occ
+        raise ValueError(cls)
+
+    designs = [("independent", 4), ("atomic", 4), ("prefix", 4), ("prefix", 8), ("atomic", 8)]
+    rows = {}
+    prov = Provider(workdir, "PF", None, "lookup")
+    try:
+        for cls, n in designs:
+            fam = {"independent": independent_family, "atomic": atomic_family, "prefix": prefix_family}[cls](n)
+            expected = {"structured": optimal_probe_cost(fam), "ternary": float(n)}
+            for journal in ("ternary", "structured"):
+                c = Counter()
+                probes = []
+                for wi, fail_set in enumerate(worlds(cls, n)):
+                    tag = f"i5-{cls}-{n}-{journal}-{wi}"
+                    db, inst, contract = new_instance(workdir, tag, n)
+                    grouping = (tuple(f"o{i}" for i in range(1, n + 1)),)
+                    plan = write_plan(workdir, contract, grouping, tag)
+                    t_start = time.time()
+                    child = run(worker_cmd("V", db, prov.url, inst, plan, "w-a", fault_point="during-first-transport", transport_kill_ms=150, delay_ms=300, lease_seconds=0.3, profile="PF", batch_transport=cls, fail_set=fail_set or None))
+                    succ = run(worker_cmd("V", db, prov.url, inst, plan, "w-b", start_delay=max(0.0, 0.8 - (time.time() - t_start)), lease_seconds=5, profile="PF", journal=journal))
+                    o = oracle(prov, db, inst)
+                    ss = last_json(succ.stdout)
+                    c["trials"] += 1
+                    c["duplicate"] += o["duplicate"]
+                    c["all_done"] += o["all_done"]
+                    c["world_complete"] += not o["incomplete_world"]
+                    c["child_killed"] += child.returncode == -9
+                    c["succ_ok"] += succ.returncode == 0
+                    probes.append(ss.get("probes"))
+                    out.write(json.dumps({"study": "I5", "class": cls, "n": n, "journal": journal, "world_fail_set": fail_set, "child_rc": child.returncode, "succ_rc": succ.returncode, "probes": ss.get("probes"), "succ_summary": ss, "oracle": o}) + "\n")
+                valid = [p for p in probes if p is not None]
+                row = dict(c)
+                row["mean_probes"] = round(sum(valid) / len(valid), 4) if valid else None
+                row["max_probes"] = max(valid) if valid else None
+                row["expected_mean_probes"] = round(expected[journal], 4)
+                rows[f"{cls}/n{n}/{journal}"] = row
+                print("I5", cls, n, journal, row, flush=True)
+    finally:
+        prov.stop()
+    return rows
+
+
 def main(argv: list[str]) -> None:
-    which = set(argv[1:]) or {"I1", "I2", "I3", "I4"}
+    which = set(argv[1:]) or {"I1", "I2", "I3", "I4", "I5"}
     reps = int(os.environ.get("II_REPS", "5"))
     out_dir = ROOT / "results"
     out_dir.mkdir(exist_ok=True)
@@ -284,6 +347,8 @@ def main(argv: list[str]) -> None:
             summary["I3"] = study_i3(workdir, out, reps)
         if "I4" in which:
             summary["I4"] = study_i4(workdir, out, reps)
+        if "I5" in which:
+            summary["I5"] = study_i5(workdir, out)
         summary["elapsed_s"] = round(time.time() - t0, 2)
     prev = {}
     p = out_dir / "runtime_summary.json"

@@ -44,6 +44,14 @@ CREATE TABLE IF NOT EXISTS occurrences (
   receipt TEXT,
   PRIMARY KEY (instance_id, occurrence_id)
 );
+CREATE TABLE IF NOT EXISTS requests (
+  request_id TEXT PRIMARY KEY,
+  instance_id TEXT NOT NULL,
+  batch_class TEXT NOT NULL,
+  members_json TEXT NOT NULL,
+  sent_at REAL NOT NULL,
+  reconciled INTEGER NOT NULL DEFAULT 0
+);
 CREATE TABLE IF NOT EXISTS events (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   ts REAL NOT NULL,
@@ -222,3 +230,26 @@ class Ledger:
 
     def spec_for(self, contract: ApprovalContract, occurrence_id: str) -> EffectSpec:
         return contract.spec(occurrence_id)
+
+    # -- request journal (structured evidence) --------------------------------
+
+    def record_request(self, request_id: str, instance_id: str, batch_class: str, members: list[str]) -> None:
+        """Journal one multi-entry request before transport: membership, order
+        and the provider's documented processing class."""
+        with self.tx() as c:
+            c.execute(
+                "INSERT INTO requests(request_id, instance_id, batch_class, members_json, sent_at) VALUES (?,?,?,?,?)",
+                (request_id, instance_id, batch_class, json.dumps(members), time.time()),
+            )
+            self.log("request-journaled", instance_id, kind_detail=batch_class, members=members)
+
+    def open_requests(self, instance_id: str) -> list[tuple[str, str, list[str]]]:
+        rows = self.conn.execute(
+            "SELECT request_id, batch_class, members_json FROM requests WHERE instance_id=? AND reconciled=0 ORDER BY sent_at",
+            (instance_id,),
+        ).fetchall()
+        return [(r[0], r[1], json.loads(r[2])) for r in rows]
+
+    def close_request(self, request_id: str) -> None:
+        with self.tx() as c:
+            c.execute("UPDATE requests SET reconciled=1 WHERE request_id=?", (request_id,))

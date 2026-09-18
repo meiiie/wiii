@@ -218,6 +218,72 @@ class LedgerTests(unittest.TestCase):
         self.assertEqual(L.get(c.instance_id, "o3").state, "unresolved")
 
 
+class BatchSinkTests(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        from intent_identity.provider import Sink
+
+        self.Sink = Sink
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def _entries(self, fails):
+        import hashlib
+
+        out = []
+        for i in range(1, 5):
+            payload = f"p{i}"
+            out.append({"key": f"k{i}", "instance_id": "inst", "occurrence_id": f"o{i}", "payload": payload, "payload_hash": hashlib.sha256(payload.encode()).hexdigest(), "fail": f"o{i}" in fails})
+        return out
+
+    def committed(self, sink):
+        return {r[0] for r in sink.conn.execute("SELECT occurrence_id FROM effects").fetchall()}
+
+    def test_batch_classes(self):
+        for cls, fails, expect in (
+            ("independent", {"o2"}, {"o1", "o3", "o4"}),
+            ("atomic", {"o2"}, set()),
+            ("atomic", set(), {"o1", "o2", "o3", "o4"}),
+            ("prefix", {"o3"}, {"o1", "o2"}),
+        ):
+            sink = self.Sink(str(Path(self.tmp.name) / f"{cls}-{len(fails)}.sqlite"), "PF", None, "lookup")
+            code, resp = sink.execute_batch({"batch_class": cls, "entries": self._entries(fails)})
+            self.assertEqual(code, 200)
+            self.assertEqual(self.committed(sink), expect, (cls, fails))
+
+    def test_pd_dedup_ttl_and_fence(self):
+        sink = self.Sink(str(Path(self.tmp.name) / "pd.sqlite"), "PD", 0.05, "lookup")
+        e = self._entries(set())[0]
+        c1, r1 = sink.execute(e)
+        c2, r2 = sink.execute(e)
+        self.assertEqual((r1["status"], r2["status"], r1["receipt"] == r2["receipt"]), ("committed", "duplicate", True))
+        import time
+
+        time.sleep(0.08)
+        c3, r3 = sink.execute(e)
+        self.assertEqual(r3["status"], "committed")  # retention lapsed: second real effect
+        self.assertEqual(len(self.committed(sink)), 1)
+        self.assertEqual(sink.conn.execute("SELECT COUNT(*) FROM effects").fetchone()[0], 2)
+        pf = self.Sink(str(Path(self.tmp.name) / "pf.sqlite"), "PF", None, "lookup")
+        code, f = pf.fence("k1")
+        self.assertEqual((code, f["committed"], f["final"]), (200, False, True))
+        code, r = pf.execute(e)
+        self.assertEqual((code, r["status"]), (409, "rejected"))
+
+
+class RequestJournalTests(unittest.TestCase):
+    def test_record_open_close(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            L = Ledger(Path(tmp) / "c.sqlite", "w")
+            c = contract()
+            L.register_contract(c)
+            L.record_request("r1", c.instance_id, "prefix", ["o2", "o1"])
+            self.assertEqual(L.open_requests(c.instance_id), [("r1", "prefix", ["o2", "o1"])])
+            L.close_request("r1")
+            self.assertEqual(L.open_requests(c.instance_id), [])
+
+
 class ModelCheckerTests(unittest.TestCase):
     def test_safe_configuration_exhausts(self):
         r = explore(Config())

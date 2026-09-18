@@ -53,7 +53,10 @@ encoding differs; the mutant witnesses have the same shape.
   profile-aware recovery (I3), separating sink dedup, fence-then-fresh-key and
   the explicit `unresolved` state.
 - Semantics-determined belief families (independent / atomic / prefix /
-  exact-k) with closed forms verified by an exact oracle (E4).
+  exact-k) with closed forms verified by an exact oracle (E4), and a
+  runtime reconciliation study (I5) in which a worker recovering from a
+  journaled batch request with a lost response reproduces the oracle's probe
+  counts exactly while staying exactly-once (68 trials).
 - A measured finding that reservation-resolved concurrency races never reach
   sink deduplication (I2: 0 of 96 sink calls deduplicated).
 
