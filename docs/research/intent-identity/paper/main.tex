@@ -12,6 +12,7 @@
 \newtheorem{proposition}{Proposition}
 \newtheorem{definition}{Definition}
 \newtheorem{corollary}{Corollary}
+\newtheorem{lemma}{Lemma}
 
 \newcommand{\PD}{P_{\mathrm{D}}}
 \newcommand{\PDT}{P_{\mathrm{D}}(T)}
@@ -129,7 +130,6 @@ Assume immutable contracts, complete plan checking, mediated effect paths, an in
 Every dispatched effect derives from an approved occurrence and its stored specification. All attempts for that occurrence use the same key. While the dedup record is retained, atomic key/effect recording allows at most one effect per key and rejects payload substitution. The retention hypothesis guarantees retention at every retry. Distinct occurrences are not collapsed by key identity. Induction over sink operations preserves the invariant.
 \end{proof}
 
-\newtheorem{lemma}{Lemma}
 \begin{lemma}[Structural tie]\label{lem:tie}
 Let $R^{+}$ perform canonical-action matching per occurrence, skip occurrences recorded \emph{done} in the ledger and dispatch the rest under $K(\iota,\omega)$; let $V$ check the whole plan, residualize against the same \emph{done} set and dispatch the rest under the same keys. On any accepted destination plan both dispatch exactly the set of approved occurrences not recorded done, in the destination order, with identical bytes; hence identical sink calls and effect vectors.
 \end{lemma}
