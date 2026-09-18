@@ -1,0 +1,169 @@
+{
+  "v0.2-model": [
+    {
+      "configuration": "safe",
+      "states": 1180,
+      "edges": 3467,
+      "exhausted": true,
+      "violation": null,
+      "witness_steps": null,
+      "witness": null
+    },
+    {
+      "configuration": "absence-without-fence",
+      "states": 445,
+      "edges": 1036,
+      "exhausted": false,
+      "violation": "duplicate",
+      "witness_steps": 9,
+      "witness": [
+        "hold(g0)",
+        "send(g0,s0)",
+        "lookup(g0):negative",
+        "certify-absent(g0)",
+        "deliver(g0,s0):commit",
+        "create-gen1",
+        "hold(g1)",
+        "send(g1,s0)",
+        "deliver(g1,s0):commit"
+      ]
+    },
+    {
+      "configuration": "fresh-key-retry",
+      "states": 395,
+      "edges": 939,
+      "exhausted": false,
+      "violation": "duplicate",
+      "witness_steps": 7,
+      "witness": [
+        "hold(g0)",
+        "send(g0,s0)",
+        "deliver(g0,s0):commit",
+        "create-gen1",
+        "hold(g1)",
+        "send(g1,s0)",
+        "deliver(g1,s0):commit"
+      ]
+    },
+    {
+      "configuration": "missing-as-success",
+      "states": 11,
+      "edges": 11,
+      "exhausted": false,
+      "violation": "false success",
+      "witness_steps": 2,
+      "witness": [
+        "lookup(g0):negative",
+        "mark-done"
+      ]
+    },
+    {
+      "configuration": "no-sink-dedup",
+      "states": 65,
+      "edges": 126,
+      "exhausted": false,
+      "violation": "duplicate",
+      "witness_steps": 6,
+      "witness": [
+        "hold(g0)",
+        "send(g0,s0)",
+        "deliver(g0,s0):commit",
+        "crash",
+        "send(g0,s1)",
+        "deliver(g0,s1):commit"
+      ]
+    }
+  ],
+  "v0.3-model-with-retention": [
+    {
+      "configuration": "safe",
+      "states": 1396,
+      "edges": 4043,
+      "exhausted": true,
+      "violation": null,
+      "witness_steps": null,
+      "witness": null
+    },
+    {
+      "configuration": "absence-without-fence",
+      "states": 527,
+      "edges": 1252,
+      "exhausted": false,
+      "violation": "duplicate",
+      "witness_steps": 9,
+      "witness": [
+        "hold(g0)",
+        "send(g0,s0)",
+        "lookup(g0):negative",
+        "certify-absent(g0)",
+        "deliver(g0,s0):commit",
+        "create-gen1",
+        "hold(g1)",
+        "send(g1,s0)",
+        "deliver(g1,s0):commit"
+      ]
+    },
+    {
+      "configuration": "fresh-key-retry",
+      "states": 435,
+      "edges": 1034,
+      "exhausted": false,
+      "violation": "duplicate",
+      "witness_steps": 7,
+      "witness": [
+        "hold(g0)",
+        "send(g0,s0)",
+        "deliver(g0,s0):commit",
+        "create-gen1",
+        "hold(g1)",
+        "send(g1,s0)",
+        "deliver(g1,s0):commit"
+      ]
+    },
+    {
+      "configuration": "missing-as-success",
+      "states": 11,
+      "edges": 11,
+      "exhausted": false,
+      "violation": "false success",
+      "witness_steps": 2,
+      "witness": [
+        "lookup(g0):negative",
+        "mark-done"
+      ]
+    },
+    {
+      "configuration": "no-sink-dedup",
+      "states": 75,
+      "edges": 146,
+      "exhausted": false,
+      "violation": "duplicate",
+      "witness_steps": 6,
+      "witness": [
+        "hold(g0)",
+        "send(g0,s0)",
+        "deliver(g0,s0):commit",
+        "crash",
+        "send(g0,s1)",
+        "deliver(g0,s1):commit"
+      ]
+    },
+    {
+      "configuration": "retry-after-retention-expiry",
+      "states": 121,
+      "edges": 249,
+      "exhausted": false,
+      "violation": "duplicate",
+      "witness_steps": 7,
+      "witness": [
+        "hold(g0)",
+        "send(g0,s0)",
+        "deliver(g0,s0):commit",
+        "crash",
+        "retention-expires",
+        "send(g0,s1)",
+        "deliver(g0,s1):commit"
+      ]
+    }
+  ]
+}

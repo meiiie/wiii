@@ -1,0 +1,257 @@
+"""Worker process: restore from the durable ledger and execute a proposed plan.
+
+Policies:
+
+* ``R``: strong reference. Flat canonical-action matching; every proposed
+  occurrence is looked up in the ledger (cached completion for ``done``),
+  otherwise reserved and dispatched under its stable obligation key.
+* ``V``: verified refinement. Whole-plan typed wrapper check, residualization
+  of the destination plan against completed occurrences, same keys.
+
+Recovery modes for an occurrence found ``held`` at restore time:
+
+* ``naive``: same-key retry regardless of provider profile or retention. This
+  is the common durable-workflow behaviour and is safe only under P_D with
+  unexpired retention.
+* ``aware``: profile- and retention-aware. P_D inside retention: same-key
+  retry. P_D outside retention or P_O: positive evidence lookup confirms,
+  otherwise the occurrence becomes ``unresolved`` (safe, not complete).
+  P_F: fence the old key; use its final outcome or dispatch a fresh key.
+
+Fault points terminate this process with a real SIGKILL.
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import signal
+import sys
+import threading
+import time
+import urllib.error
+import urllib.request
+
+from .contract import obligation_key
+from .ledger import Ledger
+from .plan import (
+    Plan,
+    check_actions_reference,
+    check_plan_verified,
+    flatten,
+    residualize,
+)
+
+FAULT_POINTS = (
+    "none",
+    "after-first-reservation",
+    "after-first-effect",
+    "after-first-confirm",
+    "after-third-effect",
+    "during-first-transport",
+)
+
+
+def _die() -> None:
+    sys.stdout.flush()
+    os.kill(os.getpid(), signal.SIGKILL)
+
+
+class Http:
+    def __init__(self, base: str):
+        self.base = base.rstrip("/")
+
+    def post(self, path: str, body: dict) -> tuple[int, dict]:
+        data = json.dumps(body).encode()
+        req = urllib.request.Request(self.base + path, data=data, headers={"Content-Type": "application/json"})
+        try:
+            with urllib.request.urlopen(req, timeout=60) as r:
+                return r.status, json.loads(r.read())
+        except urllib.error.HTTPError as e:
+            return e.code, json.loads(e.read() or b"{}")
+
+    def get(self, path: str) -> tuple[int, dict]:
+        try:
+            with urllib.request.urlopen(self.base + path, timeout=60) as r:
+                return r.status, json.loads(r.read())
+        except urllib.error.HTTPError as e:
+            return e.code, json.loads(e.read() or b"{}")
+
+
+class Worker:
+    def __init__(self, a: argparse.Namespace):
+        self.a = a
+        self.ledger = Ledger(a.controller_db, a.worker_id)
+        self.http = Http(a.provider_url)
+        self.contract = self.ledger.load_contract(a.instance)
+        self.effects_seen = 0
+        self.confirms = 0
+        self.reservations = 0
+        self.summary = {"worker_id": a.worker_id, "policy": a.policy, "actions": []}
+
+    def fault(self, point: str) -> None:
+        if self.a.fault_point == point:
+            self.ledger.log("fault-injected", self.a.instance, kind_detail=point)
+            self.summary["crash_marker"] = point
+            print(json.dumps({"crash_marker": point, "worker_id": self.a.worker_id}), flush=True)
+            _die()
+
+    # -- planning ---------------------------------------------------------
+
+    def approved_groups(self, plan: Plan) -> list[list[str]]:
+        if self.a.policy == "V":
+            check_plan_verified(self.contract, plan)
+            groups = [[x.occurrence_id for x in g.actions] for g in plan.groups]
+            done = {o for o, s in self.ledger.states(self.a.instance).items() if s == "done"}
+            res = residualize(groups, done)
+            for skipped in res.skipped:
+                self.summary["actions"].append({"occurrence": skipped, "outcome": "residualized-done"})
+            return res.remaining
+        order = check_actions_reference(self.contract, flatten(plan))
+        return [[o] for o in order]
+
+    # -- execution --------------------------------------------------------
+
+    def run(self) -> dict:
+        plan = Plan.from_dict(json.loads(open(self.a.plan).read()))
+        if self.a.start_delay:
+            time.sleep(self.a.start_delay)
+        for group in self.approved_groups(plan):
+            for occ_id in group:
+                self.handle(occ_id)
+        self.summary["final_states"] = self.ledger.states(self.a.instance)
+        self.summary["effects_seen"] = self.effects_seen
+        return self.summary
+
+    def handle(self, occ_id: str) -> None:
+        occ = self.ledger.get(self.a.instance, occ_id)
+        if occ.state == "done":
+            self.summary["actions"].append({"occurrence": occ_id, "outcome": "cached-done"})
+            return
+        if occ.state == "unresolved":
+            self.summary["actions"].append({"occurrence": occ_id, "outcome": "already-unresolved"})
+            return
+        was_held, occ = self.ledger.reserve(
+            self.a.instance, occ_id, self.a.lease_seconds, self.a.retention_seconds, self.a.predecessor
+        )
+        if occ.state != "held" or occ.worker_id != self.a.worker_id:
+            self.summary["actions"].append({"occurrence": occ_id, "outcome": "held-by-other"})
+            return
+        self.reservations += 1
+        if self.reservations == 1:
+            self.fault("after-first-reservation")
+        if was_held:
+            self.recover(occ)
+        else:
+            self.dispatch(occ, first=self.reservations == 1)
+
+    def payload_for(self, occ_id: str) -> tuple[str, str]:
+        spec = self.contract.spec(occ_id)  # executable bytes from the immutable contract
+        return spec.canonical(), spec.payload_hash()
+
+    def dispatch(self, occ, first: bool = False) -> None:
+        payload, payload_hash = self.payload_for(occ.occurrence_id)
+        body = {
+            "key": occ.effect_key,
+            "instance_id": self.a.instance,
+            "occurrence_id": occ.occurrence_id,
+            "payload": payload,
+            "payload_hash": payload_hash,
+            "delay_ms": self.a.delay_ms,
+        }
+        if first and self.a.fault_point == "during-first-transport":
+            threading.Timer(self.a.transport_kill_ms / 1000.0, _die).start()
+        code, resp = self.http.post("/execute", body)
+        if code != 200:
+            self.summary["actions"].append({"occurrence": occ.occurrence_id, "outcome": f"provider-{code}", "resp": resp})
+            self.ledger.log("provider-rejected", self.a.instance, occ.occurrence_id, code=code, resp=resp)
+            return
+        self.effects_seen += 1
+        if self.effects_seen == 1:
+            self.fault("after-first-effect")
+        if self.effects_seen == 3:
+            self.fault("after-third-effect")
+        self.ledger.confirm(self.a.instance, occ.occurrence_id, resp["receipt"], payload_hash, occ.effect_key)
+        self.confirms += 1
+        self.summary["actions"].append({"occurrence": occ.occurrence_id, "outcome": resp["status"]})
+        if self.confirms == 1:
+            self.fault("after-first-confirm")
+
+    def recover(self, occ) -> None:
+        a = self.a
+        if a.recovery == "naive":
+            self.summary["actions"].append({"occurrence": occ.occurrence_id, "outcome": "naive-same-key-retry"})
+            self.dispatch(occ)
+            return
+        now = time.time()
+        if a.profile == "PD":
+            within = occ.retention_deadline is None or now < occ.retention_deadline - a.clock_skew
+            if within:
+                self.summary["actions"].append({"occurrence": occ.occurrence_id, "outcome": "same-key-retry-within-retention"})
+                self.dispatch(occ)
+                return
+            self.evidence_or_unresolved(occ, "retention-expired")
+        elif a.profile == "PF":
+            code, resp = self.http.post("/fence", {"key": occ.effect_key})
+            if code != 200:
+                self.ledger.mark_unresolved(a.instance, occ.occurrence_id, f"fence-failed-{code}")
+                self.summary["actions"].append({"occurrence": occ.occurrence_id, "outcome": "fence-failed"})
+                return
+            if resp["committed"]:
+                _, payload_hash = self.payload_for(occ.occurrence_id)
+                self.ledger.confirm(a.instance, occ.occurrence_id, resp["receipt"], payload_hash, occ.effect_key)
+                self.summary["actions"].append({"occurrence": occ.occurrence_id, "outcome": "fenced-committed-receipt"})
+                return
+            gen = occ.generation + 1
+            new_key = obligation_key(a.instance, f"{occ.occurrence_id}#g{gen}")
+            self.ledger.rekey(a.instance, occ.occurrence_id, new_key, gen)
+            occ = self.ledger.get(a.instance, occ.occurrence_id)
+            self.summary["actions"].append({"occurrence": occ.occurrence_id, "outcome": "fenced-absent-fresh-key"})
+            self.dispatch(occ)
+        else:  # PO
+            self.evidence_or_unresolved(occ, "opaque-provider")
+
+    def evidence_or_unresolved(self, occ, reason: str) -> None:
+        code, resp = self.http.get(f"/lookup?key={occ.effect_key}")
+        if code == 200 and resp.get("committed"):
+            _, payload_hash = self.payload_for(occ.occurrence_id)
+            self.ledger.confirm(self.a.instance, occ.occurrence_id, resp["receipt"], payload_hash, occ.effect_key)
+            self.summary["actions"].append({"occurrence": occ.occurrence_id, "outcome": f"evidence-committed({reason})"})
+            return
+        # A negative point-in-time lookup is not finality evidence.
+        self.ledger.mark_unresolved(self.a.instance, occ.occurrence_id, reason)
+        self.summary["actions"].append({"occurrence": occ.occurrence_id, "outcome": f"unresolved({reason})"})
+
+
+def parse(argv=None) -> argparse.Namespace:
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--policy", choices=("R", "V"), required=True)
+    ap.add_argument("--recovery", choices=("naive", "aware"), default="aware")
+    ap.add_argument("--profile", choices=("PD", "PF", "PO"), default="PD")
+    ap.add_argument("--controller-db", required=True)
+    ap.add_argument("--provider-url", required=True)
+    ap.add_argument("--instance", required=True)
+    ap.add_argument("--plan", required=True)
+    ap.add_argument("--worker-id", required=True)
+    ap.add_argument("--predecessor", default=None)
+    ap.add_argument("--lease-seconds", type=float, default=30.0)
+    ap.add_argument("--retention-seconds", type=float, default=None)
+    ap.add_argument("--clock-skew", type=float, default=0.0)
+    ap.add_argument("--fault-point", choices=FAULT_POINTS, default="none")
+    ap.add_argument("--transport-kill-ms", type=float, default=150.0)
+    ap.add_argument("--delay-ms", type=float, default=0.0)
+    ap.add_argument("--start-delay", type=float, default=0.0)
+    return ap.parse_args(argv)
+
+
+def main(argv=None) -> int:
+    a = parse(argv)
+    w = Worker(a)
+    summary = w.run()
+    print(json.dumps(summary, sort_keys=True), flush=True)
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

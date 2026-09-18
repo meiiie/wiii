@@ -1,0 +1,743 @@
+{
+  "E1": {
+    "n": 4,
+    "nonempty_families": 65535,
+    "safety_checks": 1048560,
+    "frontier_rule_mismatches": 0,
+    "completion_iff_singleton_mismatches": 0,
+    "families_with_nonempty_safe_dispatch": 941
+  },
+  "E2": {
+    "B1_projection": [
+      "unknown",
+      "unknown"
+    ],
+    "B2_projection": [
+      "unknown",
+      "unknown"
+    ],
+    "B1_optimal_probes": 1.0,
+    "B2_optimal_probes": 2.0,
+    "same_projection": true,
+    "same_safe_frontier": true
+  },
+  "E3": [
+    {
+      "n": 2,
+      "k": 1,
+      "worlds": 2,
+      "all_item_ablation": 2,
+      "closed_form": 1.0,
+      "oracle": 1.0,
+      "oracle_matches_closed_form": true
+    },
+    {
+      "n": 3,
+      "k": 1,
+      "worlds": 3,
+      "all_item_ablation": 3,
+      "closed_form": 1.666667,
+      "oracle": 1.666667,
+      "oracle_matches_closed_form": true
+    },
+    {
+      "n": 3,
+      "k": 2,
+      "worlds": 3,
+      "all_item_ablation": 3,
+      "closed_form": 1.666667,
+      "oracle": 1.666667,
+      "oracle_matches_closed_form": true
+    },
+    {
+      "n": 4,
+      "k": 1,
+      "worlds": 4,
+      "all_item_ablation": 4,
+      "closed_form": 2.25,
+      "oracle": 2.25,
+      "oracle_matches_closed_form": true
+    },
+    {
+      "n": 4,
+      "k": 2,
+      "worlds": 6,
+      "all_item_ablation": 4,
+      "closed_form": 2.666667,
+      "oracle": 2.666667,
+      "oracle_matches_closed_form": true
+    },
+    {
+      "n": 4,
+      "k": 3,
+      "worlds": 4,
+      "all_item_ablation": 4,
+      "closed_form": 2.25,
+      "oracle": 2.25,
+      "oracle_matches_closed_form": true
+    },
+    {
+      "n": 5,
+      "k": 1,
+      "worlds": 5,
+      "all_item_ablation": 5,
+      "closed_form": 2.8,
+      "oracle": 2.8,
+      "oracle_matches_closed_form": true
+    },
+    {
+      "n": 5,
+      "k": 2,
+      "worlds": 10,
+      "all_item_ablation": 5,
+      "closed_form": 3.5,
+      "oracle": 3.5,
+      "oracle_matches_closed_form": true
+    },
+    {
+      "n": 5,
+      "k": 3,
+      "worlds": 10,
+      "all_item_ablation": 5,
+      "closed_form": 3.5,
+      "oracle": 3.5,
+      "oracle_matches_closed_form": true
+    },
+    {
+      "n": 5,
+      "k": 4,
+      "worlds": 5,
+      "all_item_ablation": 5,
+      "closed_form": 2.8,
+      "oracle": 2.8,
+      "oracle_matches_closed_form": true
+    },
+    {
+      "n": 6,
+      "k": 1,
+      "worlds": 6,
+      "all_item_ablation": 6,
+      "closed_form": 3.333333,
+      "oracle": 3.333333,
+      "oracle_matches_closed_form": true
+    },
+    {
+      "n": 6,
+      "k": 2,
+      "worlds": 15,
+      "all_item_ablation": 6,
+      "closed_form": 4.266667,
+      "oracle": 4.266667,
+      "oracle_matches_closed_form": true
+    },
+    {
+      "n": 6,
+      "k": 3,
+      "worlds": 20,
+      "all_item_ablation": 6,
+      "closed_form": 4.5,
+      "oracle": 4.5,
+      "oracle_matches_closed_form": true
+    },
+    {
+      "n": 6,
+      "k": 4,
+      "worlds": 15,
+      "all_item_ablation": 6,
+      "closed_form": 4.266667,
+      "oracle": 4.266667,
+      "oracle_matches_closed_form": true
+    },
+    {
+      "n": 6,
+      "k": 5,
+      "worlds": 6,
+      "all_item_ablation": 6,
+      "closed_form": 3.333333,
+      "oracle": 3.333333,
+      "oracle_matches_closed_form": true
+    },
+    {
+      "n": 7,
+      "k": 1,
+      "worlds": 7,
+      "all_item_ablation": 7,
+      "closed_form": 3.857143,
+      "oracle": 3.857143,
+      "oracle_matches_closed_form": true
+    },
+    {
+      "n": 7,
+      "k": 2,
+      "worlds": 21,
+      "all_item_ablation": 7,
+      "closed_form": 5.0,
+      "oracle": 5.0,
+      "oracle_matches_closed_form": true
+    },
+    {
+      "n": 7,
+      "k": 3,
+      "worlds": 35,
+      "all_item_ablation": 7,
+      "closed_form": 5.4,
+      "oracle": 5.4,
+      "oracle_matches_closed_form": true
+    },
+    {
+      "n": 7,
+      "k": 4,
+      "worlds": 35,
+      "all_item_ablation": 7,
+      "closed_form": 5.4,
+      "oracle": 5.4,
+      "oracle_matches_closed_form": true
+    },
+    {
+      "n": 7,
+      "k": 5,
+      "worlds": 21,
+      "all_item_ablation": 7,
+      "closed_form": 5.0,
+      "oracle": 5.0,
+      "oracle_matches_closed_form": true
+    },
+    {
+      "n": 7,
+      "k": 6,
+      "worlds": 7,
+      "all_item_ablation": 7,
+      "closed_form": 3.857143,
+      "oracle": 3.857143,
+      "oracle_matches_closed_form": true
+    },
+    {
+      "n": 8,
+      "k": 1,
+      "worlds": 8,
+      "all_item_ablation": 8,
+      "closed_form": 4.375,
+      "oracle": 4.375,
+      "oracle_matches_closed_form": true
+    },
+    {
+      "n": 8,
+      "k": 2,
+      "worlds": 28,
+      "all_item_ablation": 8,
+      "closed_form": 5.714286,
+      "oracle": 5.714286,
+      "oracle_matches_closed_form": true
+    },
+    {
+      "n": 8,
+      "k": 3,
+      "worlds": 56,
+      "all_item_ablation": 8,
+      "closed_form": 6.25,
+      "oracle": 6.25,
+      "oracle_matches_closed_form": true
+    },
+    {
+      "n": 8,
+      "k": 4,
+      "worlds": 70,
+      "all_item_ablation": 8,
+      "closed_form": 6.4,
+      "oracle": 6.4,
+      "oracle_matches_closed_form": true
+    },
+    {
+      "n": 8,
+      "k": 5,
+      "worlds": 56,
+      "all_item_ablation": 8,
+      "closed_form": 6.25,
+      "oracle": 6.25,
+      "oracle_matches_closed_form": true
+    },
+    {
+      "n": 8,
+      "k": 6,
+      "worlds": 28,
+      "all_item_ablation": 8,
+      "closed_form": 5.714286,
+      "oracle": 5.714286,
+      "oracle_matches_closed_form": true
+    },
+    {
+      "n": 8,
+      "k": 7,
+      "worlds": 8,
+      "all_item_ablation": 8,
+      "closed_form": 4.375,
+      "oracle": 4.375,
+      "oracle_matches_closed_form": true
+    },
+    {
+      "n": 9,
+      "k": 1,
+      "worlds": 9,
+      "all_item_ablation": 9,
+      "closed_form": 4.888889,
+      "oracle": 4.888889,
+      "oracle_matches_closed_form": true
+    },
+    {
+      "n": 9,
+      "k": 2,
+      "worlds": 36,
+      "all_item_ablation": 9,
+      "closed_form": 6.416667,
+      "oracle": 6.416667,
+      "oracle_matches_closed_form": true
+    },
+    {
+      "n": 9,
+      "k": 3,
+      "worlds": 84,
+      "all_item_ablation": 9,
+      "closed_form": 7.071429,
+      "oracle": 7.071429,
+      "oracle_matches_closed_form": true
+    },
+    {
+      "n": 9,
+      "k": 4,
+      "worlds": 126,
+      "all_item_ablation": 9,
+      "closed_form": 7.333333,
+      "oracle": 7.333333,
+      "oracle_matches_closed_form": true
+    },
+    {
+      "n": 9,
+      "k": 5,
+      "worlds": 126,
+      "all_item_ablation": 9,
+      "closed_form": 7.333333,
+      "oracle": 7.333333,
+      "oracle_matches_closed_form": true
+    },
+    {
+      "n": 9,
+      "k": 6,
+      "worlds": 84,
+      "all_item_ablation": 9,
+      "closed_form": 7.071429,
+      "oracle": 7.071429,
+      "oracle_matches_closed_form": true
+    },
+    {
+      "n": 9,
+      "k": 7,
+      "worlds": 36,
+      "all_item_ablation": 9,
+      "closed_form": 6.416667,
+      "oracle": 6.416667,
+      "oracle_matches_closed_form": true
+    },
+    {
+      "n": 9,
+      "k": 8,
+      "worlds": 9,
+      "all_item_ablation": 9,
+      "closed_form": 4.888889,
+      "oracle": 4.888889,
+      "oracle_matches_closed_form": true
+    },
+    {
+      "n": 10,
+      "k": 1,
+      "worlds": 10,
+      "all_item_ablation": 10,
+      "closed_form": 5.4,
+      "oracle": 5.4,
+      "oracle_matches_closed_form": true
+    },
+    {
+      "n": 10,
+      "k": 2,
+      "worlds": 45,
+      "all_item_ablation": 10,
+      "closed_form": 7.111111,
+      "oracle": 7.111111,
+      "oracle_matches_closed_form": true
+    },
+    {
+      "n": 10,
+      "k": 3,
+      "worlds": 120,
+      "all_item_ablation": 10,
+      "closed_form": 7.875,
+      "oracle": 7.875,
+      "oracle_matches_closed_form": true
+    },
+    {
+      "n": 10,
+      "k": 4,
+      "worlds": 210,
+      "all_item_ablation": 10,
+      "closed_form": 8.228571,
+      "oracle": 8.228571,
+      "oracle_matches_closed_form": true
+    },
+    {
+      "n": 10,
+      "k": 5,
+      "worlds": 252,
+      "all_item_ablation": 10,
+      "closed_form": 8.333333,
+      "oracle": 8.333333,
+      "oracle_matches_closed_form": true
+    },
+    {
+      "n": 10,
+      "k": 6,
+      "worlds": 210,
+      "all_item_ablation": 10,
+      "closed_form": 8.228571,
+      "oracle": 8.228571,
+      "oracle_matches_closed_form": true
+    },
+    {
+      "n": 10,
+      "k": 7,
+      "worlds": 120,
+      "all_item_ablation": 10,
+      "closed_form": 7.875,
+      "oracle": 7.875,
+      "oracle_matches_closed_form": true
+    },
+    {
+      "n": 10,
+      "k": 8,
+      "worlds": 45,
+      "all_item_ablation": 10,
+      "closed_form": 7.111111,
+      "oracle": 7.111111,
+      "oracle_matches_closed_form": true
+    },
+    {
+      "n": 10,
+      "k": 9,
+      "worlds": 10,
+      "all_item_ablation": 10,
+      "closed_form": 5.4,
+      "oracle": 5.4,
+      "oracle_matches_closed_form": true
+    }
+  ],
+  "E4": [
+    {
+      "n": 1,
+      "semantics": "atomic",
+      "worlds": 2,
+      "ternary_projection_all_unknown": true,
+      "ternary_journal_expected_probes": 1.0,
+      "structured_journal_expected_probes": 1.0,
+      "structured_journal_worst_probes": 1,
+      "bulk_list_query_breakeven_cost": 0.0
+    },
+    {
+      "n": 1,
+      "semantics": "prefix",
+      "worlds": 2,
+      "ternary_projection_all_unknown": true,
+      "ternary_journal_expected_probes": 1.0,
+      "structured_journal_expected_probes": 1.0,
+      "structured_journal_worst_probes": 1,
+      "closed_form_expected": 1.0,
+      "closed_form_worst": 1,
+      "closed_form_matches": true,
+      "bulk_list_query_breakeven_cost": 0.0
+    },
+    {
+      "n": 1,
+      "semantics": "independent",
+      "worlds": 2,
+      "ternary_projection_all_unknown": true,
+      "ternary_journal_expected_probes": 1.0,
+      "structured_journal_expected_probes": 1.0,
+      "structured_journal_worst_probes": 1,
+      "bulk_list_query_breakeven_cost": 0.0
+    },
+    {
+      "n": 2,
+      "semantics": "atomic",
+      "worlds": 2,
+      "ternary_projection_all_unknown": true,
+      "ternary_journal_expected_probes": 2.0,
+      "structured_journal_expected_probes": 1.0,
+      "structured_journal_worst_probes": 1,
+      "bulk_list_query_breakeven_cost": 1.0
+    },
+    {
+      "n": 2,
+      "semantics": "prefix",
+      "worlds": 3,
+      "ternary_projection_all_unknown": true,
+      "ternary_journal_expected_probes": 2.0,
+      "structured_journal_expected_probes": 1.666667,
+      "structured_journal_worst_probes": 2,
+      "closed_form_expected": 1.666667,
+      "closed_form_worst": 2,
+      "closed_form_matches": true,
+      "bulk_list_query_breakeven_cost": 0.333333
+    },
+    {
+      "n": 2,
+      "semantics": "independent",
+      "worlds": 4,
+      "ternary_projection_all_unknown": true,
+      "ternary_journal_expected_probes": 2.0,
+      "structured_journal_expected_probes": 2.0,
+      "structured_journal_worst_probes": 2,
+      "bulk_list_query_breakeven_cost": 0.0
+    },
+    {
+      "n": 3,
+      "semantics": "atomic",
+      "worlds": 2,
+      "ternary_projection_all_unknown": true,
+      "ternary_journal_expected_probes": 3.0,
+      "structured_journal_expected_probes": 1.0,
+      "structured_journal_worst_probes": 1,
+      "bulk_list_query_breakeven_cost": 2.0
+    },
+    {
+      "n": 3,
+      "semantics": "prefix",
+      "worlds": 4,
+      "ternary_projection_all_unknown": true,
+      "ternary_journal_expected_probes": 3.0,
+      "structured_journal_expected_probes": 2.0,
+      "structured_journal_worst_probes": 2,
+      "closed_form_expected": 2.0,
+      "closed_form_worst": 2,
+      "closed_form_matches": true,
+      "bulk_list_query_breakeven_cost": 1.0
+    },
+    {
+      "n": 3,
+      "semantics": "independent",
+      "worlds": 8,
+      "ternary_projection_all_unknown": true,
+      "ternary_journal_expected_probes": 3.0,
+      "structured_journal_expected_probes": 3.0,
+      "structured_journal_worst_probes": 3,
+      "bulk_list_query_breakeven_cost": 0.0
+    },
+    {
+      "n": 4,
+      "semantics": "atomic",
+      "worlds": 2,
+      "ternary_projection_all_unknown": true,
+      "ternary_journal_expected_probes": 4.0,
+      "structured_journal_expected_probes": 1.0,
+      "structured_journal_worst_probes": 1,
+      "bulk_list_query_breakeven_cost": 3.0
+    },
+    {
+      "n": 4,
+      "semantics": "prefix",
+      "worlds": 5,
+      "ternary_projection_all_unknown": true,
+      "ternary_journal_expected_probes": 4.0,
+      "structured_journal_expected_probes": 2.4,
+      "structured_journal_worst_probes": 3,
+      "closed_form_expected": 2.4,
+      "closed_form_worst": 3,
+      "closed_form_matches": true,
+      "bulk_list_query_breakeven_cost": 1.6
+    },
+    {
+      "n": 4,
+      "semantics": "independent",
+      "worlds": 16,
+      "ternary_projection_all_unknown": true,
+      "ternary_journal_expected_probes": 4.0,
+      "structured_journal_expected_probes": 4.0,
+      "structured_journal_worst_probes": 4,
+      "bulk_list_query_breakeven_cost": 0.0
+    },
+    {
+      "n": 5,
+      "semantics": "atomic",
+      "worlds": 2,
+      "ternary_projection_all_unknown": true,
+      "ternary_journal_expected_probes": 5.0,
+      "structured_journal_expected_probes": 1.0,
+      "structured_journal_worst_probes": 1,
+      "bulk_list_query_breakeven_cost": 4.0
+    },
+    {
+      "n": 5,
+      "semantics": "prefix",
+      "worlds": 6,
+      "ternary_projection_all_unknown": true,
+      "ternary_journal_expected_probes": 5.0,
+      "structured_journal_expected_probes": 2.666667,
+      "structured_journal_worst_probes": 3,
+      "closed_form_expected": 2.666667,
+      "closed_form_worst": 3,
+      "closed_form_matches": true,
+      "bulk_list_query_breakeven_cost": 2.333333
+    },
+    {
+      "n": 5,
+      "semantics": "independent",
+      "worlds": 32,
+      "ternary_projection_all_unknown": true,
+      "ternary_journal_expected_probes": 5.0,
+      "structured_journal_expected_probes": 5.0,
+      "structured_journal_worst_probes": 5,
+      "bulk_list_query_breakeven_cost": 0.0
+    },
+    {
+      "n": 6,
+      "semantics": "atomic",
+      "worlds": 2,
+      "ternary_projection_all_unknown": true,
+      "ternary_journal_expected_probes": 6.0,
+      "structured_journal_expected_probes": 1.0,
+      "structured_journal_worst_probes": 1,
+      "bulk_list_query_breakeven_cost": 5.0
+    },
+    {
+      "n": 6,
+      "semantics": "prefix",
+      "worlds": 7,
+      "ternary_projection_all_unknown": true,
+      "ternary_journal_expected_probes": 6.0,
+      "structured_journal_expected_probes": 2.857143,
+      "structured_journal_worst_probes": 3,
+      "closed_form_expected": 2.857143,
+      "closed_form_worst": 3,
+      "closed_form_matches": true,
+      "bulk_list_query_breakeven_cost": 3.142857
+    },
+    {
+      "n": 6,
+      "semantics": "independent",
+      "worlds": 64,
+      "ternary_projection_all_unknown": true,
+      "ternary_journal_expected_probes": 6.0,
+      "structured_journal_expected_probes": 6.0,
+      "structured_journal_worst_probes": 6,
+      "bulk_list_query_breakeven_cost": 0.0
+    },
+    {
+      "n": 7,
+      "semantics": "atomic",
+      "worlds": 2,
+      "ternary_projection_all_unknown": true,
+      "ternary_journal_expected_probes": 7.0,
+      "structured_journal_expected_probes": 1.0,
+      "structured_journal_worst_probes": 1,
+      "bulk_list_query_breakeven_cost": 6.0
+    },
+    {
+      "n": 7,
+      "semantics": "prefix",
+      "worlds": 8,
+      "ternary_projection_all_unknown": true,
+      "ternary_journal_expected_probes": 7.0,
+      "structured_journal_expected_probes": 3.0,
+      "structured_journal_worst_probes": 3,
+      "closed_form_expected": 3.0,
+      "closed_form_worst": 3,
+      "closed_form_matches": true,
+      "bulk_list_query_breakeven_cost": 4.0
+    },
+    {
+      "n": 7,
+      "semantics": "independent",
+      "worlds": 128,
+      "ternary_projection_all_unknown": true,
+      "ternary_journal_expected_probes": 7.0,
+      "structured_journal_expected_probes": 7.0,
+      "structured_journal_worst_probes": 7,
+      "bulk_list_query_breakeven_cost": 0.0
+    },
+    {
+      "n": 8,
+      "semantics": "atomic",
+      "worlds": 2,
+      "ternary_projection_all_unknown": true,
+      "ternary_journal_expected_probes": 8.0,
+      "structured_journal_expected_probes": 1.0,
+      "structured_journal_worst_probes": 1,
+      "bulk_list_query_breakeven_cost": 7.0
+    },
+    {
+      "n": 8,
+      "semantics": "prefix",
+      "worlds": 9,
+      "ternary_projection_all_unknown": true,
+      "ternary_journal_expected_probes": 8.0,
+      "structured_journal_expected_probes": 3.222222,
+      "structured_journal_worst_probes": 4,
+      "closed_form_expected": 3.222222,
+      "closed_form_worst": 4,
+      "closed_form_matches": true,
+      "bulk_list_query_breakeven_cost": 4.777778
+    },
+    {
+      "n": 8,
+      "semantics": "independent",
+      "worlds": 256,
+      "ternary_projection_all_unknown": true,
+      "ternary_journal_expected_probes": 8.0,
+      "structured_journal_expected_probes": 8.0,
+      "structured_journal_worst_probes": 8,
+      "bulk_list_query_breakeven_cost": 0.0
+    },
+    {
+      "n": 9,
+      "semantics": "atomic",
+      "worlds": 2,
+      "ternary_projection_all_unknown": true,
+      "ternary_journal_expected_probes": 9.0,
+      "structured_journal_expected_probes": 1.0,
+      "structured_journal_worst_probes": 1,
+      "bulk_list_query_breakeven_cost": 8.0
+    },
+    {
+      "n": 9,
+      "semantics": "prefix",
+      "worlds": 10,
+      "ternary_projection_all_unknown": true,
+      "ternary_journal_expected_probes": 9.0,
+      "structured_journal_expected_probes": 3.4,
+      "structured_journal_worst_probes": 4,
+      "closed_form_expected": 3.4,
+      "closed_form_worst": 4,
+      "closed_form_matches": true,
+      "bulk_list_query_breakeven_cost": 5.6
+    },
+    {
+      "n": 10,
+      "semantics": "atomic",
+      "worlds": 2,
+      "ternary_projection_all_unknown": true,
+      "ternary_journal_expected_probes": 10.0,
+      "structured_journal_expected_probes": 1.0,
+      "structured_journal_worst_probes": 1,
+      "bulk_list_query_breakeven_cost": 9.0
+    },
+    {
+      "n": 10,
+      "semantics": "prefix",
+      "worlds": 11,
+      "ternary_projection_all_unknown": true,
+      "ternary_journal_expected_probes": 10.0,
+      "structured_journal_expected_probes": 3.545455,
+      "structured_journal_worst_probes": 4,
+      "closed_form_expected": 3.545455,
+      "closed_form_worst": 4,
+      "closed_form_matches": true,
+      "bulk_list_query_breakeven_cost": 6.454545
+    }
+  ]
+}

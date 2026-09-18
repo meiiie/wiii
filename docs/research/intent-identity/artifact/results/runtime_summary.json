@@ -1,0 +1,293 @@
+{
+  "I1": {
+    "trials": 240,
+    "pass": {
+      "R": 120,
+      "V": 120
+    },
+    "fail": {
+      "R": 0,
+      "V": 0
+    },
+    "provider_calls": {
+      "total": 1080,
+      "by_outcome": {
+        "committed": 960,
+        "duplicate": 120
+      }
+    },
+    "median_successor_wall_s": {
+      "R": 0.10112598599994271,
+      "V": 0.10165379299996857
+    }
+  },
+  "I2": {
+    "trials": 24,
+    "pass": {
+      "R": 12,
+      "V": 12
+    },
+    "provider_calls": {
+      "total": 96,
+      "by_outcome": {
+        "committed": 96
+      }
+    }
+  },
+  "I3": {
+    "PD/early/naive": {
+      "trials": 5,
+      "duplicate": 0,
+      "all_done": 5,
+      "unresolved": 0,
+      "world_complete": 5,
+      "child_killed": 5,
+      "succ_ok": 5
+    },
+    "PD/early/aware": {
+      "trials": 5,
+      "duplicate": 0,
+      "all_done": 5,
+      "unresolved": 0,
+      "world_complete": 5,
+      "child_killed": 5,
+      "succ_ok": 5
+    },
+    "PD/late/naive": {
+      "trials": 5,
+      "duplicate": 0,
+      "all_done": 5,
+      "unresolved": 0,
+      "world_complete": 5,
+      "child_killed": 5,
+      "succ_ok": 5
+    },
+    "PD/late/aware": {
+      "trials": 5,
+      "duplicate": 0,
+      "all_done": 5,
+      "unresolved": 0,
+      "world_complete": 5,
+      "child_killed": 5,
+      "succ_ok": 5
+    },
+    "PF/early/naive": {
+      "trials": 5,
+      "duplicate": 5,
+      "all_done": 5,
+      "unresolved": 0,
+      "world_complete": 5,
+      "child_killed": 5,
+      "succ_ok": 5
+    },
+    "PF/early/aware": {
+      "trials": 5,
+      "duplicate": 0,
+      "all_done": 5,
+      "unresolved": 0,
+      "world_complete": 5,
+      "child_killed": 5,
+      "succ_ok": 5
+    },
+    "PF/late/naive": {
+      "trials": 5,
+      "duplicate": 5,
+      "all_done": 5,
+      "unresolved": 0,
+      "world_complete": 5,
+      "child_killed": 5,
+      "succ_ok": 5
+    },
+    "PF/late/aware": {
+      "trials": 5,
+      "duplicate": 0,
+      "all_done": 5,
+      "unresolved": 0,
+      "world_complete": 5,
+      "child_killed": 5,
+      "succ_ok": 5
+    },
+    "PO/early/naive": {
+      "trials": 5,
+      "duplicate": 5,
+      "all_done": 5,
+      "unresolved": 0,
+      "world_complete": 5,
+      "child_killed": 5,
+      "succ_ok": 5
+    },
+    "PO/early/aware": {
+      "trials": 5,
+      "duplicate": 0,
+      "all_done": 0,
+      "unresolved": 5,
+      "world_complete": 5,
+      "child_killed": 5,
+      "succ_ok": 5
+    },
+    "PO/late/naive": {
+      "trials": 5,
+      "duplicate": 5,
+      "all_done": 5,
+      "unresolved": 0,
+      "world_complete": 5,
+      "child_killed": 5,
+      "succ_ok": 5
+    },
+    "PO/late/aware": {
+      "trials": 5,
+      "duplicate": 0,
+      "all_done": 5,
+      "unresolved": 0,
+      "world_complete": 5,
+      "child_killed": 5,
+      "succ_ok": 5
+    }
+  },
+  "I4": {
+    "lookup/after-first-effect/naive/R": {
+      "trials": 5,
+      "duplicate": 5,
+      "all_done": 5,
+      "unresolved": 0,
+      "world_complete": 5,
+      "child_killed": 5,
+      "succ_ok": 5
+    },
+    "lookup/after-first-effect/naive/V": {
+      "trials": 5,
+      "duplicate": 5,
+      "all_done": 5,
+      "unresolved": 0,
+      "world_complete": 5,
+      "child_killed": 5,
+      "succ_ok": 5
+    },
+    "lookup/after-first-effect/aware/R": {
+      "trials": 5,
+      "duplicate": 0,
+      "all_done": 5,
+      "unresolved": 0,
+      "world_complete": 5,
+      "child_killed": 5,
+      "succ_ok": 5
+    },
+    "lookup/after-first-effect/aware/V": {
+      "trials": 5,
+      "duplicate": 0,
+      "all_done": 5,
+      "unresolved": 0,
+      "world_complete": 5,
+      "child_killed": 5,
+      "succ_ok": 5
+    },
+    "lookup/after-first-reservation/naive/R": {
+      "trials": 5,
+      "duplicate": 0,
+      "all_done": 5,
+      "unresolved": 0,
+      "world_complete": 5,
+      "child_killed": 5,
+      "succ_ok": 5
+    },
+    "lookup/after-first-reservation/naive/V": {
+      "trials": 5,
+      "duplicate": 0,
+      "all_done": 5,
+      "unresolved": 0,
+      "world_complete": 5,
+      "child_killed": 5,
+      "succ_ok": 5
+    },
+    "lookup/after-first-reservation/aware/R": {
+      "trials": 5,
+      "duplicate": 0,
+      "all_done": 0,
+      "unresolved": 5,
+      "world_complete": 0,
+      "child_killed": 5,
+      "succ_ok": 5
+    },
+    "lookup/after-first-reservation/aware/V": {
+      "trials": 5,
+      "duplicate": 0,
+      "all_done": 0,
+      "unresolved": 5,
+      "world_complete": 0,
+      "child_killed": 5,
+      "succ_ok": 5
+    },
+    "none/after-first-effect/naive/R": {
+      "trials": 5,
+      "duplicate": 5,
+      "all_done": 5,
+      "unresolved": 0,
+      "world_complete": 5,
+      "child_killed": 5,
+      "succ_ok": 5
+    },
+    "none/after-first-effect/naive/V": {
+      "trials": 5,
+      "duplicate": 5,
+      "all_done": 5,
+      "unresolved": 0,
+      "world_complete": 5,
+      "child_killed": 5,
+      "succ_ok": 5
+    },
+    "none/after-first-effect/aware/R": {
+      "trials": 5,
+      "duplicate": 0,
+      "all_done": 0,
+      "unresolved": 5,
+      "world_complete": 5,
+      "child_killed": 5,
+      "succ_ok": 5
+    },
+    "none/after-first-effect/aware/V": {
+      "trials": 5,
+      "duplicate": 0,
+      "all_done": 0,
+      "unresolved": 5,
+      "world_complete": 5,
+      "child_killed": 5,
+      "succ_ok": 5
+    },
+    "none/after-first-reservation/naive/R": {
+      "trials": 5,
+      "duplicate": 0,
+      "all_done": 5,
+      "unresolved": 0,
+      "world_complete": 5,
+      "child_killed": 5,
+      "succ_ok": 5
+    },
+    "none/after-first-reservation/naive/V": {
+      "trials": 5,
+      "duplicate": 0,
+      "all_done": 5,
+      "unresolved": 0,
+      "world_complete": 5,
+      "child_killed": 5,
+      "succ_ok": 5
+    },
+    "none/after-first-reservation/aware/R": {
+      "trials": 5,
+      "duplicate": 0,
+      "all_done": 0,
+      "unresolved": 5,
+      "world_complete": 0,
+      "child_killed": 5,
+      "succ_ok": 5
+    },
+    "none/after-first-reservation/aware/V": {
+      "trials": 5,
+      "duplicate": 0,
+      "all_done": 0,
+      "unresolved": 5,
+      "world_complete": 0,
+      "child_killed": 5,
+      "succ_ok": 5
+    }
+  }
+}
