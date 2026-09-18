@@ -931,9 +931,9 @@
         },
         "Vr+E": {
           "duplicate": 0,
-          "incomplete": 0,
-          "unresolved": 0,
-          "calls": 3
+          "incomplete": 1,
+          "unresolved": 1,
+          "calls": 2
         }
       },
       "R_vs_V_vector_disagreements": 0,
@@ -975,9 +975,9 @@
         },
         "Vr+E": {
           "duplicate": 0,
-          "incomplete": 0,
-          "unresolved": 0,
-          "calls": 112
+          "incomplete": 32,
+          "unresolved": 32,
+          "calls": 80
         }
       },
       "R_vs_V_vector_disagreements": 16,
@@ -1019,9 +1019,9 @@
         },
         "Vr+E": {
           "duplicate": 0,
-          "incomplete": 0,
-          "unresolved": 0,
-          "calls": 6912
+          "incomplete": 1728,
+          "unresolved": 1728,
+          "calls": 5184
         }
       },
       "R_vs_V_vector_disagreements": 1152,
@@ -1063,9 +1063,9 @@
         },
         "Vr+E": {
           "duplicate": 0,
-          "incomplete": 0,
-          "unresolved": 0,
-          "calls": 663552
+          "incomplete": 147456,
+          "unresolved": 147456,
+          "calls": 516096
         }
       },
       "R_vs_V_vector_disagreements": 110592,

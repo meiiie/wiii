@@ -164,6 +164,15 @@
         "send(g0,s1)",
         "deliver(g0,s1):commit"
       ]
+    },
+    {
+      "configuration": "safe-without-fence-capability",
+      "states": 76,
+      "edges": 158,
+      "exhausted": true,
+      "violation": null,
+      "witness_steps": null,
+      "witness": null
     }
   ]
 }

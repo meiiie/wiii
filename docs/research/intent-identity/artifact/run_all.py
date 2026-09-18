@@ -1,4 +1,4 @@
-"""Reproduce every result in results/ (about 10 minutes on one core).
+"""Reproduce every result in results/ (about 15 minutes on one core).
 
     python3 run_all.py            # everything
     python3 run_all.py quick      # skip the process-crash studies (I1-I4)

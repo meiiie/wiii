@@ -49,6 +49,7 @@ class Config:
     sink_dedup: bool = True
     send_respects_retention: bool = True
     model_retention_expiry: bool = True
+    fence_available: bool = True
 
 
 def violations(s: State) -> list[str]:
@@ -114,9 +115,9 @@ def successors(s: State, cfg: Config) -> Iterator[tuple[str, State]]:
         elif g not in s.lookup_negative:
             yield f"lookup(g{g}):negative", replace(s, lookup_negative=s.lookup_negative | {g})
 
-    # Fence an old generation at the sink.
+    # Fence an old generation at the sink (not offered by every provider).
     for g in sorted(s.created):
-        if g not in s.fenced:
+        if cfg.fence_available and g not in s.fenced:
             yield f"fence(g{g})", replace(s, fenced=s.fenced | {g})
 
     # No-effect certificate.
@@ -209,4 +210,5 @@ def configurations(include_retention: bool = True) -> list[Config]:
     ]
     if include_retention:
         cfgs.append(Config(name="retry-after-retention-expiry", send_respects_retention=False))
+        cfgs.append(Config(name="safe-without-fence-capability", fence_available=False))
     return cfgs

@@ -22,7 +22,7 @@
 
 \begin{document}
 
-\title{Exactly-Once Effects for Re-Planning LLM Agents:\\
+\title{Exactly-Once Effects for Regrouping Agent Tool Calls:\\
 A Reduction, a Retention Hazard, and an Evidence Contract}
 
 \author{\IEEEauthorblockN{Research-team working draft}
@@ -32,7 +32,7 @@ Development results; not submitted; authorship confirmation pending}}
 \maketitle
 
 \begin{abstract}
-A recovering language-model agent may re-express an authorized task with different tool calls. The runtime must decide which authorized effect occurrences remain available, not whether the new request text equals the old one. We study a restricted language of independent, explicitly authorized effect obligations executed against a durable sink. Three results follow. \emph{(i)~Reduction.} With a sink that atomically retains a per-key effect record for the whole recovery period, verified plan refinement reduces to stable obligation-key execution: an independent re-implementation reproduces the v0.2 null result exactly across 186{,}674 exhaustively enumerated regrouping cases, 240 real SIGKILL/recovery trials and 24 three-worker races, and a reference that also consults its own ledger ties the verifier call-for-call. \emph{(ii)~Retention hazard.} Commercial idempotency contracts are finite: Stripe prunes idempotency keys after 24~hours and treats a reused key as a new request; Amazon SQS FIFO deduplicates for 5~minutes. We model retention-bounded sinks $\PDT$, prove that same-key retry is safe exactly when the controller's own hold timestamp is within the window, and show that every same-key-retry policy---including the strong reference and the v0.2 verifier---duplicates in all 149{,}217 lost-acknowledgement cases once the window closes, with a seven-step model-checking witness and 20/20 runtime duplicates for naive recovery versus 0/20 for the retention-aware controller. Completion after the window then depends on an evidence contract: the retention-aware controller completed 10/10 lost-acknowledgement trials with a lookup endpoint and left 10/10 unresolved without one. \emph{(iii)~Evidence contract.} A ternary per-obligation projection is sufficient for the maximal safe fresh-dispatch set but not for reconciliation cost: retaining the batch-semantics class of a lost request changes the exact optimal expected number of item probes from $n$ (independent entries) to $1$ (atomic), to about $\log_2(n{+}1)$ (ordered stop-on-failure), and to a closed form for reported cardinality, all matched by an exact adaptive oracle to $n=10$ and reproduced probe-for-probe by a journal-driven recovery worker on the runtime. A takeover study across three provider profiles shows where fence, evidence and unresolved states are each necessary. No live LLM, commercial provider call, universal exactly-once guarantee or superiority over published systems is claimed.
+A recovering language-model agent may re-express an authorized task with different tool calls. The runtime must decide which authorized effect occurrences remain available, not whether the new request text equals the old one. We study a restricted language of independent, explicitly authorized effect obligations executed against a durable sink. Three results follow. \emph{(i)~Reduction.} With a sink that atomically retains a per-key effect record for the whole recovery period, verified plan refinement reduces to stable obligation-key execution: a second implementation written from the v0.2 specification reproduces the v0.2 null result exactly across 186{,}674 exhaustively enumerated regrouping cases, 240 real SIGKILL/recovery trials and 24 three-worker races, and a reference that consults its own ledger dispatches the same set as the verifier by construction. \emph{(ii)~Retention hazard.} Commercial idempotency contracts are finite: Stripe prunes idempotency keys after 24~hours and treats a reused key as a new request; Amazon SQS FIFO deduplicates for 5~minutes. We model retention-bounded sinks $\PDT$, prove that same-key retry is safe against every history the controller cannot rule out exactly when its own hold timestamp is within the window less a stated end-to-end timing bound, and show that every same-key-retry policy---including the strong reference and the v0.2 verifier---duplicates in every lost-acknowledgement case once the window closes (149{,}217 of 186{,}674 enumerated cases, a seven-step model-checking witness, and 20/20 runtime duplicates for naive recovery versus 0/20 for the retention-aware controller). A durable-execution-style lookup-then-fresh-key recovery without a fence duplicates whenever the old request is still in flight (15/15 in-flight takeover trials, on every profile including the deduplicating one) and is correct whenever it has landed (0/15). Completion after the window then depends on an evidence contract: the retention-aware controller completed 10/10 lost-acknowledgement trials with a lookup endpoint and left 10/10 unresolved without one. \emph{(iii)~Evidence contract.} A ternary per-obligation projection is sufficient for the maximal safe fresh-dispatch set but not for reconciliation cost: retaining the processing class of a lost batch request changes the exact optimal expected number of per-item evidence calls from $n$ (independent entries) to $1$ (atomic) and to about $\log_2(n{+}1)$ (ordered stop-on-failure) when finality is provided per request, and to $4.5$ and $5.8$ of $8$ when every fresh dispatch must be preceded by a per-key fence; a journal-driven recovery worker reproduces these counts on the runtime, and a misdeclared class produces false completion. A takeover study across three provider profiles shows where fence, evidence and unresolved states are each necessary. No live LLM, commercial provider call, universal exactly-once guarantee or superiority over published systems is claimed.
 \end{abstract}
 
 \begin{IEEEkeywords}
@@ -49,10 +49,10 @@ The v0.2 study began from the hypothesis that preserving effect obligations acro
 
 Contributions:
 \begin{enumerate}
-\item An independent re-implementation of the v0.2 kernel from its specification, reproducing every finite-domain count (Table~\ref{tab:d1}) and the process-crash and concurrency results, and closing the shared-code threat noted in v0.2. The reference is strengthened to consult its own ledger (R$^{+}$); it ties the verifier exactly.
-\item A retention-bounded profile $\PDT$ with a necessary-and-sufficient condition for safe same-key retry that depends only on the controller's hold timestamp and the documented window (Prop.~\ref{prop:retention}); an exhaustive study showing all same-key policies fail after the window while the retention-aware controller does not (Table~\ref{tab:d1ttl}); a new model-checking mutant with a seven-step witness; and a runtime study with a finite-TTL sink (Table~\ref{tab:i4}).
-\item A takeover study in which a successor worker adopts a held occurrence while the crashed worker's request is still in flight, across $\PD$, $\PF$ and $\PO$ with naive and profile-aware recovery (Table~\ref{tab:i3}). It exhibits the three necessary mechanisms---sink dedup, fence-then-fresh-key, and an explicit \emph{unresolved} state---as distinct rows rather than as prose.
-\item A semantics-determined belief construction: recording the membership, order and processing class of a lost batch request determines the belief family exactly; ternary projection discards it. Closed forms for the atomic, prefix and exact-cardinality classes are verified against an exact adaptive oracle to $n=10$ (Table~\ref{tab:e4}), and a recovery worker that rebuilds the belief family from a one-field-per-request journal reproduces the expected probe counts exactly on the runtime while remaining exactly-once (Table~\ref{tab:i5}).
+\item A second implementation of the v0.2 kernel written from its specification by the same research process, reproducing every finite-domain count (Table~\ref{tab:d1}) and the process-crash and concurrency results. It is not an external replication. The reference is strengthened to consult its own ledger (R$^{+}$); Lemma~\ref{lem:tie} shows it dispatches the same set as the verifier, so the tie is structural rather than empirical.
+\item A retention-bounded profile $\PDT$ with a condition for safe same-key retry that depends only on the controller's hold timestamp, the documented window and one end-to-end timing bound, necessary and sufficient under an explicit adversarial timing model (Prop.~\ref{prop:retention}); the exhaustive enumeration in Table~\ref{tab:d1ttl}, whose counts are a corollary of the proposition and serve as an implementation check; a model-checking mutant with a seven-step witness; and a runtime study with a finite-TTL sink (Table~\ref{tab:i4}).
+\item A takeover study in which a successor worker adopts a held occurrence while the crashed worker's request is still in flight, across $\PD$, $\PF$ and $\PO$ with three recovery policies: naive same-key retry, durable-execution-style lookup-then-fresh-key without a fence, and profile-aware recovery (Table~\ref{tab:i3}). The middle policy is the realistic baseline; it fails exactly in the in-flight case.
+\item A semantics-determined belief construction: recording the membership, order and processing class of a lost batch request determines the belief family for the atomic, prefix and independent classes; ternary projection discards it. Closed forms are verified against an exact adaptive oracle to $n=10$ under two evidence-cost accountings (Table~\ref{tab:e4}); a recovery worker that rebuilds the belief family from a one-field-per-request journal reproduces the expected counts on the runtime and a misdeclared class yields false completion (Table~\ref{tab:i5}).
 \item A measured negative finding about a common evaluation design: three-worker races resolved by controller reservation never reach the sink's deduplication path (0 of 96 sink calls), so they do not test the sink contract.
 \end{enumerate}
 
@@ -61,18 +61,18 @@ The empirical scope remains explicit. Proposals are generated by combinatorial t
 \section{Background and Prior-Art Boundary}
 
 \subsection{Durability and completion records}
-RIFL retains completion records with operations and addresses retry routing and record lifetime~\cite{rifl}. A persistent identifier alone is insufficient if the external mutation and the deduplication record can diverge, if retries reach non-coordinating sinks, or if the record is reclaimed. RIFL treats record lifetime as a system-controlled parameter; a commercial provider controls it unilaterally, which is the gap this version studies.
+Idempotent, uniquely identified messages are the classical answer to at-least-once delivery across trust boundaries~\cite{helland2007,helland2012}; sagas compensate rather than deduplicate and require the compensating action to be known~\cite{sagas}, which an agent's regrouped tool call typically is not. RIFL retains completion records with operations and addresses retry routing and record lifetime~\cite{rifl}. A persistent identifier alone is insufficient if the external mutation and the deduplication record can diverge, if retries reach non-coordinating sinks, or if the record is reclaimed. RIFL treats record lifetime as a system-controlled parameter; a commercial provider controls it unilaterally, which is the gap this version studies. Stream processors obtain exactly-once by making the sink participate in a transaction or a checkpoint epoch~\cite{flink,kafka}; an agent's effect provider offers neither, only a documented key contract. The HTTP \texttt{Idempotency-Key} draft standardizes the client-supplied key and the fingerprint check but explicitly leaves the retention period to the server~\cite{idempotencykey}.
 
 CapLease binds authorization instances to canonical actions with durable budgets and transactional transitions; its Server Ledger reference prevents duplicate effects with an idempotent sink~\cite{caplease}. A result against regenerated keys therefore does not establish an advantage over that design; we do not execute CapLease.
 
 \subsection{Agent-specific execution boundaries}
-ACRFence analyzes regenerated calls and either reuses an old result or requires a fork~\cite{acrfence}. AID-Guard holds a reservation while an outcome is ambiguous and permits replacement only under terminal-result or no-effect/fencing conditions~\cite{aidguard}; our fence-then-fresh-key path follows that boundary. Cordon introduces task-level semantic transactions with result lineage and staged effects~\cite{cordon}; we do not claim all-or-nothing commit across obligations. Proof-carrying agent actions associate verifiable evidence with proposals~\cite{pca}; our checker is an exact contract check, not a certificate system.
+ACRFence analyzes regenerated calls and either reuses an old result or requires a fork~\cite{acrfence}. AID-Guard holds a reservation while an outcome is ambiguous and permits replacement only under terminal-result or no-effect/fencing conditions~\cite{aidguard}; our fence-then-fresh-key path follows that boundary. Cordon introduces task-level semantic transactions with result lineage and staged effects~\cite{cordon}; we do not claim all-or-nothing commit across obligations. Proof-carrying agent actions associate verifiable evidence with proposals~\cite{pca}; our checker is an exact contract check, not a certificate system. Tool-using agents in the ReAct and Toolformer families interleave reasoning with tool calls whose text is regenerated on every step~\cite{react,toolformer}; that regeneration is the source of the regrouping we study, and none of these systems addresses the identity of the effect across a crash.
 
 \subsection{Durable execution and commercial idempotency}
 Temporal documents that an Activity ``be idempotent, so retries can be processed without duplicate side effects'' and that ``each attempt starts from the initial state''~\cite{temporal}. Deduplication is thus delegated to the effect provider. Stripe saves the result of the first request under an idempotency key, compares incoming parameters to the original and errors on mismatch, and removes keys after at least 24~hours, after which a reused key produces a new request~\cite{stripe}. SQS FIFO deduplicates by \texttt{MessageDeduplicationId} within a 5-minute window and continues tracking the identifier after delivery~\cite{sqsdedup}. These are the only two documented windows we rely on; both are finite.
 
 \subsection{Partial outcomes and evidence contracts}
-SQS \texttt{SendMessageBatch} reports each entry individually and can mix successes and failures under HTTP~200~\cite{sqsbatch}; SES \texttt{SendBulkEmail} returns ``one object per intended recipient''~\cite{ses}. These are \emph{independent} per-entry semantics. Slack's \texttt{conversations.history} provides message evidence after the fact, but for some application classes it is rate limited to one request per minute with at most 15 objects~\cite{slackhistory}; and Slack's write method documents that on \texttt{fatal\_error} ``it's possible some aspect of the operation succeeded before the error was raised''~\cite{slackpost}, which is the opaque-outcome ambiguity in a vendor's own words. Planning with partial information and sensing is established~\cite{brafman}; our belief families are an application of that view.
+SQS \texttt{SendMessageBatch} reports each entry individually and can mix successes and failures under HTTP~200~\cite{sqsbatch}; SES \texttt{SendBulkEmail} returns ``one object per intended recipient''~\cite{ses}. These are \emph{independent} per-entry semantics. Slack's \texttt{conversations.history} provides message evidence after the fact, but for some application classes it is rate limited to one request per minute with at most 15 objects~\cite{slackhistory}; and Slack's write method documents that on \texttt{fatal\_error} ``it's possible some aspect of the operation succeeded before the error was raised''~\cite{slackpost}, which is the opaque-outcome ambiguity in a vendor's own words. Planning with partial information and sensing is established~\cite{brafman,kaelbling}; our belief families are an application of that view with a set-valued, prior-uniform belief and unit-cost sensing, and our finite-state exploration follows the explicit-state model-checking tradition~\cite{spin} rather than proving the protocol in a theorem prover.
 
 \section{Problem Model}
 
@@ -129,10 +129,14 @@ Assume immutable contracts, complete plan checking, mediated effect paths, an in
 Every dispatched effect derives from an approved occurrence and its stored specification. All attempts for that occurrence use the same key. While the dedup record is retained, atomic key/effect recording allows at most one effect per key and rejects payload substitution. The retention hypothesis guarantees retention at every retry. Distinct occurrences are not collapsed by key identity. Induction over sink operations preserves the invariant.
 \end{proof}
 
-\begin{corollary}\label{cor:tie}
-A reference that performs canonical-action matching, consults the same ledger and uses the same keys and sink contract reaches the same final effect-count vector and the same number of sink calls as verified residualization.
-\end{corollary}
-The v0.2 reference $R$ resent every occurrence and let the sink deduplicate, so residualization saved calls without changing effects. The strengthened reference $R^{+}$ consults its own \emph{done} records first; Table~\ref{tab:d1} shows it ties $V$ in calls as well. Verified refinement adds no exactly-once guarantee under this hypothesis; the corollary supplies the null hypothesis for every comparison below.
+\newtheorem{lemma}{Lemma}
+\begin{lemma}[Structural tie]\label{lem:tie}
+Let $R^{+}$ perform canonical-action matching per occurrence, skip occurrences recorded \emph{done} in the ledger and dispatch the rest under $K(\iota,\omega)$; let $V$ check the whole plan, residualize against the same \emph{done} set and dispatch the rest under the same keys. On any accepted destination plan both dispatch exactly the set of approved occurrences not recorded done, in the destination order, with identical bytes; hence identical sink calls and effect vectors.
+\end{lemma}
+\begin{proof}
+Both filters compute ``approved and not done'' per occurrence; whole-plan versus per-action checking differs only on rejected plans, which dispatch nothing in either policy.
+\end{proof}
+The v0.2 reference $R$ resent every occurrence and let the sink deduplicate, so residualization saved calls without changing effects. In this artifact the abstract $R^{+}$ and $V$ share one code path and the runtime $R$ already consults the ledger, so the equal counts in Table~\ref{tab:d1} check the implementation rather than test a hypothesis. Verified refinement adds no exactly-once guarantee under the retention hypothesis; the lemma is the null hypothesis for every comparison below.
 
 \section{Finite Retention}
 
@@ -140,16 +144,17 @@ The v0.2 reference $R$ resent every occurrence and let the sink deduplicate, so 
 The hypothesis ``every retry completes before $h(\omega)+T$'' is the load-bearing assumption of Prop.~\ref{prop:reduction}, and it is a property of the recovery \emph{schedule}, not of the code. A worker crash followed by an outage longer than $T$---or a checkpoint restored days later---violates it. The controller then holds an occurrence in state \emph{held} whose effect may or may not have committed; the sink has forgotten the key; and a same-key retry is indistinguishable, at the sink, from a first request.
 
 \begin{proposition}[Retention-bounded same-key retry]\label{prop:retention}
-Let the controller record $h(\omega)$ durably before transport, let clock skew and the delivery delay of the retried request be bounded by $\delta$, and let the sink be $\PDT$. A same-key retry issued at controller time $t$ is duplicate-free in every history consistent with the controller's knowledge if and only if $t<h(\omega)+T-\delta$.
+Let the controller record $h(\omega)$ durably before transport and issue a same-key retry at controller time $t$. Let $c$ be the sink time of the earliest commit the original request could have produced and $a$ the sink time at which the retry arrives, and let the \emph{end-to-end timing error} $\varepsilon=(a-c)-(t-h(\omega))$ satisfy $|\varepsilon|\le\Delta$ in every admissible history, where the adversary may choose any $\varepsilon$ in that range together with any lost-acknowledgement history. On a $\PDT$ sink the retry is duplicate-free in every admissible history if and only if $t-h(\omega)<T-\Delta$.
 \end{proposition}
 \begin{proof}
-(Sufficiency) Any earlier commit under the key occurred at some sink time $c\ge h(\omega)-\delta'$ for the skew component $\delta'\le\delta$; its record is retained until at least $c+T\ge h(\omega)+T-\delta'$. The retry reaches the sink by $t+\delta''$ with $\delta'+\delta''\le\delta$, hence before the record can be reclaimed, and is deduplicated. (Necessity) If $t\ge h(\omega)+T-\delta$, the history in which the first request committed immediately at $c=h(\omega)-\delta'$ and its record was reclaimed at exactly $c+T$ is consistent with a lost acknowledgement; the retry arrives at or after reclamation and commits a second effect.
+(If) In any admissible history the original commit, if it happened, occurred at some sink time $c'\ge c$ and is retained until $c'+T\ge c+T$. The retry arrives at $a=c+(t-h)+\varepsilon\le c+(t-h)+\Delta<c+T$, so the record is present and the retry is deduplicated. (Only if) If $t-h\ge T-\Delta$, the adversary picks the lost-acknowledgement history in which the original committed at exactly $c$ and $\varepsilon=\Delta$; then $a=c+(t-h)+\Delta\ge c+T$, the record may have been reclaimed, and the retry commits a second effect.
 \end{proof}
+For clocks with a constant offset, $\Delta$ is the maximum sink-side delivery delay of the retry relative to the original; if the offset can change between hold and retry (e.g., a clock step during a day-long outage), $\Delta$ additionally includes twice the skew bound. The runtime exposes $\Delta$ as a configuration parameter and the studies below use $\Delta=0$ on one machine, so they exercise the window, not the margin.
 
-The decision uses only the controller's own ledger and a contract parameter $T$. No sink query is needed to make it, and no sink query can substitute for it: a negative lookup after reclamation is consistent with both histories.
+The decision uses only the controller's own ledger and two contract parameters, $T$ and $\Delta$. No sink query can substitute for it: a negative lookup after reclamation is consistent with both histories.
 
 \begin{corollary}[Profile downgrade]\label{cor:downgrade}
-After $h(\omega)+T-\delta$, a $\PDT$ sink is, for that key, at best $\PF$ (if it exposes finality or fence plus evidence) and otherwise $\PO$. A retention-aware controller is the stable-key controller plus this downgrade: positive evidence confirms; a fence permits a fresh key; absent both, the occurrence becomes \emph{unresolved}.
+After $h(\omega)+T-\Delta$, a $\PDT$ sink is, for that key, at best $\PF$ (if it exposes finality or fence plus evidence) and otherwise $\PO$. A retention-aware controller is the stable-key controller plus this downgrade: positive point-in-time evidence confirms (an effect exists); a fence permits a fresh key; a negative point-in-time lookup establishes nothing, so absent a fence the occurrence becomes \emph{unresolved}.
 \end{corollary}
 
 Where the objects a request created remain retrievable after the key is pruned---as Stripe's list endpoints permit for created objects, a capability we did not exercise here---the sink degrades to a lookup-capable profile; SQS offers no message lookup by deduplication identifier, so it degrades to $\PO$. The controller must therefore carry $T$ and the evidence capability as explicit provider-contract fields.
@@ -167,7 +172,13 @@ A once-only fresh dispatch set $S$ is duplicate-free in every world of $\Bel$ if
 \begin{proposition}[No-observation completion boundary]\label{prop:singleton}
 A single fixed fresh dispatch set both avoids duplicates and completes every obligation in every world of $\Bel$ iff $|\Bel|=1$.
 \end{proposition}
-Proofs are as in v0.2 and are exhaustively checked in E1. Both depend on fresh mutation, no new observation and old-dispatch finality; a $\PD$ sink within its window can replay retained keys without identifying the completed set.
+\begin{proof}[Proof of Prop.~\ref{prop:frontier}]
+$S$ is duplicate-free in world $w$ iff $S\cap w=\emptyset$; for all $w\in\Bel$ iff $S\cap\bigcup\Bel=\emptyset$ iff $S\subseteq F(\Bel)$.
+\end{proof}
+\begin{proof}[Proof of Prop.~\ref{prop:singleton}]
+Completion in $w$ requires $S\supseteq\Om\setminus w$ and duplicate-freedom requires $S\cap w=\emptyset$, so $S=\Om\setminus w$; one $S$ serves two worlds only if they are equal.
+\end{proof}
+Both statements are definitional once the belief family is fixed; E1 evaluates them exhaustively as a check of the artifact's code, not as evidence. Both depend on fresh mutation, no new observation and old-dispatch finality; a $\PD$ sink within its window can replay retained keys without identifying the completed set.
 
 \subsection{Safety sufficiency is not query sufficiency}
 The ternary projection (done on $D$, absent on $F$, unknown on $U$) determines $F$ exactly, so correlations never enlarge the immediate safe frontier. They change the cost of learning more. The v0.2 witness $\Bel_1=\{\{a\},\{b\}\}$ versus $\Bel_2=2^{\{a,b\}}$ has identical projections and optimal probe costs one and two.
@@ -178,20 +189,20 @@ The source of correlation in practice is not exotic: it is the processing semant
 \emph{independent}: any subset may have committed ($\Bel=2^{M}$; per-entry outcomes as in SQS batch and SES bulk~\cite{sqsbatch,ses}). \emph{atomic}: all or nothing ($\Bel=\{\emptyset,M\}$; a single-object request such as one Stripe charge~\cite{stripe}). \emph{prefix}: ordered processing that stops at the first failure ($\Bel=\{\{\omega_1..\omega_k\}:0\le k\le n\}$; the sequential worker of this artifact executing a batch wrapper is one instance). \emph{exact-$k$}: a trustworthy aggregate reports $k$ successes ($\Bel=\binom{M}{k}$).
 \end{definition}
 \begin{proposition}[Journal sufficiency and probe costs]\label{prop:classes}
-Recording $(M,\text{order},\text{class})$ determines $\Bel$ exactly. Every class projects to all-unknown on $M$, so a ternary journal believes $2^{M}$ and needs $|M|=n$ unit probes. Under a uniform prior over worlds, the exact optimal adaptive expected probe cost is $n$ (independent), $1$ (atomic), $\lceil\log_2 N\rceil-\frac{2^{\lceil\log_2 N\rceil}-N}{N}$ with $N=n{+}1$ (prefix), and $n-\frac{n-k}{k+1}-\frac{k}{n-k+1}$ (exact-$k$).
+For the independent, atomic and prefix classes, recording $(M,\text{order},\text{class})$ before transport determines $\Bel$; the exact-$k$ family additionally requires one post-hoc aggregate evidence call to learn $k$. Every class projects to all-unknown on $M$, so a ternary journal believes $2^{M}$ and needs $n=|M|$ unit probes. Under a uniform prior over worlds and unit-cost per-item probes, the exact optimal adaptive expected cost is $n$ (independent), $1$ (atomic), $\lceil\log_2 N\rceil-\frac{2^{\lceil\log_2 N\rceil}-N}{N}$ with $N=n{+}1$ (prefix), and $1+n-\frac{n-k}{k+1}-\frac{k}{n-k+1}$ (exact-$k$, including the aggregate call).
 \end{proposition}
 \begin{proof}
-Determination is by construction. Independent: each probe resolves one item and items are independent, so $n$ probes are necessary and sufficient. Atomic: any single probe resolves the world. Prefix: worlds are the $N$ prefixes; probing $\omega_i$ splits them into prefixes of length $\ge i$ and $<i$, so any adaptive policy is a binary decision tree with $N$ uniformly likely leaves and expected depth minimized by the complete tree, whose leaves lie at depths $\lfloor\log_2 N\rfloor$ and $\lceil\log_2 N\rceil$ with $2^{\lceil\log_2 N\rceil}-N$ leaves at the shallower depth. Exact-$k$: the v0.2 gap-symmetry argument; the count-aware stopping rule is optimal by exchangeability.
+Determination is by construction of the families. Independent: a probe reveals one independent bit, so $n$ probes are necessary and sufficient. Atomic: any single probe identifies the world. Prefix: worlds are the $N$ prefixes ordered by length; probing $\omega_i$ splits the current candidate interval of lengths into the two contiguous sub-intervals $\{\ge i\}$ and $\{<i\}$, and conversely every split of a contiguous interval at a boundary is realized by probing the boundary item, so adaptive policies are exactly the binary decision trees over $N$ ordered, equally likely leaves. Expected depth is minimized by the complete tree, whose leaves lie at depths $\lfloor\log_2 N\rfloor$ and $\lceil\log_2 N\rceil$ with $2^{\lceil\log_2 N\rceil}-N$ at the shallower depth. Exact-$k$: the v0.2 gap-symmetry argument with the count-aware stopping rule, plus the aggregate call.
 \end{proof}
-The class is a property the controller already reads from provider documentation to choose a profile; retaining it per request costs one field. The claim is about information discarded by the ternary abstraction, not an inability of every ternary-journal implementation to be extended.
+Two accountings of evidence cost are relevant. \emph{Per-request finality}: the provider guarantees (by acknowledgement, SLA or a request-level finalize operation that returns no per-item outcome) that the lost request is finished; probes are then the only cost and fresh dispatch of certainly-absent items needs no further call. \emph{Per-key finality}: the only final evidence is a per-key fence; then every absent item must be fenced before its fresh dispatch, whether or not it was probed, and the cost of a structured journal is the probes plus the remaining absent fences. Table~\ref{tab:e4} reports both. The class is a property the controller already reads from provider documentation to choose a profile; retaining it per request costs one field. Like $T$, it is trusted contract data: a misdeclared class makes the controller infer completion that did not happen.
 
 \section{Implementation and Reproducibility}
 
 The v0.3 artifact is a fresh implementation written from the v0.2 manuscript rather than from its source tree, in Python standard library plus SQLite. Controller and provider run in different processes with different database files, WAL mode and \texttt{synchronous=FULL}. The controller stores immutable contracts, key/payload bindings, occurrence states with lease and retention deadline, receipts and events; insertion is transactional and $(p,\alpha)$ is unique. The provider inserts one row per effect atomically; a $\PDT$ dedup row carries an expiry; a $\PF$ fence table is consulted inside the effect transaction so an in-flight request that arrives after the fence is rejected; every \texttt{/execute} call is logged with its outcome so attempts are distinguishable from effects. An evidence endpoint searches the retained effect table, modelling providers whose history outlives their idempotency window; it can be disabled.
 
-Two policies share transport and persistence. $R$ performs flat canonical-action matching and consults the ledger per occurrence; $V$ checks typed wrapper membership on the whole plan and residualizes. Two recovery modes exist for a held occurrence: \emph{naive} (same-key retry regardless of profile or retention) and \emph{aware} (Cor.~\ref{cor:downgrade}). For the evidence study the worker can send a wrapper group as one multi-entry request; the provider processes entries by a declared class (independent, atomic, prefix) with a per-entry failure hook, and the controller journals membership, order and class before transport. A recovering worker with a \emph{ternary} journal probes every held member; with a \emph{structured} journal it rebuilds the belief family of Section~\ref{sec:belief} and probes by the exact oracle. Fault points terminate the process with a real SIGKILL after the first reservation, after the first effect before confirmation, after the first confirmation, after the third effect, or during the first transport (a timer kills the process 150~ms after the request is sent while the provider delays commit).
+Two policies share transport and persistence. $R$ performs flat canonical-action matching and consults the ledger per occurrence; $V$ checks typed wrapper membership on the whole plan and residualizes. Three recovery modes exist for a held occurrence: \emph{naive} (same-key retry regardless of profile or retention); \emph{lookup-then-fresh} (query the evidence endpoint and, on a negative answer, dispatch under a fresh key without fencing---the read-then-write recovery a durable-execution activity would perform with a provider lookup); and \emph{aware} (Cor.~\ref{cor:downgrade}). Ledger writes that confirm or abandon an occurrence are accepted only from the current lease holder, so a predecessor that resumes after a takeover cannot overwrite the successor's state; this is enforced and unit-tested at the ledger but not adversarially exercised at the process level. For the evidence study the worker can send a wrapper group as one multi-entry request; the provider processes entries by a declared class (independent, atomic, prefix) with a per-entry failure hook, and the controller journals membership, order and class before transport. A recovering worker with a \emph{ternary} journal probes every held member; with a \emph{structured} journal it rebuilds the belief family of Section~\ref{sec:belief} and probes by the exact oracle. The probe is either a point-in-time lookup (per-request finality supplied by the study's timing) or a per-key fence (per-key finality), and in the latter accounting every absent member is fenced before its fresh dispatch. The successor may also be started with a journal class that contradicts the provider's actual processing, to measure the trusted-contract failure mode. Fault points terminate the process with a real SIGKILL after the first reservation, after the first effect before confirmation, after the first confirmation, after the third effect, or during the first transport (a timer kills the process 150~ms after the request is sent while the provider delays commit).
 
-The artifact contains 29 kernel unit tests, all experiment drivers, raw per-trial records (472 process trials with return codes, crash markers, successor summaries and provider-side counts), exhaustive enumerations and model-checking witnesses. \texttt{run\_all.py} regenerates every number in this paper in about ten minutes on one core. Manifests are local provenance, not external timestamping.
+The artifact contains 32 kernel unit tests, all experiment drivers, raw per-trial records (575 process trials with return codes, crash markers, successor summaries and provider-side counts), exhaustive enumerations and model-checking witnesses. \texttt{run\_all.py} regenerates every number in this paper in about fifteen minutes on one core. Manifests are local provenance, not external timestamping.
 
 \section{Study Design}
 
@@ -201,11 +212,11 @@ The artifact contains 29 kernel unit tests, all experiment drivers, raw per-tria
 
 \textbf{I1, I2.} As in v0.2: $2\times6\times4\times5=240$ SIGKILL/recovery trials on $\PD$; 12 three-worker races per policy.
 
-\textbf{I3.} Source plan one batch of four; the worker is killed 150~ms into its first transport while the provider delays commit by 1000~ms (\emph{early}) or 200~ms (\emph{late}). A different worker adopts the held occurrence after lease expiry at 0.5~s or 0.9~s. $3$ profiles $\times$ $2$ variants $\times$ $2$ recovery modes $\times$ 5 repetitions $=60$ trials.
+\textbf{I3.} Source plan one batch of four; the worker is killed 150~ms into its first transport while the provider delays commit by 1000~ms (\emph{early}) or 200~ms (\emph{late}). A different worker adopts the held occurrence after lease expiry at 0.5~s or 0.9~s. $3$ profiles $\times$ $2$ variants $\times$ $3$ recovery modes $\times$ 5 repetitions $=90$ trials. The evidence endpoint is enabled for every profile so that lookup-then-fresh has the information it would have in practice.
 
 \textbf{I4.} $\PDT$ with $T=0.5$~s. The worker is killed after the first effect (lost acknowledgement) or after the first reservation (no effect); the successor starts $0.8$~s later. $2$ evidence settings $\times$ $2$ faults $\times$ $2$ recovery modes $\times$ $2$ policies $\times$ 5 $=80$ trials.
 
-\textbf{I5.} One batch request over $n$ members is sent and the worker is killed before it can read the response; the provider fails the entries designated by the world. Every world of each class is run once: independent $n{=}4$ (16 worlds), atomic $n{=}4,8$ (2 each), prefix $n{=}4,8$ (5 and 9). The successor starts after the provider finished (finality by construction), reconciles from a ternary or a structured journal, confirms committed members and fresh-dispatches absent ones under new keys on $\PF$. $68$ trials.
+\textbf{I5.} One batch request over $n$ members is sent and the worker is killed before it can read the response; the provider fails the entries designated by the world. Every world of each class is run once: independent $n{=}4$ (16 worlds), atomic $n{=}4,8$ (2 each), prefix $n{=}4,8$ (5 and 9). The successor starts after the provider finished (finality by construction), reconciles from a ternary or a structured journal, confirms committed members and fresh-dispatches absent ones under new keys on $\PF$. The 68 worlds are run once with lookup probes (per-request finality) and once with fence probes plus a fence before every fresh dispatch (per-key finality); a further 5 prefix worlds are run with the journal misdeclaring the class as atomic. $141$ trials.
 
 \textbf{E1--E4.} E1 enumerates all $65{,}535$ belief families on four occurrences against all 16 dispatch sets. E2 is the correlation witness. E3 compares the exact-$k$ closed form with an exact dynamic-programming oracle for all $0<k<n\le 10$ (2{,}026 worlds; v0.2 stopped the oracle at $n=8$). E4 computes ternary and structured optimal probe costs for the independent, atomic and prefix classes.
 
@@ -256,11 +267,11 @@ lost ack & $R$ & 149{,}217 & 0 & 0 & 744{,}290\\
 reserved, no effect & $R$ & 111{,}760 & 0 & 0 & 744{,}290\\
  & $R^{+}$, $V$ & 0 & 0 & 0 & 521{,}362\\
  & $V_r$ & 0 & 149{,}217 & 149{,}217 & 372{,}145\\
- & $V_r{+}E$ & 0 & 0 & 0 & 670{,}579\\
+ & $V_r{+}E$ & 0 & 149{,}217 & 149{,}217 & 521{,}362\\
 \bottomrule
 \end{tabular}
 \end{table}
-Table~\ref{tab:d1ttl} is the central new result. With reclaimed retention and a lost acknowledgement, $R$, $R^{+}$ and $V$ all duplicate in every one of the 149{,}217 cases with a nonempty committed prefix. The verifier's plan-level residualization protects only occurrences the controller already recorded as done. The retention-aware policy is safe in every variant; without evidence it pays with 149{,}217 unresolved cases, which are false alarms under lost acknowledgement and real gaps when nothing had committed. With a lookup it is safe and complete everywhere, at the cost of one evidence call per lapsed held occurrence. Without retention expiry, all six policies except $G$ are safe and complete in all three crash-state variants.
+Table~\ref{tab:d1ttl} is the finite-domain form of Prop.~\ref{prop:retention}. With reclaimed retention and a lost acknowledgement, $R$, $R^{+}$ and $V$ all duplicate in every one of the 149{,}217 cases with a nonempty committed prefix. The verifier's plan-level residualization protects only occurrences the controller already recorded as done. The retention-aware policy is safe in every variant; without evidence it pays with 149{,}217 unresolved cases, which are false alarms under lost acknowledgement and real gaps when nothing had committed. With a lookup it completes every lost-acknowledgement case at one evidence call per lapsed occurrence, but in the reserved-without-effect variant its negative lookup is not finality evidence, so it stops at \emph{unresolved} exactly as $V_r$ does and has paid one more call to learn nothing it could act on; this is the abstract counterpart of the ``after reservation, aware, lookup'' row of Table~\ref{tab:i4}. Without retention expiry, all six policies except $G$ are safe and complete in all three crash-state variants. We stress that these counts are a consequence of the proposition applied to each case, not independent evidence for it: the enumeration checks that the implementation of $V_r$ behaves as specified on every regrouping, which is its purpose.
 
 \subsection{Model checking}
 \begin{table}[t]
@@ -279,37 +290,46 @@ v0.2 & safe & 1{,}180 & 3{,}467 & none (exhausted)\\
 \midrule
 +retention & safe & 1{,}396 & 4{,}043 & none (exhausted)\\
  & retry after expiry & 121 & 249 & 7 (duplicate)\\
+ & safe, no fence capability & 76 & 158 & none (exhausted)\\
 \bottomrule
 \end{tabular}
 \end{table}
-The retention mutant's witness is: hold, send, commit, crash, retention expires, resend same key, commit. The safe configuration with the retention transition still exhausts without violation because its send rule refuses any key that may have been dispatched before expiry; recovery proceeds through fence, lookup and certificate instead.
+The retention mutant's witness is: hold, send, commit, crash, retention expires, resend same key, commit. The safe configuration with the retention transition still exhausts without violation because its send rule refuses any key that may have been dispatched before expiry; recovery proceeds through fence, lookup and certificate instead. The last row removes the fence transition to model a $\PDT$ sink that offers no fence: the safe controller still exhausts without a duplicate or false success, in a much smaller graph, because after expiry its only remaining move for a possibly-dispatched key is to stop. M1 checks safety only; it does not check liveness, and that row is precisely the configuration in which the controller can be safe by never completing.
 
 \subsection{Takeover with an in-flight request}\label{sec:results-i3}
 \begin{table}[t]
 \centering\footnotesize
-\caption{I3: a successor adopts a held occurrence while the crashed worker's request is still in flight (\emph{early}) or after it committed (\emph{late}). Cells are counts out of 5. \emph{dup}: provider recorded two effects; \emph{done}: controller finished all four; \emph{unres}: controller left one unresolved.}
+\caption{I3: a successor adopts a held occurrence while the crashed worker's request is still in flight (\emph{early}) or after it committed (\emph{late}). Cells are counts out of 5. \emph{naive}: same-key retry; \emph{L$\to$F}: negative lookup then fresh key, no fence; \emph{aware}: Cor.~\ref{cor:downgrade}. \emph{dup}: provider recorded two effects; \emph{done}: controller finished all four; \emph{unres}: controller left one unresolved.}
 \label{tab:i3}
-\setlength{\tabcolsep}{3pt}
+\setlength{\tabcolsep}{2.5pt}
 \begin{tabular}{@{}lllrrrl@{}}
 \toprule
 Profile & Variant & Recovery & dup & done & unres & Mechanism\\
 \midrule
 $\PD$ & early & naive & 0 & 5 & 0 & sink dedup\\
+$\PD$ & early & L$\to$F & 5 & 5 & 0 & \emph{none}: two keys, two effects\\
 $\PD$ & early & aware & 0 & 5 & 0 & sink dedup\\
 $\PD$ & late & naive & 0 & 5 & 0 & cached receipt\\
+$\PD$ & late & L$\to$F & 0 & 5 & 0 & positive lookup\\
 $\PD$ & late & aware & 0 & 5 & 0 & cached receipt\\
 $\PF$ & early & naive & 5 & 5 & 0 & \emph{none}\\
+$\PF$ & early & L$\to$F & 5 & 5 & 0 & \emph{none}\\
 $\PF$ & early & aware & 0 & 5 & 0 & fence rejects old, fresh key\\
 $\PF$ & late & naive & 5 & 5 & 0 & \emph{none}\\
+$\PF$ & late & L$\to$F & 0 & 5 & 0 & positive lookup\\
 $\PF$ & late & aware & 0 & 5 & 0 & fence returns receipt\\
 $\PO$ & early & naive & 5 & 5 & 0 & \emph{none}\\
+$\PO$ & early & L$\to$F & 5 & 5 & 0 & \emph{none}\\
 $\PO$ & early & aware & 0 & 0 & 5 & unresolved (world done)\\
 $\PO$ & late & naive & 5 & 5 & 0 & \emph{none}\\
+$\PO$ & late & L$\to$F & 0 & 5 & 0 & positive lookup\\
 $\PO$ & late & aware & 0 & 5 & 0 & positive lookup\\
 \bottomrule
 \end{tabular}
 \end{table}
-Table~\ref{tab:i3} separates the three mechanisms. Under $\PD$ the sink absorbs the race in both orders. Under $\PF$ naive retry duplicates every time; the fence either rejects the in-flight request and licenses a fresh key or returns the committed receipt. Under $\PO$ the only safe early action is to stop: the successor's lookup is negative because the old request has not landed yet, and 0.5~s later the world is in fact complete while the controller correctly reports one unresolved occurrence. The naive controller ``completes'' every $\PF$ and $\PO$ trial with a duplicate. The controller never learns which happened without the provider's effect table, which is why the oracle reads it directly.
+Table~\ref{tab:i3} separates the mechanisms. Under $\PD$ the sink absorbs a same-key race in both orders. Under $\PF$ naive retry duplicates every time; the fence either rejects the in-flight request and licenses a fresh key or returns the committed receipt. Under $\PO$ the only safe early action is to stop: the successor's lookup is negative because the old request has not landed yet, and 0.5~s later the world is in fact complete while the controller correctly reports one unresolved occurrence. The naive controller ``completes'' every $\PF$ and $\PO$ trial with a duplicate. The controller never learns which happened without the provider's effect table, which is why the oracle reads it directly.
+
+The lookup-then-fresh-key rows are the realistic baseline: a durable-execution worker whose recovery handler queries the provider for the outcome and, seeing nothing, re-issues under a new idempotency key. It is correct in every \emph{late} cell, where the lookup is positive, and duplicates in every \emph{early} cell on every profile---including $\PD$. Sink deduplication cannot help there because the fresh key is a different key; a negative point-in-time lookup while the old request is still in flight is precisely the non-evidence of Cor.~\ref{cor:downgrade}, and the fence is the only operation in the model that converts it into finality. This is the runtime instance of the nine-step ``absence without fence'' witness of Table~\ref{tab:m1}.
 
 \subsection{Retention expiry at runtime}
 \begin{table}[t]
@@ -337,55 +357,62 @@ Naive same-key retry after the window duplicates in 20 of 20 lost-acknowledgemen
 E1 performs 1{,}048{,}560 checks with no mismatch against the frontier rule or the singleton characterization; 941 of 65{,}535 families admit a nonempty safe dispatch. E2 confirms costs one and two for identical ternary snapshots. E3 agrees with the exact-$k$ closed form in all 45 $(n,k)$ pairs and 2{,}026 worlds, and the exact oracle matches it for every $n\le 10$.
 \begin{table}[t]
 \centering\footnotesize
-\caption{E4: exact optimal expected item probes for a lost request over $n$ members, uniform prior. Ternary journal cost is $n$ for every class.}
+\caption{E4: exact optimal expected evidence calls for a lost request over $n$ members, uniform prior. \emph{Probes} assume per-request finality; \emph{+fence} counts probes plus a per-key fence before every fresh dispatch (per-key finality). The ternary journal costs $n$ in every column and class; the independent class costs $n$ under every accounting.}
 \label{tab:e4}
-\begin{tabular}{@{}rrrrrr@{}}
+\setlength{\tabcolsep}{3.5pt}
+\begin{tabular}{@{}rrrrrrrr@{}}
 \toprule
-$n$ & Ternary & Atomic & Prefix (exp.) & Prefix (worst) & Exact-$\lfloor n/2\rfloor$\\
+ & \multicolumn{3}{c}{Probes} & \multicolumn{2}{c}{+fence (exp.)} & \multicolumn{2}{c}{Exact-$\lfloor n/2\rfloor$}\\
+$n$ & Atomic & Prefix & Pref.\ worst & Atomic & Prefix & Probes & Ternary\\
 \midrule
-2 & 2 & 1 & 1.667 & 2 & 1.000\\
-4 & 4 & 1 & 2.400 & 3 & 2.667\\
-6 & 6 & 1 & 2.857 & 3 & 4.500\\
-8 & 8 & 1 & 3.222 & 4 & 6.400\\
-10 & 10 & 1 & 3.545 & 4 & 8.333\\
+2 & 1 & 1.667 & 2 & 1.500 & 2.000 & 1.000 & 2\\
+4 & 1 & 2.400 & 3 & 2.500 & 3.400 & 2.667 & 4\\
+6 & 1 & 2.857 & 3 & 3.500 & 4.571 & 4.500 & 6\\
+8 & 1 & 3.222 & 4 & 4.500 & 5.778 & 6.400 & 8\\
+10 & 1 & 3.545 & 4 & 5.500 & 7.000 & 8.333 & 10\\
 \bottomrule
 \end{tabular}
 \end{table}
-Table~\ref{tab:e4} shows the DP oracle and the closed forms agreeing for every $n$. The prefix class is the strongest realistic case for the journal contract: with $n=8$ the structured journal needs 3.2 probes on average and 4 in the worst case, against 8 for the ternary journal. The atomic class needs one. These are expected counts of unit-cost synthetic queries; a provider that returns all item statuses in one call at cost $c_L$ makes the structured journal worthwhile only when $c_L$ exceeds the corresponding gap.
+Table~\ref{tab:e4} shows the DP oracle and the closed forms agreeing for every $n$. Under per-request finality the prefix class is the strongest realistic case for the journal contract: with $n=8$ the structured journal needs 3.2 probes on average and 4 in the worst case, against 8 for the ternary journal, and the atomic class needs one. Under per-key finality the advantage shrinks but does not vanish: the fences for absent members are unavoidable under either journal, so the structured journal saves only the probes it does not issue on members it already knows to be absent---4.5 and 5.8 calls of 8 for atomic and prefix, with a worst case of $n$ when nothing committed. These are expected counts of unit-cost synthetic queries; a provider that returns all item statuses in one call at cost $c_L$ makes the structured journal worthwhile only when $c_L$ exceeds the corresponding gap. The exact-$k$ column counts per-item probes after the aggregate call that learns $k$; the total in Prop.~\ref{prop:classes} adds that call.
 
 \begin{table}[t]
 \centering\footnotesize
-\caption{I5: runtime reconciliation of a lost multi-entry response, every world of each class run once. All 68 trials are exactly-once and complete. Mean probes are measured lookups; expectation is the E4 oracle.}
+\caption{I5: runtime reconciliation of a lost multi-entry response, every world of each class run once under two accountings. \emph{Probes}: mean measured decision probes (identical under both accountings). \emph{Calls}: mean total evidence calls when every fresh dispatch is preceded by a per-key fence. Oracle columns are the E4 values. All 136 trials are exactly-once and complete.}
 \label{tab:i5}
-\setlength{\tabcolsep}{3pt}
-\begin{tabular}{@{}lrlrrrr@{}}
+\setlength{\tabcolsep}{2.5pt}
+\begin{tabular}{@{}lrlrrrrrr@{}}
 \toprule
-Class & $n$ & Journal & Worlds & Mean & Max & Oracle\\
+ & & & & \multicolumn{3}{c}{Probes} & \multicolumn{2}{c}{+fence}\\
+Class & $n$ & Journal & Worlds & Mean & Max & Oracle & Calls & Oracle\\
 \midrule
-indep. & 4 & ternary & 16 & 4.00 & 4 & 4.00\\
-indep. & 4 & structured & 16 & 4.00 & 4 & 4.00\\
-atomic & 4 & ternary & 2 & 4.00 & 4 & 4.00\\
-atomic & 4 & structured & 2 & 1.00 & 1 & 1.00\\
-prefix & 4 & ternary & 5 & 4.00 & 4 & 4.00\\
-prefix & 4 & structured & 5 & 2.40 & 3 & 2.40\\
-prefix & 8 & ternary & 9 & 8.00 & 8 & 8.00\\
-prefix & 8 & structured & 9 & 3.22 & 4 & 3.22\\
-atomic & 8 & ternary & 2 & 8.00 & 8 & 8.00\\
-atomic & 8 & structured & 2 & 1.00 & 1 & 1.00\\
+indep. & 4 & ternary & 16 & 4.00 & 4 & 4.00 & 4.00 & 4.00\\
+indep. & 4 & structured & 16 & 4.00 & 4 & 4.00 & 4.00 & 4.00\\
+atomic & 4 & ternary & 2 & 4.00 & 4 & 4.00 & 4.00 & 4.00\\
+atomic & 4 & structured & 2 & 1.00 & 1 & 1.00 & 2.50 & 2.50\\
+prefix & 4 & ternary & 5 & 4.00 & 4 & 4.00 & 4.00 & 4.00\\
+prefix & 4 & structured & 5 & 2.40 & 3 & 2.40 & 3.40 & 3.40\\
+prefix & 8 & ternary & 9 & 8.00 & 8 & 8.00 & 8.00 & 8.00\\
+prefix & 8 & structured & 9 & 3.22 & 4 & 3.22 & 5.78 & 5.78\\
+atomic & 8 & ternary & 2 & 8.00 & 8 & 8.00 & 8.00 & 8.00\\
+atomic & 8 & structured & 2 & 1.00 & 1 & 1.00 & 4.50 & 4.50\\
 \bottomrule
 \end{tabular}
 \end{table}
-Table~\ref{tab:i5} closes the loop between the mathematics and the implementation: the structured journal's measured probe counts equal the oracle expectation in every cell, the ternary journal pays $n$ in every cell, and both are exactly-once and complete in all 68 trials because absent members are dispatched under fresh keys only after the world is identified. The journal costs one field per request. Finality of the lost request is guaranteed here by timing; on a real $\PF$ provider it must come from the fence.
+Table~\ref{tab:i5} closes the loop between the mathematics and the implementation: the structured journal's measured probe counts equal the oracle expectation in every cell, the ternary journal pays $n$ in every cell, and both are exactly-once and complete in all 136 trials because absent members are dispatched under fresh keys only after the world is identified. Under the per-key-fence accounting the totals again match Table~\ref{tab:e4} exactly, including the 4.5 and 5.8 of 8 for atomic and prefix. The journal costs one field per request.
+
+The misdeclaration trials show the trusted-contract failure mode. Five prefix worlds at $n=4$ were reconciled by a journal that claimed the request was atomic. The controller probed one member, inferred the rest and reported all four obligations done in all five trials; in three of them (the worlds where processing stopped after one, two or three entries) the provider's table shows the remaining obligations never happened. No duplicate occurred, because in the one world where the probe was negative nothing had committed and fresh dispatch of everything was correct. False completion, not duplication, is the failure a wrong class produces here; a wrong class in the other direction (an independent request declared prefix) would produce the opposite, a fresh dispatch of an item that had committed.
 
 \section{Discussion and Threats to Validity}
 
 \subsection{What changed}
 The v0.2 null result stands and is now reproduced by a second implementation with a stronger reference. The contribution is no longer ``verified refinement'' but the precise boundary of the reduction and what lies beyond it. Two boundary conditions are documented provider facts, not constructions: finite retention windows and vendor-acknowledged opaque outcomes. On the retention side the necessary controller knowledge is minimal and already durable ($h(\omega)$ and $T$), and the correct behaviour after the window is a profile downgrade, not a heuristic. On the evidence side the necessary knowledge is one field per request (the processing class), and its value is exact and class-dependent.
 
-For an agent runtime this means: a tool adapter must declare $T$, the evidence capability and the batch class as contract fields; a controller that stores only ``unknown outcome'' and never retries is safe under $\PO$ but forfeits completion that a lookup would have restored; and a controller that retries with the same idempotency key without checking $h(\omega)+T$ is not exactly-once against Stripe or SQS FIFO after an outage longer than the window.
+For an agent runtime this means: a tool adapter must declare $T$, the evidence capability and the batch class as contract fields; a controller that stores only ``unknown outcome'' and never retries is safe under $\PO$ but forfeits completion that a lookup would have restored; a controller that retries with the same idempotency key without checking $h(\omega)+T$ is not exactly-once against Stripe or SQS FIFO after an outage longer than the window; and a controller that looks up the outcome and re-issues under a fresh key on a negative answer is not exactly-once while the old request can still land, on any profile, because deduplication is keyed and the fresh key is new. The last point is the one most likely to be reached by a durable-execution recovery handler written in good faith.
 
 \subsection{Internal and construct validity}
 The same process designed policies, workloads and oracles; the provider's independent effect table reduces but does not remove design bias. Reference and verifier share storage and transport; a common bug could affect both, which is why the exhaustive abstract study exists alongside the runtime. The finite model abstracts torn writes and packet corruption. Exactly-once is measured at the synthetic insertion boundary. The $\PF$ fence and the evidence endpoint are our own implementations of documented capabilities, not vendor endpoints. I3 and I4 depend on sleeps and are deterministic in this environment across 5 repetitions per cell; they are demonstrations of mechanism, not measurements of frequency.
+
+Several results are true by construction and are reported as checks rather than findings. The naive baseline duplicates after the window because it is defined to retry the same key; its value is to show that the v0.2 reference and verifier \emph{are} that baseline once retention lapses. The D1-TTL counts follow from Prop.~\ref{prop:retention} case by case. Lemma~\ref{lem:tie} makes the $R^{+}$/$V$ tie structural. In I5 the finality of the lost request is supplied by the schedule (the successor starts after the provider finished); under the per-key accounting the fence supplies it instead, and the two accountings bracket what a real provider would offer. The processing class and $T$ are read from a trusted contract, and the misdeclaration row shows the consequence of getting them wrong. The lease-holder check that stops a resumed predecessor from confirming over a successor is unit-tested at the ledger but was not exercised with a process that is suspended, overtaken and resumed; a suspended predecessor's request may already be in flight at the provider, which is exactly the I3 \emph{early} case, so its safety rests on the same fence or dedup mechanism as that table and not on the ledger check alone.
 
 \subsection{External and statistical validity}
 There are no live LLM traces; the frequency with which agents regroup or replan is unmeasured. Retention windows are quoted from documentation current on the access date and can change. The prefix class is grounded in this artifact's own sequential worker and in ordered stop-on-failure processors generally; we did not verify a specific vendor batch API with that semantics. Exhaustive counts do not justify confidence intervals about deployments; we report exact counts only.
@@ -414,6 +441,16 @@ Stable obligation keys are sufficient for exactly-once effects of re-planning ag
 \bibitem{slackhistory} Slack, ``conversations.history,'' Web API method reference, accessed 19 September 2026. \url{https://api.slack.com/methods/conversations.history}
 \bibitem{slackpost} Slack, ``chat.postMessage,'' Web API method reference, accessed 19 September 2026. \url{https://api.slack.com/methods/chat.postMessage}
 \bibitem{brafman} R. I. Brafman and G. Shani, ``Replanning in domains with partial information and sensing actions,'' \emph{J. Artif. Intell. Res.}, vol. 45, pp. 565--600, 2012.
+\bibitem{kaelbling} L. P. Kaelbling, M. L. Littman, and A. R. Cassandra, ``Planning and acting in partially observable stochastic domains,'' \emph{Artif. Intell.}, vol. 101, no. 1--2, pp. 99--134, 1998.
+\bibitem{helland2007} P. Helland, ``Life beyond distributed transactions: An apostate's opinion,'' in \emph{Proc. CIDR}, 2007, pp. 132--141.
+\bibitem{helland2012} P. Helland, ``Idempotence is not a medical condition,'' \emph{Commun. ACM}, vol. 55, no. 5, pp. 56--65, 2012.
+\bibitem{sagas} H. Garcia-Molina and K. Salem, ``Sagas,'' in \emph{Proc. ACM SIGMOD}, 1987, pp. 249--259.
+\bibitem{flink} P. Carbone, S. Ewen, G. F\'{o}ra, S. Haridi, S. Richter, and K. Tzoumas, ``State management in Apache Flink: Consistent stateful distributed stream processing,'' \emph{Proc. VLDB Endow.}, vol. 10, no. 12, pp. 1718--1729, 2017.
+\bibitem{kafka} G. Wang, L. Chen, A. Dikshit, J. Gustafson, B. Chen, M. J. Sax, J. Roesler, S. Blee-Goldman, B. Cadonna, A. Mehta, V. Madan, and J. Rao, ``Consistency and completeness: Rethinking distributed stream processing in Apache Kafka,'' in \emph{Proc. ACM SIGMOD}, 2021, pp. 2602--2613.
+\bibitem{idempotencykey} J. Jena and S. Dalal, ``The Idempotency-Key HTTP header field,'' IETF Internet-Draft draft-ietf-httpapi-idempotency-key-header, work in progress, accessed 19 September 2026.
+\bibitem{react} S. Yao, J. Zhao, D. Yu, N. Du, I. Shafran, K. Narasimhan, and Y. Cao, ``ReAct: Synergizing reasoning and acting in language models,'' in \emph{Proc. ICLR}, 2023.
+\bibitem{toolformer} T. Schick, J. Dwivedi-Yu, R. Dess\`{i}, R. Raileanu, M. Lomeli, L. Zettlemoyer, N. Cancedda, and T. Scialom, ``Toolformer: Language models can teach themselves to use tools,'' in \emph{Proc. NeurIPS}, 2023.
+\bibitem{spin} G. J. Holzmann, ``The model checker SPIN,'' \emph{IEEE Trans. Softw. Eng.}, vol. 23, no. 5, pp. 279--295, 1997.
 \bibitem{sqlite} SQLite, ``Atomic commit in SQLite'' and ``Write-ahead logging,'' official documentation, accessed 19 September 2026. \url{https://sqlite.org/atomiccommit.html}
 \end{thebibliography}
 

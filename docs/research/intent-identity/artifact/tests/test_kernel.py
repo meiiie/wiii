@@ -207,6 +207,29 @@ class LedgerTests(unittest.TestCase):
         S.confirm(c.instance_id, "o2", "rcpt", SPECS[1].payload_hash(), occ.effect_key)
         self.assertEqual(S.get(c.instance_id, "o2").state, "done")
 
+    def test_zombie_predecessor_cannot_confirm_after_takeover(self):
+        c = contract()
+        A = Ledger(self.db, "A")
+        A.register_contract(c)
+        _, occ = A.reserve(c.instance_id, "o1", 100, None)
+        B = Ledger(self.db, "B")
+        held, occ_b = B.reserve(c.instance_id, "o1", 100, None, predecessor="A")
+        self.assertTrue(held)
+        with self.assertRaises(PermissionError):
+            A.confirm(c.instance_id, "o1", "zombie-receipt", SPECS[0].payload_hash(), occ.effect_key)
+        B.confirm(c.instance_id, "o1", "rcpt", SPECS[0].payload_hash(), occ_b.effect_key)
+        self.assertEqual(B.get(c.instance_id, "o1").state, "done")
+
+    def test_rekey_opens_new_retention_window(self):
+        c = contract()
+        L = Ledger(self.db, "w")
+        L.register_contract(c)
+        L.reserve(c.instance_id, "o2", 100, retention_seconds=10)
+        L.rekey(c.instance_id, "o2", "k2", 1, retention_seconds=10)
+        occ = L.get(c.instance_id, "o2")
+        self.assertIsNotNone(occ.retention_deadline)
+        self.assertEqual(occ.generation, 1)
+
     def test_unresolved_and_rekey(self):
         c = contract()
         L = Ledger(self.db, "w")
@@ -300,6 +323,11 @@ class ModelCheckerTests(unittest.TestCase):
         ):
             r = explore(cfg)
             self.assertEqual(r.violation, expected, cfg.name)
+
+    def test_safe_without_fence_capability_exhausts(self):
+        r = explore(Config(fence_available=False))
+        self.assertTrue(r.exhausted)
+        self.assertIsNone(r.violation)
 
 
 class BeliefTests(unittest.TestCase):

@@ -201,7 +201,7 @@ def study_i3(workdir: Path, out, reps: int) -> dict:
         prov = Provider(workdir, profile, None, "lookup")
         try:
             for variant, vp in variants.items():
-                for recovery in ("naive", "aware"):
+                for recovery in ("naive", "lookup-fresh", "aware"):
                     c = Counter()
                     for rep in range(reps):
                         tag = f"i3-{profile}-{variant}-{recovery}-{rep}"
@@ -291,50 +291,73 @@ def study_i5(workdir: Path, out) -> dict:
     designs = [("independent", 4), ("atomic", 4), ("prefix", 4), ("prefix", 8), ("atomic", 8)]
     rows = {}
     prov = Provider(workdir, "PF", None, "lookup")
+
+    def trial(cls, n, journal, evidence_op, fail_set, tag, override=None):
+        db, inst, contract = new_instance(workdir, tag, n)
+        grouping = (tuple(f"o{i}" for i in range(1, n + 1)),)
+        plan = write_plan(workdir, contract, grouping, tag)
+        t_start = time.time()
+        child = run(worker_cmd("V", db, prov.url, inst, plan, "w-a", fault_point="during-first-transport", transport_kill_ms=150, delay_ms=300, lease_seconds=0.3, profile="PF", batch_transport=cls, fail_set=fail_set or None))
+        succ = run(worker_cmd("V", db, prov.url, inst, plan, "w-b", start_delay=max(0.0, 0.8 - (time.time() - t_start)), lease_seconds=5, profile="PF", journal=journal, evidence_op=evidence_op, journal_class_override=override))
+        o = oracle(prov, db, inst)
+        ss = last_json(succ.stdout)
+        out.write(json.dumps({"study": "I5", "class": cls, "n": n, "journal": journal, "evidence_op": evidence_op, "class_override": override, "world_fail_set": fail_set, "child_rc": child.returncode, "succ_rc": succ.returncode, "probes": ss.get("probes"), "extra_fences": ss.get("extra_fences"), "evidence_calls": ss.get("evidence_calls"), "succ_summary": ss, "oracle": o}) + "\n")
+        return child, succ, o, ss
+
     try:
-        for cls, n in designs:
-            fam = {"independent": independent_family, "atomic": atomic_family, "prefix": prefix_family}[cls](n)
-            expected = {"structured": optimal_probe_cost(fam), "ternary": float(n)}
-            for journal in ("ternary", "structured"):
-                c = Counter()
-                probes = []
-                for wi, fail_set in enumerate(worlds(cls, n)):
-                    tag = f"i5-{cls}-{n}-{journal}-{wi}"
-                    db, inst, contract = new_instance(workdir, tag, n)
-                    grouping = (tuple(f"o{i}" for i in range(1, n + 1)),)
-                    plan = write_plan(workdir, contract, grouping, tag)
-                    t_start = time.time()
-                    child = run(worker_cmd("V", db, prov.url, inst, plan, "w-a", fault_point="during-first-transport", transport_kill_ms=150, delay_ms=300, lease_seconds=0.3, profile="PF", batch_transport=cls, fail_set=fail_set or None))
-                    succ = run(worker_cmd("V", db, prov.url, inst, plan, "w-b", start_delay=max(0.0, 0.8 - (time.time() - t_start)), lease_seconds=5, profile="PF", journal=journal))
-                    o = oracle(prov, db, inst)
-                    ss = last_json(succ.stdout)
-                    c["trials"] += 1
-                    c["duplicate"] += o["duplicate"]
-                    c["all_done"] += o["all_done"]
-                    c["world_complete"] += not o["incomplete_world"]
-                    c["child_killed"] += child.returncode == -9
-                    c["succ_ok"] += succ.returncode == 0
-                    probes.append(ss.get("probes"))
-                    out.write(json.dumps({"study": "I5", "class": cls, "n": n, "journal": journal, "world_fail_set": fail_set, "child_rc": child.returncode, "succ_rc": succ.returncode, "probes": ss.get("probes"), "succ_summary": ss, "oracle": o}) + "\n")
-                valid = [p for p in probes if p is not None]
-                row = dict(c)
-                row["mean_probes"] = round(sum(valid) / len(valid), 4) if valid else None
-                row["max_probes"] = max(valid) if valid else None
-                row["expected_mean_probes"] = round(expected[journal], 4)
-                rows[f"{cls}/n{n}/{journal}"] = row
-                print("I5", cls, n, journal, row, flush=True)
+        for evidence_op in ("lookup", "fence"):
+            for cls, n in designs:
+                fam = {"independent": independent_family, "atomic": atomic_family, "prefix": prefix_family}[cls](n)
+                expected = {"structured": optimal_probe_cost(fam), "ternary": float(n)}
+                for journal in ("ternary", "structured"):
+                    c = Counter()
+                    probes, calls = [], []
+                    for wi, fail_set in enumerate(worlds(cls, n)):
+                        child, succ, o, ss = trial(cls, n, journal, evidence_op, fail_set, f"i5-{evidence_op}-{cls}-{n}-{journal}-{wi}")
+                        c["trials"] += 1
+                        c["duplicate"] += o["duplicate"]
+                        c["all_done"] += o["all_done"]
+                        c["world_complete"] += not o["incomplete_world"]
+                        c["child_killed"] += child.returncode == -9
+                        c["succ_ok"] += succ.returncode == 0
+                        probes.append(ss.get("probes"))
+                        calls.append(ss.get("evidence_calls"))
+                    valid = [p for p in probes if p is not None]
+                    vcalls = [p for p in calls if p is not None]
+                    row = dict(c)
+                    row["mean_probes"] = round(sum(valid) / len(valid), 4) if valid else None
+                    row["max_probes"] = max(valid) if valid else None
+                    row["mean_evidence_calls"] = round(sum(vcalls) / len(vcalls), 4) if vcalls else None
+                    row["expected_mean_probes"] = round(expected[journal], 4)
+                    rows[f"{evidence_op}/{cls}/n{n}/{journal}"] = row
+                    print("I5", evidence_op, cls, n, journal, row, flush=True)
+        # Trusted-class misdeclaration: provider processes as prefix, journal claims atomic.
+        c = Counter()
+        for wi, fail_set in enumerate(worlds("prefix", 4)):
+            child, succ, o, ss = trial("prefix", 4, "structured", "fence", fail_set, f"i5-misdeclared-{wi}", override="atomic")
+            c["trials"] += 1
+            c["duplicate"] += o["duplicate"]
+            c["controller_all_done"] += o["all_done"]
+            c["world_incomplete"] += o["incomplete_world"]
+            c["false_success"] += o["all_done"] and o["incomplete_world"]
+        rows["misdeclared-class/prefix-as-atomic/n4"] = dict(c)
+        print("I5 misdeclared", dict(c), flush=True)
     finally:
         prov.stop()
     return rows
 
 
 def main(argv: list[str]) -> None:
-    which = set(argv[1:]) or {"I1", "I2", "I3", "I4", "I5"}
+    all_studies = {"I1", "I2", "I3", "I4", "I5"}
+    which = set(argv[1:]) or set(all_studies)
     reps = int(os.environ.get("II_REPS", "5"))
     out_dir = ROOT / "results"
     out_dir.mkdir(exist_ok=True)
     summary = {}
-    with tempfile.TemporaryDirectory(prefix="intent-identity-") as tmp, open(out_dir / "runtime_trials.jsonl", "a") as out:
+    # A full run regenerates the trial log from scratch; a partial run appends
+    # so that the other studies' raw records are preserved.
+    mode = "w" if which == all_studies else "a"
+    with tempfile.TemporaryDirectory(prefix="intent-identity-") as tmp, open(out_dir / "runtime_trials.jsonl", mode) as out:
         workdir = Path(tmp)
         t0 = time.time()
         if "I1" in which:
@@ -349,12 +372,14 @@ def main(argv: list[str]) -> None:
             summary["I4"] = study_i4(workdir, out, reps)
         if "I5" in which:
             summary["I5"] = study_i5(workdir, out)
-        summary["elapsed_s"] = round(time.time() - t0, 2)
+        elapsed = round(time.time() - t0, 2)
     prev = {}
     p = out_dir / "runtime_summary.json"
     if p.exists():
         prev = json.loads(p.read_text())
+    prev.pop("elapsed_s", None)
     prev.update(summary)
+    prev.setdefault("elapsed_s_by_run", []).append({"studies": sorted(which), "elapsed_s": elapsed})
     p.write_text(json.dumps(prev, indent=2))
 
 

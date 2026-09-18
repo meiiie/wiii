@@ -173,7 +173,10 @@ class Worker:
 
         a = self.a
         probes = 0
+        fences = 0
         for request_id, batch_class, members in self.ledger.open_requests(a.instance):
+            if a.journal_class_override:
+                batch_class = a.journal_class_override  # trusted-class misdeclaration experiment
             held = [m for m in members if self.ledger.get(a.instance, m).state == "held"]
             if not held:
                 self.ledger.close_request(request_id)
@@ -193,6 +196,7 @@ class Worker:
             else:
                 raise ValueError(batch_class)
             receipts: dict[str, str] = {}
+            fenced_keys: set[str] = set()
             while len(B) > 1:
                 best = None
                 for i in sorted(belief.unresolved(B)):
@@ -203,11 +207,11 @@ class Worker:
                         best = (c, i)
                 i = best[1]
                 m = held[i]
-                code, resp = self.http.get(f"/lookup?key={self.ledger.get(a.instance, m).effect_key}")
+                committed, receipt = self.probe(self.ledger.get(a.instance, m).effect_key)
                 probes += 1
-                committed = bool(resp.get("committed"))
+                fenced_keys.add(m) if a.evidence_op == "fence" else None
                 if committed:
-                    receipts[m] = resp["receipt"]
+                    receipts[m] = receipt
                 B = belief.condition(B, i, committed)
             (world,) = B
             for m in held:
@@ -217,13 +221,29 @@ class Worker:
                     self.ledger.confirm(a.instance, m, receipts.get(m, f"inferred:{batch_class}"), payload_hash, occ.effect_key)
                     self.summary["actions"].append({"occurrence": m, "outcome": "reconciled-committed" if m in receipts else "reconciled-inferred-committed"})
                 else:
+                    if a.evidence_op == "fence" and m not in fenced_keys:
+                        # Per-key finality: every fresh dispatch is preceded by a
+                        # fence on the old key so a late arrival cannot duplicate.
+                        self.http.post("/fence", {"key": occ.effect_key})
+                        fences += 1
                     gen = occ.generation + 1
                     new_key = obligation_key(a.instance, f"{m}#g{gen}")
-                    self.ledger.rekey(a.instance, m, new_key, gen)
+                    self.ledger.rekey(a.instance, m, new_key, gen, a.retention_seconds)
                     self.summary["actions"].append({"occurrence": m, "outcome": "reconciled-absent-fresh-key"})
                     self.dispatch(self.ledger.get(a.instance, m))
             self.ledger.close_request(request_id)
         self.summary["probes"] = probes
+        self.summary["extra_fences"] = fences
+        self.summary["evidence_calls"] = probes + fences
+
+    def probe(self, key: str) -> tuple[bool, str | None]:
+        """One evidence call. ``lookup`` is point-in-time (finality must come
+        from elsewhere); ``fence`` is final and blocks late delivery."""
+        if self.a.evidence_op == "fence":
+            code, resp = self.http.post("/fence", {"key": key})
+        else:
+            code, resp = self.http.get(f"/lookup?key={key}")
+        return bool(resp.get("committed")), resp.get("receipt")
 
     def handle(self, occ_id: str) -> None:
         occ = self.ledger.get(self.a.instance, occ_id)
@@ -285,6 +305,23 @@ class Worker:
             self.summary["actions"].append({"occurrence": occ.occurrence_id, "outcome": "naive-same-key-retry"})
             self.dispatch(occ)
             return
+        if a.recovery == "lookup-fresh":
+            # Durable-execution style: read-then-write without a fence. A
+            # negative point-in-time lookup is taken as absence and a fresh
+            # key is dispatched. Safe only if the old request can no longer
+            # arrive (this is M1's absence-without-fence mutant at runtime).
+            code, resp = self.http.get(f"/lookup?key={occ.effect_key}")
+            if code == 200 and resp.get("committed"):
+                _, payload_hash = self.payload_for(occ.occurrence_id)
+                self.ledger.confirm(a.instance, occ.occurrence_id, resp["receipt"], payload_hash, occ.effect_key)
+                self.summary["actions"].append({"occurrence": occ.occurrence_id, "outcome": "lookup-positive-receipt"})
+                return
+            gen = occ.generation + 1
+            new_key = obligation_key(a.instance, f"{occ.occurrence_id}#g{gen}")
+            self.ledger.rekey(a.instance, occ.occurrence_id, new_key, gen, a.retention_seconds)
+            self.summary["actions"].append({"occurrence": occ.occurrence_id, "outcome": "lookup-negative-fresh-key-no-fence"})
+            self.dispatch(self.ledger.get(a.instance, occ.occurrence_id))
+            return
         now = time.time()
         if a.profile == "PD":
             within = occ.retention_deadline is None or now < occ.retention_deadline - a.clock_skew
@@ -306,7 +343,7 @@ class Worker:
                 return
             gen = occ.generation + 1
             new_key = obligation_key(a.instance, f"{occ.occurrence_id}#g{gen}")
-            self.ledger.rekey(a.instance, occ.occurrence_id, new_key, gen)
+            self.ledger.rekey(a.instance, occ.occurrence_id, new_key, gen, a.retention_seconds)
             occ = self.ledger.get(a.instance, occ.occurrence_id)
             self.summary["actions"].append({"occurrence": occ.occurrence_id, "outcome": "fenced-absent-fresh-key"})
             self.dispatch(occ)
@@ -328,7 +365,7 @@ class Worker:
 def parse(argv=None) -> argparse.Namespace:
     ap = argparse.ArgumentParser()
     ap.add_argument("--policy", choices=("R", "V"), required=True)
-    ap.add_argument("--recovery", choices=("naive", "aware"), default="aware")
+    ap.add_argument("--recovery", choices=("naive", "aware", "lookup-fresh"), default="aware")
     ap.add_argument("--profile", choices=("PD", "PF", "PO"), default="PD")
     ap.add_argument("--controller-db", required=True)
     ap.add_argument("--provider-url", required=True)
@@ -346,6 +383,8 @@ def parse(argv=None) -> argparse.Namespace:
     ap.add_argument("--batch-transport", choices=("independent", "atomic", "prefix"), default=None)
     ap.add_argument("--fail-set", default=None, help="comma-separated occurrence ids the provider should fail (test hook)")
     ap.add_argument("--journal", choices=("ternary", "structured"), default=None)
+    ap.add_argument("--journal-class-override", choices=("independent", "atomic", "prefix"), default=None)
+    ap.add_argument("--evidence-op", choices=("lookup", "fence"), default="lookup")
     return ap.parse_args(argv)
 
 

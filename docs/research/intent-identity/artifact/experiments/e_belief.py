@@ -98,6 +98,31 @@ def e3(max_n: int = 10, oracle_max_n: int = 10) -> list[dict]:
     return rows
 
 
+def simulate_fence_accounting(B, n):
+    """Run the min-expected-probe policy in every world of B (uniform); each
+    probe is a per-key fence, and every absent member not yet fenced must be
+    fenced before its fresh dispatch. Returns mean and max total fences."""
+    from intent_identity.belief import condition, unresolved
+
+    totals = []
+    for world in B:
+        cur = B
+        fenced = set()
+        while len(cur) > 1:
+            best = None
+            for i in sorted(unresolved(cur)):
+                b1, b0 = condition(cur, i, True), condition(cur, i, False)
+                c = 1.0 + (len(b1) / len(cur)) * optimal_probe_cost(b1) + (len(b0) / len(cur)) * optimal_probe_cost(b0)
+                if best is None or c < best[0]:
+                    best = (c, i)
+            i = best[1]
+            fenced.add(i)
+            cur = condition(cur, i, i in world)
+        absent = set(range(n)) - world
+        totals.append(len(fenced) + len(absent - fenced))
+    return sum(totals) / len(totals), max(totals)
+
+
 def e4(max_n: int = 10) -> list[dict]:
     rows = []
     for n in range(1, max_n + 1):
@@ -119,6 +144,10 @@ def e4(max_n: int = 10) -> list[dict]:
                 row["closed_form_worst"] = prefix_worst_cost(n)
                 row["closed_form_matches"] = abs(row["closed_form_expected"] - row["structured_journal_expected_probes"]) < 1e-9
             row["bulk_list_query_breakeven_cost"] = round(row["ternary_journal_expected_probes"] - row["structured_journal_expected_probes"], 6)
+            mean_f, max_f = simulate_fence_accounting(B, n)
+            row["structured_perkey_fence_expected_calls"] = round(mean_f, 6)
+            row["structured_perkey_fence_worst_calls"] = max_f
+            row["ternary_perkey_fence_calls"] = n
             rows.append(row)
     return rows
 
@@ -134,7 +163,7 @@ def main(out_dir: Path) -> None:
         print("   ", r["n"], r["k"], r["worlds"], r["closed_form"], r.get("oracle"), r.get("oracle_matches_closed_form"))
     print("E4 (n,semantics,worlds,ternary,structured,worst,closed):")
     for r in res["E4"]:
-        print("   ", r["n"], r["semantics"], r["worlds"], r["ternary_journal_expected_probes"], r["structured_journal_expected_probes"], r["structured_journal_worst_probes"], r.get("closed_form_expected"), r.get("closed_form_matches"))
+        print("   ", r["n"], r["semantics"], r["worlds"], r["ternary_journal_expected_probes"], r["structured_journal_expected_probes"], r["structured_journal_worst_probes"], r.get("closed_form_expected"), r.get("closed_form_matches"), "fence-acct:", r["structured_perkey_fence_expected_calls"], r["structured_perkey_fence_worst_calls"])
 
 
 if __name__ == "__main__":

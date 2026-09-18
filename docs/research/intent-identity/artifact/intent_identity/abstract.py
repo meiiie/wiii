@@ -71,11 +71,8 @@ class AbstractSink:
         self.dedup.clear()
 
     def lookup(self, entry: str) -> bool:
-        """P_F evidence query: has any effect for this occurrence committed?
-
-        Finality is assumed here because the abstract model has no in-flight
-        requests after a crash; the runtime study must fence explicitly.
-        """
+        """Point-in-time evidence query: has an effect for this occurrence
+        committed? A negative answer is not finality evidence."""
         self.calls += 1
         return any(e == entry for _, e in self.effects)
 
@@ -179,13 +176,18 @@ def run_destination(
                     continue
                 sink.execute(key_occurrence(m), m)
             elif policy == "Vr+E":
-                # Retention-aware with a P_F evidence query for lapsed held
-                # occurrences: dispatch fresh only when evidence says absent.
+                # Retention-aware with a point-in-time evidence lookup for a
+                # lapsed held occurrence: positive evidence confirms; negative
+                # evidence is NOT finality, so the occurrence stays unresolved
+                # (matches the runtime's aware/P_D(T) path).
                 if m in ledger.done:
                     continue
                 if m in ledger.held and retention_expired:
                     if sink.lookup(m):
-                        continue
+                        ledger.done.add(m)
+                    else:
+                        ledger.unresolved.add(m)
+                    continue
                 sink.execute(key_occurrence(m), m)
             else:
                 raise ValueError(policy)

@@ -3,8 +3,8 @@
 Status: active research surface, v0.3, 2026-09-19. Not submitted anywhere.
 
 This directory holds the v0.3 development release of the study "Exactly-Once
-Effects for Re-Planning LLM Agents: A Reduction, a Retention Hazard, and an
-Evidence Contract" (previously "Intent Identity and Exactly-Once Effects for
+Effects for Regrouping Agent Tool Calls: A Reduction, a Retention Hazard, and
+an Evidence Contract" (previously "Intent Identity and Exactly-Once Effects for
 Non-Deterministic LLM Agents", v0.2). It is research groundwork for the Wiii
 tool-execution contract; nothing here is wired into the runtime yet.
 
@@ -12,17 +12,17 @@ tool-execution contract; nothing here is wired into the runtime yet.
 
 | Path | Content |
 | --- | --- |
-| `paper/main.tex`, `paper/main.pdf` | Manuscript v0.3 (IEEEtran, 8 pages). |
+| `paper/main.tex`, `paper/main.pdf` | Manuscript v0.3 (IEEEtran, 10 pages). |
 | `REPORT_VI_v0.3.md` | Vietnamese research report for the project owner. |
 | `EVIDENCE_SUMMARY_v0.3.json` | Machine-readable summary of every number in the paper. |
 | `PROVIDER_CONTRACTS.md` | Quoted, dated facts from official provider documentation used as evidence. |
-| `artifact/` | Independent stdlib-only Python re-implementation, experiments, raw results. |
+| `artifact/` | Second stdlib-only Python implementation written from the v0.2 specification, experiments, raw results (575 process trials). |
 
 ## Reproduce
 
 ```bash
 cd docs/research/intent-identity/artifact
-python3 run_all.py          # ~10 min on one core; regenerates results/
+python3 run_all.py          # ~15 min on one core; regenerates results/
 python3 run_all.py quick    # skips the process-crash studies
 python3 -m unittest discover -s tests -v
 ```
@@ -42,21 +42,33 @@ encoding differs; the mutant witnesses have the same shape.
 
 ## What v0.3 adds
 
-- A strengthened reference `R+` that consults its own ledger; it ties the
-  verifier `V` call-for-call, sharpening the v0.2 null result.
+- A strengthened reference `R+` that consults its own ledger; a one-line
+  lemma shows it dispatches the same set as the verifier `V`, so the v0.2
+  tie is structural, not empirical.
 - Retention-bounded provider profile `P_D(T)`, a necessary-and-sufficient
   same-key-retry condition using only the controller's hold timestamp, and
   exhaustive, model-checked and process-level evidence that every same-key
   policy duplicates after the window while the retention-aware controller does
   not (D1-TTL, M1 mutant, I4).
-- An in-flight takeover study across `P_D` / `P_F` / `P_O` with naive vs
-  profile-aware recovery (I3), separating sink dedup, fence-then-fresh-key and
-  the explicit `unresolved` state.
+- An in-flight takeover study across `P_D` / `P_F` / `P_O` with three recovery
+  policies (I3, 90 trials): naive same-key retry, durable-execution-style
+  lookup-then-fresh-key without a fence, and profile-aware recovery. The
+  middle policy is the realistic baseline and duplicates in 15/15 in-flight
+  trials on every profile, including the deduplicating one, because the fresh
+  key is a different key; it is correct in 15/15 trials once the old request
+  has landed.
 - Semantics-determined belief families (independent / atomic / prefix /
   exact-k) with closed forms verified by an exact oracle (E4), and a
-  runtime reconciliation study (I5) in which a worker recovering from a
-  journaled batch request with a lost response reproduces the oracle's probe
-  counts exactly while staying exactly-once (68 trials).
+  runtime reconciliation study (I5, 141 trials) in which a worker recovering
+  from a journaled batch request with a lost response reproduces the oracle's
+  probe counts exactly under two evidence-cost accountings (per-request
+  finality and per-key fence) while staying exactly-once, and a misdeclared
+  processing class produces false completion in 3/5 worlds.
+- A model-checking configuration without a fence capability (safe, exhausts)
+  and an explicit note that M1 checks safety only, not liveness.
+- Ledger writes that confirm or abandon an occurrence are accepted only from
+  the current lease holder (unit-tested; not yet exercised with a suspended
+  and resumed predecessor process).
 - A measured finding that reservation-resolved concurrency races never reach
   sink deduplication (I2: 0 of 96 sink calls deduplicated).
 

@@ -201,10 +201,14 @@ class Ledger:
             return False, self.get(instance_id, occurrence_id)
 
     def confirm(self, instance_id: str, occurrence_id: str, receipt: str, payload_hash: str, effect_key: str) -> None:
+        """Record completion. Only the current lease holder may confirm: a
+        predecessor that was not actually dead (zombie) is fenced out here."""
         with self.tx() as c:
             occ = self.get(instance_id, occurrence_id)
             if occ.payload_hash != payload_hash or occ.effect_key != effect_key:
                 raise ValueError("provider response does not bind to the reserved occurrence")
+            if occ.state != "held" or occ.worker_id != self.worker_id:
+                raise PermissionError(f"{self.worker_id} does not hold {occurrence_id} (holder={occ.worker_id}, state={occ.state})")
             c.execute(
                 "UPDATE occurrences SET state='done', receipt=? WHERE instance_id=? AND occurrence_id=?",
                 (receipt, instance_id, occurrence_id),
@@ -214,17 +218,22 @@ class Ledger:
     def mark_unresolved(self, instance_id: str, occurrence_id: str, reason: str) -> None:
         with self.tx() as c:
             c.execute(
-                "UPDATE occurrences SET state='unresolved' WHERE instance_id=? AND occurrence_id=? AND state='held'",
-                (instance_id, occurrence_id),
+                "UPDATE occurrences SET state='unresolved' WHERE instance_id=? AND occurrence_id=? AND state='held' AND worker_id=?",
+                (instance_id, occurrence_id, self.worker_id),
             )
             self.log("unresolved", instance_id, occurrence_id, reason=reason)
 
-    def rekey(self, instance_id: str, occurrence_id: str, new_key: str, generation: int) -> None:
-        """Bind a fresh key after a certified no-effect/fence on the old one."""
+    def rekey(self, instance_id: str, occurrence_id: str, new_key: str, generation: int, retention_seconds: Optional[float] = None) -> None:
+        """Bind a fresh key after a certified no-effect/fence on the old one.
+
+        The fresh key opens a fresh retention window starting now; leaving the
+        deadline NULL would let a later successor retry the new key forever."""
+        now = time.time()
+        deadline = None if retention_seconds is None else now + retention_seconds
         with self.tx() as c:
             c.execute(
-                "UPDATE occurrences SET effect_key=?, generation=?, retention_deadline=NULL WHERE instance_id=? AND occurrence_id=?",
-                (new_key, generation, instance_id, occurrence_id),
+                "UPDATE occurrences SET effect_key=?, generation=?, held_at=?, retention_deadline=? WHERE instance_id=? AND occurrence_id=? AND worker_id=?",
+                (new_key, generation, now, deadline, instance_id, occurrence_id, self.worker_id),
             )
             self.log("rekeyed", instance_id, occurrence_id, generation=generation)
 

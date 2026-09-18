@@ -44,6 +44,15 @@
       "child_killed": 5,
       "succ_ok": 5
     },
+    "PD/early/lookup-fresh": {
+      "trials": 5,
+      "duplicate": 5,
+      "all_done": 5,
+      "unresolved": 0,
+      "world_complete": 5,
+      "child_killed": 5,
+      "succ_ok": 5
+    },
     "PD/early/aware": {
       "trials": 5,
       "duplicate": 0,
@@ -54,6 +63,15 @@
       "succ_ok": 5
     },
     "PD/late/naive": {
+      "trials": 5,
+      "duplicate": 0,
+      "all_done": 5,
+      "unresolved": 0,
+      "world_complete": 5,
+      "child_killed": 5,
+      "succ_ok": 5
+    },
+    "PD/late/lookup-fresh": {
       "trials": 5,
       "duplicate": 0,
       "all_done": 5,
@@ -80,6 +98,15 @@
       "child_killed": 5,
       "succ_ok": 5
     },
+    "PF/early/lookup-fresh": {
+      "trials": 5,
+      "duplicate": 5,
+      "all_done": 5,
+      "unresolved": 0,
+      "world_complete": 5,
+      "child_killed": 5,
+      "succ_ok": 5
+    },
     "PF/early/aware": {
       "trials": 5,
       "duplicate": 0,
@@ -92,6 +119,15 @@
     "PF/late/naive": {
       "trials": 5,
       "duplicate": 5,
+      "all_done": 5,
+      "unresolved": 0,
+      "world_complete": 5,
+      "child_killed": 5,
+      "succ_ok": 5
+    },
+    "PF/late/lookup-fresh": {
+      "trials": 5,
+      "duplicate": 0,
       "all_done": 5,
       "unresolved": 0,
       "world_complete": 5,
@@ -116,6 +152,15 @@
       "child_killed": 5,
       "succ_ok": 5
     },
+    "PO/early/lookup-fresh": {
+      "trials": 5,
+      "duplicate": 5,
+      "all_done": 5,
+      "unresolved": 0,
+      "world_complete": 5,
+      "child_killed": 5,
+      "succ_ok": 5
+    },
     "PO/early/aware": {
       "trials": 5,
       "duplicate": 0,
@@ -128,6 +173,15 @@
     "PO/late/naive": {
       "trials": 5,
       "duplicate": 5,
+      "all_done": 5,
+      "unresolved": 0,
+      "world_complete": 5,
+      "child_killed": 5,
+      "succ_ok": 5
+    },
+    "PO/late/lookup-fresh": {
+      "trials": 5,
+      "duplicate": 0,
       "all_done": 5,
       "unresolved": 0,
       "world_complete": 5,
@@ -291,7 +345,7 @@
     }
   },
   "I5": {
-    "independent/n4/ternary": {
+    "lookup/independent/n4/ternary": {
       "trials": 16,
       "duplicate": 0,
       "all_done": 16,
@@ -300,9 +354,10 @@
       "succ_ok": 16,
       "mean_probes": 4.0,
       "max_probes": 4,
+      "mean_evidence_calls": 4.0,
       "expected_mean_probes": 4.0
     },
-    "independent/n4/structured": {
+    "lookup/independent/n4/structured": {
       "trials": 16,
       "duplicate": 0,
       "all_done": 16,
@@ -311,9 +366,10 @@
       "succ_ok": 16,
       "mean_probes": 4.0,
       "max_probes": 4,
+      "mean_evidence_calls": 4.0,
       "expected_mean_probes": 4.0
     },
-    "atomic/n4/ternary": {
+    "lookup/atomic/n4/ternary": {
       "trials": 2,
       "duplicate": 0,
       "all_done": 2,
@@ -322,9 +378,10 @@
       "succ_ok": 2,
       "mean_probes": 4.0,
       "max_probes": 4,
+      "mean_evidence_calls": 4.0,
       "expected_mean_probes": 4.0
     },
-    "atomic/n4/structured": {
+    "lookup/atomic/n4/structured": {
       "trials": 2,
       "duplicate": 0,
       "all_done": 2,
@@ -333,9 +390,10 @@
       "succ_ok": 2,
       "mean_probes": 1.0,
       "max_probes": 1,
+      "mean_evidence_calls": 1.0,
       "expected_mean_probes": 1.0
     },
-    "prefix/n4/ternary": {
+    "lookup/prefix/n4/ternary": {
       "trials": 5,
       "duplicate": 0,
       "all_done": 5,
@@ -344,9 +402,10 @@
       "succ_ok": 5,
       "mean_probes": 4.0,
       "max_probes": 4,
+      "mean_evidence_calls": 4.0,
       "expected_mean_probes": 4.0
     },
-    "prefix/n4/structured": {
+    "lookup/prefix/n4/structured": {
       "trials": 5,
       "duplicate": 0,
       "all_done": 5,
@@ -355,9 +414,10 @@
       "succ_ok": 5,
       "mean_probes": 2.4,
       "max_probes": 3,
+      "mean_evidence_calls": 2.4,
       "expected_mean_probes": 2.4
     },
-    "prefix/n8/ternary": {
+    "lookup/prefix/n8/ternary": {
       "trials": 9,
       "duplicate": 0,
       "all_done": 9,
@@ -366,9 +426,10 @@
       "succ_ok": 9,
       "mean_probes": 8.0,
       "max_probes": 8,
+      "mean_evidence_calls": 8.0,
       "expected_mean_probes": 8.0
     },
-    "prefix/n8/structured": {
+    "lookup/prefix/n8/structured": {
       "trials": 9,
       "duplicate": 0,
       "all_done": 9,
@@ -377,9 +438,10 @@
       "succ_ok": 9,
       "mean_probes": 3.2222,
       "max_probes": 4,
+      "mean_evidence_calls": 3.2222,
       "expected_mean_probes": 3.2222
     },
-    "atomic/n8/ternary": {
+    "lookup/atomic/n8/ternary": {
       "trials": 2,
       "duplicate": 0,
       "all_done": 2,
@@ -388,9 +450,10 @@
       "succ_ok": 2,
       "mean_probes": 8.0,
       "max_probes": 8,
+      "mean_evidence_calls": 8.0,
       "expected_mean_probes": 8.0
     },
-    "atomic/n8/structured": {
+    "lookup/atomic/n8/structured": {
       "trials": 2,
       "duplicate": 0,
       "all_done": 2,
@@ -399,8 +462,153 @@
       "succ_ok": 2,
       "mean_probes": 1.0,
       "max_probes": 1,
+      "mean_evidence_calls": 1.0,
       "expected_mean_probes": 1.0
+    },
+    "fence/independent/n4/ternary": {
+      "trials": 16,
+      "duplicate": 0,
+      "all_done": 16,
+      "world_complete": 16,
+      "child_killed": 16,
+      "succ_ok": 16,
+      "mean_probes": 4.0,
+      "max_probes": 4,
+      "mean_evidence_calls": 4.0,
+      "expected_mean_probes": 4.0
+    },
+    "fence/independent/n4/structured": {
+      "trials": 16,
+      "duplicate": 0,
+      "all_done": 16,
+      "world_complete": 16,
+      "child_killed": 16,
+      "succ_ok": 16,
+      "mean_probes": 4.0,
+      "max_probes": 4,
+      "mean_evidence_calls": 4.0,
+      "expected_mean_probes": 4.0
+    },
+    "fence/atomic/n4/ternary": {
+      "trials": 2,
+      "duplicate": 0,
+      "all_done": 2,
+      "world_complete": 2,
+      "child_killed": 2,
+      "succ_ok": 2,
+      "mean_probes": 4.0,
+      "max_probes": 4,
+      "mean_evidence_calls": 4.0,
+      "expected_mean_probes": 4.0
+    },
+    "fence/atomic/n4/structured": {
+      "trials": 2,
+      "duplicate": 0,
+      "all_done": 2,
+      "world_complete": 2,
+      "child_killed": 2,
+      "succ_ok": 2,
+      "mean_probes": 1.0,
+      "max_probes": 1,
+      "mean_evidence_calls": 2.5,
+      "expected_mean_probes": 1.0
+    },
+    "fence/prefix/n4/ternary": {
+      "trials": 5,
+      "duplicate": 0,
+      "all_done": 5,
+      "world_complete": 5,
+      "child_killed": 5,
+      "succ_ok": 5,
+      "mean_probes": 4.0,
+      "max_probes": 4,
+      "mean_evidence_calls": 4.0,
+      "expected_mean_probes": 4.0
+    },
+    "fence/prefix/n4/structured": {
+      "trials": 5,
+      "duplicate": 0,
+      "all_done": 5,
+      "world_complete": 5,
+      "child_killed": 5,
+      "succ_ok": 5,
+      "mean_probes": 2.4,
+      "max_probes": 3,
+      "mean_evidence_calls": 3.4,
+      "expected_mean_probes": 2.4
+    },
+    "fence/prefix/n8/ternary": {
+      "trials": 9,
+      "duplicate": 0,
+      "all_done": 9,
+      "world_complete": 9,
+      "child_killed": 9,
+      "succ_ok": 9,
+      "mean_probes": 8.0,
+      "max_probes": 8,
+      "mean_evidence_calls": 8.0,
+      "expected_mean_probes": 8.0
+    },
+    "fence/prefix/n8/structured": {
+      "trials": 9,
+      "duplicate": 0,
+      "all_done": 9,
+      "world_complete": 9,
+      "child_killed": 9,
+      "succ_ok": 9,
+      "mean_probes": 3.2222,
+      "max_probes": 4,
+      "mean_evidence_calls": 5.7778,
+      "expected_mean_probes": 3.2222
+    },
+    "fence/atomic/n8/ternary": {
+      "trials": 2,
+      "duplicate": 0,
+      "all_done": 2,
+      "world_complete": 2,
+      "child_killed": 2,
+      "succ_ok": 2,
+      "mean_probes": 8.0,
+      "max_probes": 8,
+      "mean_evidence_calls": 8.0,
+      "expected_mean_probes": 8.0
+    },
+    "fence/atomic/n8/structured": {
+      "trials": 2,
+      "duplicate": 0,
+      "all_done": 2,
+      "world_complete": 2,
+      "child_killed": 2,
+      "succ_ok": 2,
+      "mean_probes": 1.0,
+      "max_probes": 1,
+      "mean_evidence_calls": 4.5,
+      "expected_mean_probes": 1.0
+    },
+    "misdeclared-class/prefix-as-atomic/n4": {
+      "trials": 5,
+      "duplicate": 0,
+      "controller_all_done": 5,
+      "world_incomplete": 3,
+      "false_success": 3
     }
   },
-  "elapsed_s": 65.24
+  "elapsed_s_by_run": [
+    {
+      "studies": [
+        "I1",
+        "I2",
+        "I3",
+        "I4"
+      ],
+      "elapsed_s": null
+    },
+    {
+      "studies": [
+        "I3",
+        "I5"
+      ],
+      "elapsed_s": 254.96
+    }
+  ]
 }
