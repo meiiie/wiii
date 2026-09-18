@@ -80,9 +80,20 @@ class Occurrence:
 
 
 class Ledger:
-    def __init__(self, path: str | Path, worker_id: str = "controller"):
+    def __init__(self, path: str | Path, worker_id: str = "controller", late_evidence: str = "adopt"):
+        """``late_evidence`` governs a receipt presented by a worker that no
+        longer holds the lease. ``reject``: every non-holder write is refused.
+        ``adopt``: a receipt whose key and payload hash bind to an occurrence
+        the controller had to leave *unresolved* promotes it to *done*; the
+        receipt is sink evidence, not a lease-holder claim, and an unresolved
+        occurrence has by definition no other finality evidence and no fresh
+        key in flight. Held or done occurrences still refuse non-holder writes.
+        """
         self.path = str(path)
         self.worker_id = worker_id
+        if late_evidence not in ("reject", "adopt"):
+            raise ValueError(late_evidence)
+        self.late_evidence = late_evidence
         self.conn = sqlite3.connect(self.path, timeout=30.0, isolation_level=None)
         self.conn.execute("PRAGMA journal_mode=WAL")
         self.conn.execute("PRAGMA synchronous=FULL")
@@ -207,6 +218,13 @@ class Ledger:
             occ = self.get(instance_id, occurrence_id)
             if occ.payload_hash != payload_hash or occ.effect_key != effect_key:
                 raise ValueError("provider response does not bind to the reserved occurrence")
+            if occ.state == "unresolved" and self.late_evidence == "adopt":
+                c.execute(
+                    "UPDATE occurrences SET state='done', receipt=? WHERE instance_id=? AND occurrence_id=? AND state='unresolved'",
+                    (receipt, instance_id, occurrence_id),
+                )
+                self.log("late-receipt-adopted", instance_id, occurrence_id, receipt=receipt, previous_holder=occ.worker_id)
+                return
             if occ.state != "held" or occ.worker_id != self.worker_id:
                 raise PermissionError(f"{self.worker_id} does not hold {occurrence_id} (holder={occ.worker_id}, state={occ.state})")
             c.execute(

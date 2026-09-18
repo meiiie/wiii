@@ -219,6 +219,41 @@ class LedgerTests(unittest.TestCase):
             A.confirm(c.instance_id, "o1", "zombie-receipt", SPECS[0].payload_hash(), occ.effect_key)
         B.confirm(c.instance_id, "o1", "rcpt", SPECS[0].payload_hash(), occ_b.effect_key)
         self.assertEqual(B.get(c.instance_id, "o1").state, "done")
+        # A done occurrence refuses a non-holder write in both modes.
+        with self.assertRaises(PermissionError):
+            A.confirm(c.instance_id, "o1", "zombie-receipt", SPECS[0].payload_hash(), occ.effect_key)
+
+    def test_late_receipt_adopted_only_for_unresolved_with_matching_binding(self):
+        c = contract()
+        A = Ledger(self.db, "A", late_evidence="adopt")
+        A.register_contract(c)
+        _, occ = A.reserve(c.instance_id, "o1", 100, None)
+        B = Ledger(self.db, "B", late_evidence="adopt")
+        held, _ = B.reserve(c.instance_id, "o1", 100, None, predecessor="A")
+        self.assertTrue(held)
+        B.mark_unresolved(c.instance_id, "o1", "opaque-provider")
+        self.assertEqual(B.get(c.instance_id, "o1").state, "unresolved")
+        # Wrong key binding (e.g. the successor rekeyed): refused as non-evidence.
+        with self.assertRaises(ValueError):
+            A.confirm(c.instance_id, "o1", "r", SPECS[0].payload_hash(), "some-other-key")
+        # Matching binding: the receipt is sink evidence and completes the occurrence.
+        A.confirm(c.instance_id, "o1", "late-receipt", SPECS[0].payload_hash(), occ.effect_key)
+        self.assertEqual(B.get(c.instance_id, "o1").state, "done")
+        self.assertEqual(B.get(c.instance_id, "o1").receipt, "late-receipt")
+        kinds = [r[0] for r in A.conn.execute("SELECT kind FROM events WHERE occurrence_id='o1'").fetchall()]
+        self.assertIn("late-receipt-adopted", kinds)
+
+    def test_late_receipt_rejected_in_strict_mode(self):
+        c = contract()
+        A = Ledger(self.db, "A", late_evidence="reject")
+        A.register_contract(c)
+        _, occ = A.reserve(c.instance_id, "o1", 100, None)
+        B = Ledger(self.db, "B", late_evidence="reject")
+        B.reserve(c.instance_id, "o1", 100, None, predecessor="A")
+        B.mark_unresolved(c.instance_id, "o1", "opaque-provider")
+        with self.assertRaises(PermissionError):
+            A.confirm(c.instance_id, "o1", "late-receipt", SPECS[0].payload_hash(), occ.effect_key)
+        self.assertEqual(B.get(c.instance_id, "o1").state, "unresolved")
 
     def test_rekey_opens_new_retention_window(self):
         c = contract()

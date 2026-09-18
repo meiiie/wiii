@@ -12,11 +12,11 @@ tool-execution contract; nothing here is wired into the runtime yet.
 
 | Path | Content |
 | --- | --- |
-| `paper/main.tex`, `paper/main.pdf` | Manuscript v0.3 (IEEEtran, 10 pages). |
+| `paper/main.tex`, `paper/main.pdf` | Manuscript v0.3 (IEEEtran, 11 pages). |
 | `REPORT_VI_v0.3.md` | Vietnamese research report for the project owner. |
 | `EVIDENCE_SUMMARY_v0.3.json` | Machine-readable summary of every number in the paper. |
 | `PROVIDER_CONTRACTS.md` | Quoted, dated facts from official provider documentation used as evidence. |
-| `artifact/` | Second stdlib-only Python implementation written from the v0.2 specification, experiments, raw results (575 process trials). |
+| `artifact/` | Second stdlib-only Python implementation written from the v0.2 specification, experiments, raw results (635 process trials). |
 
 ## Reproduce
 
@@ -66,9 +66,12 @@ encoding differs; the mutant witnesses have the same shape.
   processing class produces false completion in 3/5 worlds.
 - A model-checking configuration without a fence capability (safe, exhausts)
   and an explicit note that M1 checks safety only, not liveness.
-- Ledger writes that confirm or abandon an occurrence are accepted only from
-  the current lease holder (unit-tested; not yet exercised with a suspended
-  and resumed predecessor process).
+- A resumed-predecessor study (I6, 60 trials): the predecessor is SIGSTOPped,
+  overtaken, then SIGCONTed with a stale lease. No duplicates on any profile;
+  the lease-holder rule refuses every stale state write; under `P_O` the
+  resumed worker carries the only finality evidence, and a ledger that adopts
+  a late receipt whose key/payload binding matches an `unresolved` occurrence
+  completes 10/10 trials the strict rule leaves unresolved.
 - A measured finding that reservation-resolved concurrency races never reach
   sink deduplication (I2: 0 of 96 sink calls deduplicated).
 

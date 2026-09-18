@@ -72,7 +72,20 @@ Số 1.061 − 1.056 = 5 lời gọi dư trong v0.2 mà đánh giá trước đ�
 
 Ba cơ chế cần thiết (dedup của sink, fence-rồi-khóa-mới, trạng thái `unresolved` tường minh) xuất hiện thành ba dòng đo được, thay vì chỉ là văn xuôi. Phát hiện đáng chú ý nhất của vòng này: đối chứng thực tế `lookup-fresh` **lặp 15/15 khi yêu cầu cũ còn đang bay, trên mọi profile kể cả `P_D`**, và đúng 15/15 khi yêu cầu cũ đã hạ. Đây là trường hợp một handler khôi phục viết cẩn thận vẫn rơi vào: tra cứu âm tại một thời điểm không phải bằng chứng kết cục, và fence là phép toán duy nhất trong mô hình biến nó thành kết cục. Đây cũng là bản chạy thật của witness 9 bước "absence without fence" trong M1.
 
-### 2.4. Kết quả mới: lớp ngữ nghĩa batch quyết định tập niềm tin (E4)
+### 2.4. Kết quả mới: predecessor bị treo rồi tiếp tục (I6)
+
+Phản biện hỏi: điều gì xảy ra nếu worker cũ **không chết** mà chỉ bị treo (scheduler, debugger, di trú VM, GC pause dài) rồi tiếp tục với lease đã mất? I6 trả lời bằng tiến trình thật: worker A bị SIGSTOP (sau khi giữ chỗ o1, hoặc 150 ms sau khi gửi trong khi provider trễ commit 1 s); worker B tiếp quản ở 0,5 s với chính sách nhận biết; A được SIGCONT ở 1,6 s và chạy đến hết. 3 profile × 2 điểm treo × 2 quy tắc sổ cái × 5 = 60 lượt.
+
+| Profile | Yêu cầu muộn của A | Ghi sổ của A | Lặp | Kết quả |
+| --- | --- | --- | --- | --- |
+| P_D | dedup của sink trả receipt | bị từ chối (không giữ lease), 5/5 | 0 | B đã xong; A đọc `done` của B cho o2–o4 |
+| P_F | fence của B chặn ở provider, 5/5 | không có gì để ghi | 0 | B đã cấp khóa mới và xong |
+| P_O, quy tắc nghiêm | commit (không gì chặn) | receipt bị từ chối, 5/5 | 0 | controller kẹt `unresolved` dù thế giới đã đủ |
+| P_O, quy tắc nhận bằng chứng muộn | commit | receipt được **nhận**, 5/5 | 0 | hoàn thành 5/5 |
+
+Ba nhận xét. (1) Quy tắc lease-holder của sổ cái làm đúng việc của nó: mọi ghi trạng thái của zombie bị từ chối và ghi thành sự kiện; zombie hoàn thành phần còn lại bằng cách đọc bản ghi `done` của B, không thực thi lại. (2) Không lặp **không phải nhờ** quy tắc đó: dưới P_D là dedup của sink, dưới P_F là fence của B, dưới P_O là vì B đã đúng khi không cấp khóa mới. Zombie chỉ là một yêu cầu đang bay đến rất muộn; cơ chế của bảng I3 chi phối nó. (3) Dưới P_O, zombie mang **bằng chứng kết cục duy nhất tồn tại**: một receipt gắn đúng khóa và hash payload của nghĩa vụ mà B phải bỏ `unresolved`. Sổ cái coi mọi ghi từ người không giữ lease là "tuyên bố cũ" sẽ vứt bỏ bằng chứng đó và kẹt ở chưa hoàn thành. Tách hai câu hỏi — *ai được chuyển trạng thái* (người giữ lease) và *cái gì được tính là bằng chứng* (receipt có ràng buộc khớp) — cho phép nghĩa vụ `unresolved` nhận receipt muộn, trong khi `held` và `done` vẫn từ chối. An toàn vì `unresolved` theo định nghĩa không có khóa mới đang bay và không có bằng chứng khác; bị từ chối tự động nếu B đã đổi khóa (ràng buộc không khớp). Quy tắc này được thiết kế **sau khi** quan sát kết quả của quy tắc nghiêm và được báo cáo như hệ quả thiết kế kèm đo lường riêng, không phải giả thuyết đặt trước.
+
+### 2.5. Kết quả mới: lớp ngữ nghĩa batch quyết định tập niềm tin (E4)
 
 Nguồn của "tương quan" trong v0.2 mục V hóa ra không hề lạ: đó là **cách provider xử lý một yêu cầu batch** mà phản hồi đã mất. Nếu journal ghi thành viên, thứ tự và lớp xử lý của yêu cầu, tập niềm tin được xác định hoàn toàn:
 
@@ -121,15 +134,15 @@ Không được viết: "Bộ xác minh của chúng tôi vượt idempotency." 
 - Fence và endpoint bằng chứng là cài đặt của chúng ta cho các khả năng đã được tài liệu hóa, không phải endpoint của nhà cung cấp.
 - I3/I4 dựa trên sleep; xác định trong môi trường này với 5 lần lặp mỗi ô; là minh chứng cơ chế, không phải đo tần suất. Kết cục của yêu cầu bị mất trong I5 do lịch chạy cung cấp (successor khởi động sau khi provider xong); dưới cách kế toán theo khóa thì fence cung cấp thay; hai cách kế toán kẹp lấy điều một provider thật sẽ cung cấp.
 - Nhiều kết quả đúng theo cấu trúc và được báo cáo như phép kiểm tra, không phải phát hiện: đối chứng ngây thơ lặp sau cửa sổ vì nó được định nghĩa là retry cùng khóa; các số D1-TTL là hệ quả của Mệnh đề 3; `R+` hòa `V` theo Bổ đề 1.
-- Sổ cái chỉ nhận xác nhận/từ bỏ từ worker đang giữ lease (kiểm thử đơn vị); chưa thử nghiệm đối kháng ở mức tiến trình với một predecessor bị treo (SIGSTOP), bị tiếp quản rồi tiếp tục (SIGCONT). Yêu cầu của predecessor có thể đã ở provider, đúng là trường hợp I3 "sớm", nên an toàn dựa vào fence hoặc dedup như bảng đó, không dựa vào riêng phép kiểm sổ cái.
+- I6 thử predecessor bị treo rồi tiếp tục ở mức tiến trình, nhưng với một cú treo *hợp tác*: zombie chỉ được đánh thức sau khi successor đã xong. Zombie tỉnh lại *trong lúc* successor đang khôi phục sẽ đua với fence/đổi khóa ở sổ cái; quy tắc lease-holder tuần tự hóa phía sổ cái trong một giao dịch SQLite, nhưng phía provider lại là trường hợp I3 "sớm" và dựa vào fence hoặc dedup, không dựa vào sổ cái.
 - Số trạng thái M1 khác v0.2 vì mã hóa khác; chỉ dạng phản ví dụ là so sánh được.
 - Đặc tả các preprint arXiv 2026 (ACRFence, CapLease, AID-Guard, Cordon, PCA) được kế thừa từ audit tài liệu v0.2 và **phải được người kiểm tra lại** trước khi nộp.
 - Đối chứng và bộ xác minh dùng chung tầng lưu trữ/truyền tải trong runtime; nghiên cứu vét cạn trừu tượng tồn tại song song vì lý do này.
 
 ## 6. Gói bàn giao
 
-- `paper/main.tex`, `paper/main.pdf`: bản thảo v0.3, IEEEtran, 10 trang, 7 bảng, 1 hình TikZ, 25 tài liệu tham khảo (6 nguồn tài liệu nhà cung cấp có URL và ngày truy cập; bổ sung Helland, Sagas, RIFL, Flink, Kafka, Idempotency-Key draft, ReAct, Toolformer, POMDP, SPIN theo yêu cầu phản biện).
-- `artifact/`: mã (9 module), 32 kiểm thử kernel, 5 driver thí nghiệm, `run_all.py` tái lập toàn bộ (~15 phút), kết quả thô: 575 lượt tiến trình với mã trả về, marker crash, tóm tắt successor và số đếm phía provider; các phép liệt kê vét cạn; witness của bộ duyệt mô hình.
+- `paper/main.tex`, `paper/main.pdf`: bản thảo v0.3, IEEEtran, 11 trang, 8 bảng, 1 hình TikZ, 25 tài liệu tham khảo (6 nguồn tài liệu nhà cung cấp có URL và ngày truy cập; bổ sung Helland, Sagas, RIFL, Flink, Kafka, Idempotency-Key draft, ReAct, Toolformer, POMDP, SPIN theo yêu cầu phản biện).
+- `artifact/`: mã (9 module), 34 kiểm thử kernel, 5 driver thí nghiệm, `run_all.py` tái lập toàn bộ (~17 phút), kết quả thô: 635 lượt tiến trình với mã trả về, marker crash, tóm tắt successor và số đếm phía provider; các phép liệt kê vét cạn; witness của bộ duyệt mô hình.
 - `PROVIDER_CONTRACTS.md`: trích dẫn nguyên văn có ngày.
 - `EVIDENCE_SUMMARY_v0.3.json`: mọi con số trong bài dưới dạng máy đọc.
 

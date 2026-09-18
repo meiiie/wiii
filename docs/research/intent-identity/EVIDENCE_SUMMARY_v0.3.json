@@ -9,6 +9,7 @@
     "Under finite idempotency retention (documented: Stripe >= 24 h, SQS FIFO 5 min), every same-key-retry policy (R, R+, V) duplicates in all 149,217 lost-acknowledgement cases; the retention-aware controller duplicates in none. Safe same-key retry is characterized by t - h(omega) < T - Delta under an explicit adversarial timing model (Prop. 3).",
     "Completion after the window depends on an evidence contract: retention-aware recovery completes 10/10 lost-ack runtime trials per policy with a lookup endpoint and leaves 10/10 unresolved without one; a negative point-in-time lookup is never finality evidence (D1-TTL reserved variant, I4 after-reservation rows).",
     "Durable-execution-style lookup-then-fresh-key recovery without a fence duplicates in 15/15 in-flight takeover trials on every profile including P_D (the fresh key is a different key) and is correct in 15/15 trials once the old request has landed (I3).",
+    "A suspended-then-resumed predecessor (SIGSTOP/SIGCONT) never duplicates (0/60): the sink dedup (P_D) or the successor's fence (P_F) governs its late request, and under P_O the successor never dispatched a fresh key. The ledger's lease-holder rule refuses every stale state write (30/30 receipts refused in strict mode) but does not affect the effect count. Under P_O the resumed worker carries the only finality evidence; a ledger that adopts a late receipt whose key/payload binding matches an unresolved occurrence completes 10/10 trials that the strict rule leaves unresolved.",
     "Ternary per-obligation state is sufficient for the safe fresh-dispatch frontier but not for reconciliation cost; the batch processing class of a lost request changes exact optimal evidence cost from n to 1 (atomic) or ~log2(n+1) (prefix) under per-request finality, and to 4.5 / 5.78 of 8 under a per-key-fence accounting; a journal-driven recovery worker reproduces every count on the runtime (I5, 136 trials) and a misdeclared class yields false completion in 3/5 prefix worlds without duplication.",
     "Reservation-resolved three-worker races never exercise sink deduplication (0 of 96 sink calls), so they are not evidence about the sink contract."
   ],
@@ -250,8 +251,8 @@
     ],
     "exact_k_note": "exact-k probe counts exclude the one aggregate call that learns k; Prop. 6 adds it"
   },
-  "unit_tests": 32,
-  "process_trials_recorded": 575,
+  "unit_tests": 34,
+  "process_trials_recorded": 635,
   "live_llm_generations": 0,
   "commercial_provider_calls": 0,
   "provider_facts_source": "PROVIDER_CONTRACTS.md (official documentation, accessed 2026-09-19)",
@@ -259,7 +260,7 @@
     "natural LLM study",
     "sandbox validation of documented retention behaviour against a real provider account",
     "a real provider with prefix (ordered stop-on-failure) batch semantics",
-    "process-level adversarial test of a suspended, overtaken and resumed predecessor worker (lease-holder check is unit-tested at the ledger only)",
+    "a predecessor resumed DURING (not after) the successor's recovery, racing the fence/rekey at the ledger",
     "independent proof and code review",
     "re-verification of 2026 arXiv preprint characterizations carried from v0.2",
     "authorship consent and submission approval"
@@ -420,5 +421,124 @@
       "world_incomplete": 3,
       "false_success": 3
     }
+  },
+  "I6": {
+    "trials": 60,
+    "design": "3 profiles x {after-first-reservation, during-first-transport} SIGSTOP x {reject, adopt} late-evidence rule x 5 reps; successor aware at 0.5 s; predecessor SIGCONT at 1.6 s and runs to completion",
+    "duplicates": 0,
+    "per_cell": {
+      "PD/after-first-reservation/reject": {
+        "duplicate": 0,
+        "all_done": 5,
+        "unresolved": 0,
+        "zombie_stale_confirms_rejected": 5,
+        "zombie_provider_rejections": 0,
+        "zombie_late_receipts_adopted": 0,
+        "zombie_resumed_and_exited_0": 5
+      },
+      "PD/after-first-reservation/adopt": {
+        "duplicate": 0,
+        "all_done": 5,
+        "unresolved": 0,
+        "zombie_stale_confirms_rejected": 5,
+        "zombie_provider_rejections": 0,
+        "zombie_late_receipts_adopted": 0,
+        "zombie_resumed_and_exited_0": 5
+      },
+      "PD/during-first-transport/reject": {
+        "duplicate": 0,
+        "all_done": 5,
+        "unresolved": 0,
+        "zombie_stale_confirms_rejected": 5,
+        "zombie_provider_rejections": 0,
+        "zombie_late_receipts_adopted": 0,
+        "zombie_resumed_and_exited_0": 5
+      },
+      "PD/during-first-transport/adopt": {
+        "duplicate": 0,
+        "all_done": 5,
+        "unresolved": 0,
+        "zombie_stale_confirms_rejected": 5,
+        "zombie_provider_rejections": 0,
+        "zombie_late_receipts_adopted": 0,
+        "zombie_resumed_and_exited_0": 5
+      },
+      "PF/after-first-reservation/reject": {
+        "duplicate": 0,
+        "all_done": 5,
+        "unresolved": 0,
+        "zombie_stale_confirms_rejected": 0,
+        "zombie_provider_rejections": 5,
+        "zombie_late_receipts_adopted": 0,
+        "zombie_resumed_and_exited_0": 5
+      },
+      "PF/after-first-reservation/adopt": {
+        "duplicate": 0,
+        "all_done": 5,
+        "unresolved": 0,
+        "zombie_stale_confirms_rejected": 0,
+        "zombie_provider_rejections": 5,
+        "zombie_late_receipts_adopted": 0,
+        "zombie_resumed_and_exited_0": 5
+      },
+      "PF/during-first-transport/reject": {
+        "duplicate": 0,
+        "all_done": 5,
+        "unresolved": 0,
+        "zombie_stale_confirms_rejected": 0,
+        "zombie_provider_rejections": 5,
+        "zombie_late_receipts_adopted": 0,
+        "zombie_resumed_and_exited_0": 5
+      },
+      "PF/during-first-transport/adopt": {
+        "duplicate": 0,
+        "all_done": 5,
+        "unresolved": 0,
+        "zombie_stale_confirms_rejected": 0,
+        "zombie_provider_rejections": 5,
+        "zombie_late_receipts_adopted": 0,
+        "zombie_resumed_and_exited_0": 5
+      },
+      "PO/after-first-reservation/reject": {
+        "duplicate": 0,
+        "all_done": 0,
+        "unresolved": 5,
+        "zombie_stale_confirms_rejected": 5,
+        "zombie_provider_rejections": 0,
+        "zombie_late_receipts_adopted": 0,
+        "zombie_resumed_and_exited_0": 5
+      },
+      "PO/after-first-reservation/adopt": {
+        "duplicate": 0,
+        "all_done": 5,
+        "unresolved": 0,
+        "zombie_stale_confirms_rejected": 0,
+        "zombie_provider_rejections": 0,
+        "zombie_late_receipts_adopted": 5,
+        "zombie_resumed_and_exited_0": 5
+      },
+      "PO/during-first-transport/reject": {
+        "duplicate": 0,
+        "all_done": 0,
+        "unresolved": 5,
+        "zombie_stale_confirms_rejected": 5,
+        "zombie_provider_rejections": 0,
+        "zombie_late_receipts_adopted": 0,
+        "zombie_resumed_and_exited_0": 5
+      },
+      "PO/during-first-transport/adopt": {
+        "duplicate": 0,
+        "all_done": 5,
+        "unresolved": 0,
+        "zombie_stale_confirms_rejected": 0,
+        "zombie_provider_rejections": 0,
+        "zombie_late_receipts_adopted": 5,
+        "zombie_resumed_and_exited_0": 5
+      }
+    },
+    "strict_rule_PO_unresolved": "10/10",
+    "adopt_rule_PO_completed": "10/10",
+    "PF_zombie_requests_fence_rejected": "20/20",
+    "PD_zombie_receipts_deduplicated_and_refused": "20/20"
   }
 }

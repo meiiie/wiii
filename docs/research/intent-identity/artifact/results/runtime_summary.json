@@ -609,6 +609,188 @@
         "I5"
       ],
       "elapsed_s": 254.96
+    },
+    {
+      "studies": [
+        "I6"
+      ],
+      "elapsed_s": 35.06
+    },
+    {
+      "studies": [
+        "I6"
+      ],
+      "elapsed_s": 69.83
     }
-  ]
+  ],
+  "I6": {
+    "PD/after-first-reservation/reject": {
+      "trials": 5,
+      "duplicate": 0,
+      "all_done": 5,
+      "unresolved": 0,
+      "world_complete": 5,
+      "zombie_was_stopped": 5,
+      "zombie_resumed_and_exited_0": 5,
+      "zombie_stale_confirms_rejected": 5,
+      "zombie_provider_rejections": 0,
+      "zombie_done_writes": 0,
+      "zombie_late_receipts_adopted": 0,
+      "succ_ok": 5
+    },
+    "PD/after-first-reservation/adopt": {
+      "trials": 5,
+      "duplicate": 0,
+      "all_done": 5,
+      "unresolved": 0,
+      "world_complete": 5,
+      "zombie_was_stopped": 5,
+      "zombie_resumed_and_exited_0": 5,
+      "zombie_stale_confirms_rejected": 5,
+      "zombie_provider_rejections": 0,
+      "zombie_done_writes": 0,
+      "zombie_late_receipts_adopted": 0,
+      "succ_ok": 5
+    },
+    "PD/during-first-transport/reject": {
+      "trials": 5,
+      "duplicate": 0,
+      "all_done": 5,
+      "unresolved": 0,
+      "world_complete": 5,
+      "zombie_was_stopped": 5,
+      "zombie_resumed_and_exited_0": 5,
+      "zombie_stale_confirms_rejected": 5,
+      "zombie_provider_rejections": 0,
+      "zombie_done_writes": 0,
+      "zombie_late_receipts_adopted": 0,
+      "succ_ok": 5
+    },
+    "PD/during-first-transport/adopt": {
+      "trials": 5,
+      "duplicate": 0,
+      "all_done": 5,
+      "unresolved": 0,
+      "world_complete": 5,
+      "zombie_was_stopped": 5,
+      "zombie_resumed_and_exited_0": 5,
+      "zombie_stale_confirms_rejected": 5,
+      "zombie_provider_rejections": 0,
+      "zombie_done_writes": 0,
+      "zombie_late_receipts_adopted": 0,
+      "succ_ok": 5
+    },
+    "PF/after-first-reservation/reject": {
+      "trials": 5,
+      "duplicate": 0,
+      "all_done": 5,
+      "unresolved": 0,
+      "world_complete": 5,
+      "zombie_was_stopped": 5,
+      "zombie_resumed_and_exited_0": 5,
+      "zombie_stale_confirms_rejected": 0,
+      "zombie_provider_rejections": 5,
+      "zombie_done_writes": 0,
+      "zombie_late_receipts_adopted": 0,
+      "succ_ok": 5
+    },
+    "PF/after-first-reservation/adopt": {
+      "trials": 5,
+      "duplicate": 0,
+      "all_done": 5,
+      "unresolved": 0,
+      "world_complete": 5,
+      "zombie_was_stopped": 5,
+      "zombie_resumed_and_exited_0": 5,
+      "zombie_stale_confirms_rejected": 0,
+      "zombie_provider_rejections": 5,
+      "zombie_done_writes": 0,
+      "zombie_late_receipts_adopted": 0,
+      "succ_ok": 5
+    },
+    "PF/during-first-transport/reject": {
+      "trials": 5,
+      "duplicate": 0,
+      "all_done": 5,
+      "unresolved": 0,
+      "world_complete": 5,
+      "zombie_was_stopped": 5,
+      "zombie_resumed_and_exited_0": 5,
+      "zombie_stale_confirms_rejected": 0,
+      "zombie_provider_rejections": 5,
+      "zombie_done_writes": 0,
+      "zombie_late_receipts_adopted": 0,
+      "succ_ok": 5
+    },
+    "PF/during-first-transport/adopt": {
+      "trials": 5,
+      "duplicate": 0,
+      "all_done": 5,
+      "unresolved": 0,
+      "world_complete": 5,
+      "zombie_was_stopped": 5,
+      "zombie_resumed_and_exited_0": 5,
+      "zombie_stale_confirms_rejected": 0,
+      "zombie_provider_rejections": 5,
+      "zombie_done_writes": 0,
+      "zombie_late_receipts_adopted": 0,
+      "succ_ok": 5
+    },
+    "PO/after-first-reservation/reject": {
+      "trials": 5,
+      "duplicate": 0,
+      "all_done": 0,
+      "unresolved": 5,
+      "world_complete": 5,
+      "zombie_was_stopped": 5,
+      "zombie_resumed_and_exited_0": 5,
+      "zombie_stale_confirms_rejected": 5,
+      "zombie_provider_rejections": 0,
+      "zombie_done_writes": 0,
+      "zombie_late_receipts_adopted": 0,
+      "succ_ok": 5
+    },
+    "PO/after-first-reservation/adopt": {
+      "trials": 5,
+      "duplicate": 0,
+      "all_done": 5,
+      "unresolved": 0,
+      "world_complete": 5,
+      "zombie_was_stopped": 5,
+      "zombie_resumed_and_exited_0": 5,
+      "zombie_stale_confirms_rejected": 0,
+      "zombie_provider_rejections": 0,
+      "zombie_done_writes": 0,
+      "zombie_late_receipts_adopted": 5,
+      "succ_ok": 5
+    },
+    "PO/during-first-transport/reject": {
+      "trials": 5,
+      "duplicate": 0,
+      "all_done": 0,
+      "unresolved": 5,
+      "world_complete": 5,
+      "zombie_was_stopped": 5,
+      "zombie_resumed_and_exited_0": 5,
+      "zombie_stale_confirms_rejected": 5,
+      "zombie_provider_rejections": 0,
+      "zombie_done_writes": 0,
+      "zombie_late_receipts_adopted": 0,
+      "succ_ok": 5
+    },
+    "PO/during-first-transport/adopt": {
+      "trials": 5,
+      "duplicate": 0,
+      "all_done": 5,
+      "unresolved": 0,
+      "world_complete": 5,
+      "zombie_was_stopped": 5,
+      "zombie_resumed_and_exited_0": 5,
+      "zombie_stale_confirms_rejected": 0,
+      "zombie_provider_rejections": 0,
+      "zombie_done_writes": 0,
+      "zombie_late_receipts_adopted": 5,
+      "succ_ok": 5
+    }
+  }
 }

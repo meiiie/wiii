@@ -1,7 +1,7 @@
 """Reproduce every result in results/ (about 15 minutes on one core).
 
     python3 run_all.py            # everything
-    python3 run_all.py quick      # skip the process-crash studies (I1-I4)
+    python3 run_all.py quick      # skip the process-crash studies (I1-I6)
 """
 
 from __future__ import annotations
@@ -23,7 +23,7 @@ def main() -> None:
         [PY, "experiments/e_belief.py"],
     ]
     if not quick:
-        steps.append([PY, "experiments/runtime_studies.py", "I1", "I2", "I3", "I4", "I5"])
+        steps.append([PY, "experiments/runtime_studies.py", "I1", "I2", "I3", "I4", "I5", "I6"])
     for cmd in steps:
         print("::", " ".join(cmd), flush=True)
         subprocess.run(cmd, cwd=str(ROOT), check=True)

@@ -53,9 +53,19 @@ FAULT_POINTS = (
 )
 
 
+FAULT_ACTION = "kill"
+
+
 def _die() -> None:
+    """Apply the configured fault: SIGKILL (crash) or SIGSTOP (suspend).
+
+    A suspended worker is a zombie predecessor: after a successor has taken
+    over its held occurrences the orchestrator resumes it with SIGCONT and it
+    continues exactly where it was, with a stale lease and possibly a stale
+    in-flight request.
+    """
     sys.stdout.flush()
-    os.kill(os.getpid(), signal.SIGKILL)
+    os.kill(os.getpid(), signal.SIGKILL if FAULT_ACTION == "kill" else signal.SIGSTOP)
 
 
 class Http:
@@ -82,7 +92,7 @@ class Http:
 class Worker:
     def __init__(self, a: argparse.Namespace):
         self.a = a
-        self.ledger = Ledger(a.controller_db, a.worker_id)
+        self.ledger = Ledger(a.controller_db, a.worker_id, a.late_evidence)
         self.http = Http(a.provider_url)
         self.contract = self.ledger.load_contract(a.instance)
         self.effects_seen = 0
@@ -96,6 +106,9 @@ class Worker:
             self.summary["crash_marker"] = point
             print(json.dumps({"crash_marker": point, "worker_id": self.a.worker_id}), flush=True)
             _die()
+            # Only reachable after SIGCONT in the zombie configuration.
+            self.summary["resumed_after"] = point
+            self.ledger.log("resumed", self.a.instance, kind_detail=point)
 
     # -- planning ---------------------------------------------------------
 
@@ -284,6 +297,9 @@ class Worker:
         if first and self.a.fault_point == "during-first-transport":
             threading.Timer(self.a.transport_kill_ms / 1000.0, _die).start()
         code, resp = self.http.post("/execute", body)
+        if first and self.a.fault_point == "during-first-transport" and FAULT_ACTION == "stop":
+            self.summary["resumed_after"] = "during-first-transport"
+            self.ledger.log("resumed", self.a.instance, occ.occurrence_id, kind_detail="during-first-transport")
         if code != 200:
             self.summary["actions"].append({"occurrence": occ.occurrence_id, "outcome": f"provider-{code}", "resp": resp})
             self.ledger.log("provider-rejected", self.a.instance, occ.occurrence_id, code=code, resp=resp)
@@ -293,7 +309,17 @@ class Worker:
             self.fault("after-first-effect")
         if self.effects_seen == 3:
             self.fault("after-third-effect")
-        self.ledger.confirm(self.a.instance, occ.occurrence_id, resp["receipt"], payload_hash, occ.effect_key)
+        try:
+            self.ledger.confirm(self.a.instance, occ.occurrence_id, resp["receipt"], payload_hash, occ.effect_key)
+        except (PermissionError, ValueError) as e:
+            # Stale lease or stale key binding: another worker took this
+            # occurrence over (and possibly rekeyed it) while the request was
+            # in flight. The receipt is genuine sink evidence, so it is
+            # journaled as an event, but the state transition is refused.
+            self.ledger.log("stale-confirm-rejected", self.a.instance, occ.occurrence_id, receipt=resp["receipt"], status=resp["status"], reason=str(e))
+            self.summary["stale_confirms_rejected"] = self.summary.get("stale_confirms_rejected", 0) + 1
+            self.summary["actions"].append({"occurrence": occ.occurrence_id, "outcome": f"stale-confirm-rejected({resp['status']})"})
+            return
         self.confirms += 1
         self.summary["actions"].append({"occurrence": occ.occurrence_id, "outcome": resp["status"]})
         if self.confirms == 1:
@@ -377,6 +403,7 @@ def parse(argv=None) -> argparse.Namespace:
     ap.add_argument("--retention-seconds", type=float, default=None)
     ap.add_argument("--clock-skew", type=float, default=0.0)
     ap.add_argument("--fault-point", choices=FAULT_POINTS, default="none")
+    ap.add_argument("--fault-action", choices=("kill", "stop"), default="kill", help="kill: SIGKILL (crash); stop: SIGSTOP (zombie predecessor, resumed by the orchestrator)")
     ap.add_argument("--transport-kill-ms", type=float, default=150.0)
     ap.add_argument("--delay-ms", type=float, default=0.0)
     ap.add_argument("--start-delay", type=float, default=0.0)
@@ -385,11 +412,14 @@ def parse(argv=None) -> argparse.Namespace:
     ap.add_argument("--journal", choices=("ternary", "structured"), default=None)
     ap.add_argument("--journal-class-override", choices=("independent", "atomic", "prefix"), default=None)
     ap.add_argument("--evidence-op", choices=("lookup", "fence"), default="lookup")
+    ap.add_argument("--late-evidence", choices=("reject", "adopt"), default="adopt", help="how the ledger treats a receipt presented by a worker that no longer holds the lease")
     return ap.parse_args(argv)
 
 
 def main(argv=None) -> int:
+    global FAULT_ACTION
     a = parse(argv)
+    FAULT_ACTION = a.fault_action
     w = Worker(a)
     summary = w.run()
     print(json.dumps(summary, sort_keys=True), flush=True)

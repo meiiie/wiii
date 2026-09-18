@@ -1,4 +1,5 @@
-"""I1-I4: process-crash, concurrency, in-flight takeover and retention studies.
+"""I1-I6: process-crash, concurrency, takeover, retention, batch-journal and
+zombie-predecessor studies.
 
 Each trial uses a fresh controller database and a fresh approval instance on a
 shared loopback provider process. The success oracle reads the provider's own
@@ -12,6 +13,10 @@ I3  (v0.3): lease takeover while the crashed worker's request is still in
     flight, on P_D / P_F / P_O, naive vs profile-aware recovery.
 I4  (v0.3): recovery after the P_D dedup window lapsed (finite retention),
     with and without an evidence contract, naive vs retention-aware.
+I5  (v0.3): lost response to a journaled multi-entry request; ternary vs
+    structured journal under two evidence-cost accountings; misdeclared class.
+I6  (v0.3): predecessor suspended (SIGSTOP) rather than killed, overtaken by
+    a successor, then resumed (SIGCONT) with a stale lease.
 """
 
 from __future__ import annotations
@@ -347,8 +352,75 @@ def study_i5(workdir: Path, out) -> dict:
     return rows
 
 
+def study_i6(workdir: Path, out, reps: int) -> dict:
+    """Resumed predecessor (zombie). Worker A is SIGSTOPped instead of killed,
+    either right after reserving o1 (its request not yet sent) or 150 ms into
+    its first transport (request in flight, provider delaying commit). Worker
+    B takes over after the 0.3 s lease lapses with profile-aware recovery.
+    A is then resumed with SIGCONT and runs to completion with a stale lease.
+
+    Measured: duplicates at the provider; A's stale ledger writes (rejected by
+    the lease-holder check); A's return code; B's final states.
+    """
+    import signal
+
+    rows = {}
+    src = (("o1", "o2", "o3", "o4"),)
+    dst = (("o1",), ("o2",), ("o3",), ("o4",))
+    stop_points = {"after-first-reservation": {"delay_ms": 0}, "during-first-transport": {"delay_ms": 1000}}
+    for profile in ("PD", "PF", "PO"):
+        prov = Provider(workdir, profile, None, "lookup")
+        try:
+            for (point, pp), late in ((x, y) for x in stop_points.items() for y in ("reject", "adopt")):
+                c = Counter()
+                for rep in range(reps):
+                    tag = f"i6-{profile}-{point}-{late}-{rep}"
+                    db, inst, contract = new_instance(workdir, tag)
+                    p_src = write_plan(workdir, contract, src, tag + "-src")
+                    p_dst = write_plan(workdir, contract, dst, tag + "-dst")
+                    t_start = time.time()
+                    zombie = subprocess.Popen(
+                        worker_cmd("V", db, prov.url, inst, p_src, "w-a", fault_point=point, fault_action="stop", transport_kill_ms=150, delay_ms=pp["delay_ms"], lease_seconds=0.3, profile=profile, late_evidence=late),
+                        cwd=str(ROOT), stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+                    )
+                    succ = run(worker_cmd("V", db, prov.url, inst, p_dst, "w-b", start_delay=max(0.0, 0.5 - (time.time() - t_start)), lease_seconds=5, profile=profile, recovery="aware"))
+                    # let any in-flight request of A land, then wake A up
+                    time.sleep(max(0.0, t_start + pp["delay_ms"] / 1000.0 + 0.6 - time.time()))
+                    stopped_before_resume = zombie.poll() is None
+                    os.kill(zombie.pid, signal.SIGCONT)
+                    try:
+                        z_out, z_err = zombie.communicate(timeout=30)
+                    except subprocess.TimeoutExpired:
+                        zombie.kill()
+                        z_out, z_err = zombie.communicate()
+                    zs = last_json(z_out)
+                    o = oracle(prov, db, inst)
+                    ledger = Ledger(db, "oracle")
+                    events = ledger.conn.execute("SELECT kind, COUNT(*) FROM events WHERE instance_id=? AND worker_id='w-a' GROUP BY kind", (inst,)).fetchall()
+                    ledger.close()
+                    ev = dict(events)
+                    c["trials"] += 1
+                    c["duplicate"] += o["duplicate"]
+                    c["all_done"] += o["all_done"]
+                    c["unresolved"] += bool(o["unresolved"])
+                    c["world_complete"] += not o["incomplete_world"]
+                    c["zombie_was_stopped"] += stopped_before_resume
+                    c["zombie_resumed_and_exited_0"] += zombie.returncode == 0
+                    c["zombie_stale_confirms_rejected"] += ev.get("stale-confirm-rejected", 0)
+                    c["zombie_provider_rejections"] += ev.get("provider-rejected", 0)
+                    c["zombie_done_writes"] += ev.get("done", 0)
+                    c["zombie_late_receipts_adopted"] += ev.get("late-receipt-adopted", 0)
+                    c["succ_ok"] += succ.returncode == 0
+                    out.write(json.dumps({"study": "I6", "profile": profile, "stop_point": point, "late_evidence": late, "rep": rep, "zombie_rc": zombie.returncode, "zombie_summary": zs, "zombie_events": ev, "zombie_stderr_tail": z_err[-400:], "succ_rc": succ.returncode, "succ_summary": last_json(succ.stdout), "oracle": o}) + "\n")
+                rows[f"{profile}/{point}/{late}"] = dict(c)
+                print("I6", profile, point, late, dict(c), flush=True)
+        finally:
+            prov.stop()
+    return rows
+
+
 def main(argv: list[str]) -> None:
-    all_studies = {"I1", "I2", "I3", "I4", "I5"}
+    all_studies = {"I1", "I2", "I3", "I4", "I5", "I6"}
     which = set(argv[1:]) or set(all_studies)
     reps = int(os.environ.get("II_REPS", "5"))
     out_dir = ROOT / "results"
@@ -372,6 +444,8 @@ def main(argv: list[str]) -> None:
             summary["I4"] = study_i4(workdir, out, reps)
         if "I5" in which:
             summary["I5"] = study_i5(workdir, out)
+        if "I6" in which:
+            summary["I6"] = study_i6(workdir, out, reps)
         elapsed = round(time.time() - t0, 2)
     prev = {}
     p = out_dir / "runtime_summary.json"
