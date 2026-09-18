@@ -41,7 +41,8 @@ def run_case(src, dst, prefix, policy, expire, last_state):
     n = len([m for g in src for m in g])
     duplicate = any(c > 1 for c in counts.values())
     incomplete = any(counts.get(m, 0) == 0 for m in ITEMS[:n])
-    return duplicate, incomplete, calls, tuple(counts.get(m, 0) for m in ITEMS[:n])
+    unresolved = bool(ledger.unresolved)
+    return duplicate, incomplete, unresolved, calls, tuple(counts.get(m, 0) for m in ITEMS[:n])
 
 
 def enumerate_study(expire: bool, last_state: str):
@@ -49,7 +50,7 @@ def enumerate_study(expire: bool, last_state: str):
     total_cases = 0
     for n in range(1, 5):
         groupings = all_groupings(ITEMS[:n])
-        per_policy = {p: {"duplicate": 0, "incomplete": 0, "calls": 0} for p in POLICIES}
+        per_policy = {p: {"duplicate": 0, "incomplete": 0, "unresolved": 0, "calls": 0} for p in POLICIES}
         disagreements_R_V = 0
         disagreements_Rplus_V = 0
         cases = 0
@@ -59,9 +60,10 @@ def enumerate_study(expire: bool, last_state: str):
                     cases += 1
                     vectors = {}
                     for p in POLICIES:
-                        dup, inc, calls, vec = run_case(src, dst, prefix, p, expire, last_state)
+                        dup, inc, unres, calls, vec = run_case(src, dst, prefix, p, expire, last_state)
                         per_policy[p]["duplicate"] += dup
                         per_policy[p]["incomplete"] += inc
+                        per_policy[p]["unresolved"] += unres
                         per_policy[p]["calls"] += calls
                         vectors[p] = vec
                     disagreements_R_V += vectors["R"] != vectors["V"]
@@ -97,6 +99,7 @@ def main(out_dir: Path) -> None:
             for p in POLICIES:
                 agg[(p, "duplicate")] += row["policies"][p]["duplicate"]
                 agg[(p, "incomplete")] += row["policies"][p]["incomplete"]
+                agg[(p, "unresolved")] += row["policies"][p]["unresolved"]
                 agg[(p, "calls")] += row["policies"][p]["calls"]
             print(
                 f"  n={n} plans={row['plans']} cases={row['cases']} "

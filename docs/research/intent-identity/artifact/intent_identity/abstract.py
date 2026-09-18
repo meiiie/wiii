@@ -97,6 +97,7 @@ class Ledger:
 
     done: set[str] = field(default_factory=set)
     held: set[str] = field(default_factory=set)
+    unresolved: set[str] = field(default_factory=set)
 
 
 def run_source(
@@ -174,6 +175,7 @@ def run_destination(
                 if m in ledger.done:
                     continue
                 if m in ledger.held and retention_expired:
+                    ledger.unresolved.add(m)
                     continue
                 sink.execute(key_occurrence(m), m)
             elif policy == "Vr+E":

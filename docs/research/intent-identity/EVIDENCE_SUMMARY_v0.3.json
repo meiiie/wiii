@@ -1,0 +1,83 @@
+{
+  "project": "Exactly-Once Effects for Re-Planning LLM Agents: A Reduction, a Retention Hazard, and an Evidence Contract",
+  "previous_title": "Intent Identity and Exactly-Once Effects for Non-Deterministic LLM Agents",
+  "version": "0.3",
+  "date": "2026-09-19",
+  "status": "executed development research; independent re-implementation; not submitted",
+  "main_findings": [
+    "v0.2 null result reproduced exactly by an independent implementation; a ledger-consulting strong reference R+ ties the verifier V in effects and in sink calls.",
+    "Under finite idempotency retention (documented: Stripe >= 24 h, SQS FIFO 5 min), every same-key-retry policy (R, R+, V) duplicates in all 149,217 lost-acknowledgement cases; the retention-aware controller duplicates in none.",
+    "Completion after the window depends on an evidence contract: retention-aware recovery completes 20/20 lost-ack runtime trials with a lookup endpoint and 0/20 without (safe, unresolved).",
+    "Ternary per-obligation state is sufficient for the safe fresh-dispatch frontier but not for reconciliation cost; the batch processing class of a lost request changes exact optimal probe cost from n to 1 (atomic), ~log2(n+1) (prefix), or the exact-k closed form.",
+    "Reservation-resolved three-worker races never exercise sink deduplication (0 of 96 sink calls), so they are not evidence about the sink contract."
+  ],
+  "reproduction_of_v0_2": {
+    "D1_cases": 186674,
+    "D1_group_key_duplicates": 130348,
+    "D1_group_key_duplicates_by_n": {"1": 0, "2": 16, "3": 1308, "4": 129024},
+    "D1_R_V_disagreements": 0,
+    "E1_nonempty_families": 65535,
+    "E1_safety_checks": 1048560,
+    "E1_mismatches": 0,
+    "E1_families_with_nonempty_safe_dispatch": 941,
+    "E3_worlds": 2026,
+    "E3_oracle_matches_closed_form_all_n_le_10": true,
+    "I1_trials": 240,
+    "I1_passed": 240,
+    "I2_trials": 24,
+    "I2_passed": 24
+  },
+  "D1": {
+    "policies": ["G", "R", "R+", "V", "Vr", "Vr+E"],
+    "sink_calls": {"G": 744290, "R": 744290, "R+": 372145, "V": 372145},
+    "variants": {
+      "unbounded_retention": {"duplicates": {"G": 130348, "R": 0, "R+": 0, "V": 0, "Vr": 0, "Vr+E": 0}},
+      "expired_last_confirmed": {"duplicates": {"G": 149217, "R": 149217, "R+": 0, "V": 0, "Vr": 0, "Vr+E": 0}},
+      "expired_last_lost_ack": {"duplicates": {"G": 149217, "R": 149217, "R+": 149217, "V": 149217, "Vr": 0, "Vr+E": 0}, "unresolved": {"Vr": 149217, "Vr+E": 0}},
+      "expired_last_reserved_no_effect": {"duplicates": {"G": 111760, "R": 111760, "R+": 0, "V": 0, "Vr": 0, "Vr+E": 0}, "unresolved": {"Vr": 149217, "Vr+E": 0}, "world_incomplete": {"Vr": 149217, "Vr+E": 0}}
+    }
+  },
+  "M1": {
+    "encoding_note": "state counts are encoding-specific and not comparable to v0.2 (480/1,266)",
+    "v0_2_model": {"safe": {"states": 1180, "edges": 3467, "exhausted": true}, "witness_steps": {"absence-without-fence": 9, "fresh-key-retry": 7, "missing-as-success": 2, "no-sink-dedup": 6}},
+    "v0_3_model_with_retention": {"safe": {"states": 1396, "edges": 4043, "exhausted": true}, "witness_steps": {"retry-after-retention-expiry": 7}}
+  },
+  "I1": {"trials": 240, "passed": 240, "per_policy": 120, "provider_execute_calls": 1080, "provider_effects": 960, "dedup_responses": 120, "median_successor_wall_s": {"R": 0.101, "V": 0.102}},
+  "I2": {"trials": 24, "passed": 24, "workers_per_trial": 3, "provider_execute_calls": 96, "dedup_responses": 0},
+  "I3": {
+    "trials": 60,
+    "design": "3 profiles x {early,late} in-flight takeover x {naive,aware} recovery x 5 reps",
+    "duplicates_out_of_5": {"PD/early/naive": 0, "PD/early/aware": 0, "PD/late/naive": 0, "PD/late/aware": 0, "PF/early/naive": 5, "PF/early/aware": 0, "PF/late/naive": 5, "PF/late/aware": 0, "PO/early/naive": 5, "PO/early/aware": 0, "PO/late/naive": 5, "PO/late/aware": 0},
+    "unresolved_out_of_5": {"PO/early/aware": 5}
+  },
+  "I4": {
+    "trials": 80,
+    "design": "P_D(T=0.5s) x {lookup,none} evidence x {after-first-effect,after-first-reservation} x {naive,aware} x {R,V} x 5 reps; successor starts 0.8 s after crash",
+    "naive_lost_ack_duplicates": "20/20",
+    "aware_duplicates": "0/40",
+    "aware_lost_ack_completed_with_lookup": "10/10",
+    "aware_lost_ack_unresolved_without_lookup": "10/10",
+    "aware_reserved_no_effect_unresolved": "20/20"
+  },
+  "E4": {
+    "ternary_journal_expected_probes": "n",
+    "atomic_expected_probes": 1,
+    "prefix_expected_probes": {"2": 1.667, "4": 2.4, "6": 2.857, "8": 3.222, "10": 3.545},
+    "prefix_worst_probes": {"2": 2, "4": 3, "6": 3, "8": 4, "10": 4},
+    "exact_k_expected_probes_n8_k4": 6.4,
+    "oracle_matches_closed_forms": true
+  },
+  "unit_tests": 26,
+  "process_trials_recorded": 404,
+  "live_llm_generations": 0,
+  "commercial_provider_calls": 0,
+  "provider_facts_source": "PROVIDER_CONTRACTS.md (official documentation, accessed 2026-09-19)",
+  "not_completed": [
+    "natural LLM study",
+    "sandbox validation of documented retention behaviour against a real provider account",
+    "a real provider with prefix (ordered stop-on-failure) batch semantics",
+    "independent proof and code review",
+    "re-verification of 2026 arXiv preprint characterizations carried from v0.2",
+    "authorship consent and submission approval"
+  ]
+}
