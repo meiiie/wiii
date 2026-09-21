@@ -9,6 +9,24 @@ import {
   type WorkspaceRef,
 } from "../workspace";
 
+/** Control-local reason when primary create/save is gated (disabled = explained). */
+export function projectDialogPrimaryTitle(args: {
+  mode: "create" | "edit";
+  saving: boolean;
+  hasName: boolean;
+  hasRoots: boolean;
+}): string {
+  if (args.saving) return "Đang lưu…";
+  const missingName = !args.hasName;
+  const missingRoots = !args.hasRoots;
+  if (missingName && missingRoots) {
+    return "Hãy đặt tên Project và thêm ít nhất một thư mục nguồn.";
+  }
+  if (missingName) return "Hãy đặt tên cho Project.";
+  if (missingRoots) return "Project cần ít nhất một thư mục nguồn.";
+  return args.mode === "edit" ? "Lưu thay đổi" : "Tạo Project";
+}
+
 export function ProjectDialog({
   project,
   reason = null,
@@ -246,6 +264,13 @@ export function ProjectDialog({
             type="button"
             className="inline-flex h-9 min-w-[110px] items-center justify-center gap-2 rounded-lg bg-[var(--nk-inverse)] px-4 text-[12px] font-medium text-[var(--nk-on-inverse)] transition-opacity hover:opacity-90 active:scale-[0.99] disabled:opacity-35"
             disabled={saving || !name.trim() || roots.length === 0}
+            title={projectDialogPrimaryTitle({
+              mode: project ? "edit" : "create",
+              saving,
+              hasName: Boolean(name.trim()),
+              hasRoots: roots.length > 0,
+            })}
+            data-testid="project-dialog-primary"
             onClick={() => void submit()}
           >
             {saving ? <LoaderCircle aria-hidden="true" className="h-3.5 w-3.5 animate-spin" /> : null}
