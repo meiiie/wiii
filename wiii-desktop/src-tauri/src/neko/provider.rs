@@ -34,6 +34,10 @@ const PROCESS_POLL_INTERVAL: Duration = Duration::from_millis(25);
 #[cfg(any(windows, target_os = "linux"))]
 const MAX_PROBE_OUTPUT_BYTES: usize = 64 * 1024;
 
+#[cfg(target_os = "linux")]
+#[path = "linux_containment.rs"]
+mod linux_containment;
+
 struct ProbeOutput {
     status: ExitStatus,
     stdout: Vec<u8>,
@@ -477,7 +481,7 @@ pub(crate) fn spawn_owned(command: &mut Command) -> Result<OwnedChild, SpawnOwne
     }
     #[cfg(target_os = "linux")]
     {
-        super::linux_containment::attach_bwrap_supervisor(command)
+        linux_containment::attach_bwrap_supervisor(command)
             .map_err(SpawnOwnedError::safe)?;
         let child = command.spawn()?;
         Ok(OwnedChild {
@@ -521,7 +525,7 @@ fn unix_containment_unavailable() -> io::Error {
     {
         return io::Error::new(
             io::ErrorKind::Unsupported,
-            super::linux_containment::unavailable_message(),
+            linux_containment::unavailable_message(),
         );
     }
     #[cfg(not(target_os = "linux"))]
@@ -841,7 +845,7 @@ fn host_supports_provider_containment() -> bool {
     }
     #[cfg(target_os = "linux")]
     {
-        super::linux_containment::containment_available()
+        linux_containment::containment_available()
     }
     #[cfg(not(any(windows, target_os = "linux")))]
     {
@@ -1177,17 +1181,17 @@ mod tests {
     #[cfg(target_os = "linux")]
     #[test]
     fn linux_probe_rejects_before_spawn_when_bwrap_forced_missing() {
-        super::super::linux_containment::force_unavailable_for_test(true);
+        super::linux_containment::force_unavailable_for_test(true);
         let mut command = Command::new("sh");
         command.args(["-c", "exit 99"]);
         let error = match run_probe(command) {
             Ok(_) => {
-                super::super::linux_containment::force_unavailable_for_test(false);
+                super::linux_containment::force_unavailable_for_test(false);
                 panic!("Linux probe spawned without bwrap");
             }
             Err(error) => error,
         };
-        super::super::linux_containment::force_unavailable_for_test(false);
+        super::linux_containment::force_unavailable_for_test(false);
         assert_eq!(error.kind(), io::ErrorKind::Unsupported);
         assert!(error.to_string().contains("bubblewrap") || error.to_string().contains("bwrap"));
     }
@@ -1195,7 +1199,7 @@ mod tests {
     #[cfg(target_os = "linux")]
     #[test]
     fn linux_probe_runs_under_bwrap_when_available() {
-        if !super::super::linux_containment::containment_available() {
+        if !super::linux_containment::containment_available() {
             return;
         }
         let mut command = Command::new("sh");
@@ -1256,9 +1260,9 @@ mod tests {
     #[cfg(target_os = "linux")]
     #[test]
     fn linux_roster_reports_host_unsupported_when_bwrap_missing() {
-        super::super::linux_containment::force_unavailable_for_test(true);
+        super::linux_containment::force_unavailable_for_test(true);
         let providers = list_selected(None).unwrap();
-        super::super::linux_containment::force_unavailable_for_test(false);
+        super::linux_containment::force_unavailable_for_test(false);
         assert!(!providers.is_empty());
         assert!(providers.iter().all(|provider| {
             !provider.found && provider.availability == AgentAvailability::HostUnsupported
@@ -1268,7 +1272,7 @@ mod tests {
     #[cfg(target_os = "linux")]
     #[test]
     fn linux_roster_does_not_claim_host_unsupported_when_bwrap_works() {
-        if !super::super::linux_containment::containment_available() {
+        if !super::linux_containment::containment_available() {
             return;
         }
         let providers = list_selected(None).unwrap();
@@ -1304,7 +1308,7 @@ mod tests {
             #[cfg(target_os = "linux")]
             {
                 assert!(
-                    !super::super::linux_containment::containment_available(),
+                    !super::linux_containment::containment_available(),
                     "Linux bwrap containment available but spawn_owned failed"
                 );
                 return;
@@ -1334,24 +1338,24 @@ mod tests {
     #[cfg(target_os = "linux")]
     #[test]
     fn linux_without_bwrap_rejects_before_spawn() {
-        super::super::linux_containment::force_unavailable_for_test(true);
+        super::linux_containment::force_unavailable_for_test(true);
         let mut command = Command::new("sh");
         command.args(["-c", "sleep 30"]);
         let error = match spawn_owned(&mut command) {
             Ok(_) => {
-                super::super::linux_containment::force_unavailable_for_test(false);
+                super::linux_containment::force_unavailable_for_test(false);
                 panic!("provider launch bypassed bwrap gate");
             }
             Err(error) => error,
         };
-        super::super::linux_containment::force_unavailable_for_test(false);
+        super::linux_containment::force_unavailable_for_test(false);
         assert_eq!(error.kind(), io::ErrorKind::Unsupported);
     }
 
     #[cfg(target_os = "linux")]
     #[test]
     fn linux_bwrap_termination_kills_descendant_tree() {
-        if !super::super::linux_containment::containment_available() {
+        if !super::linux_containment::containment_available() {
             return;
         }
         let script = std::env::temp_dir().join(format!(
