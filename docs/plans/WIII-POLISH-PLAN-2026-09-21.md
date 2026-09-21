@@ -1,6 +1,6 @@
 # WIII polish plan — 2026-09-21
 
-Status: Batch 1 merged (#976/#977) · Batch 2 active — see WIII-POLISH-BATCH2-2026-09-21.md
+Status: Batch 1 merged (#976/#977) · Batch 2 complete (#978/#979 @ `b873afa`) · Batch 3 **CLEAN-STOP** — see WIII-POLISH-BATCH3-2026-09-21.md
 Owner: soft+BIG polish (this agent) · Teammate may parallel-live elsewhere — **do not edit claimed paths**
 Base: `main` @ `#975` · Preview: `localhost:1420/?preview=neko-chill`
 Voice: VI-first · ZCode-selective (calm density / disabled=explained / keyboard honesty — **no ZCode brand copy**)
@@ -41,12 +41,12 @@ Voice: VI-first · ZCode-selective (calm density / disabled=explained / keyboard
 6. **Keyboard footer + focus consistency (composer ↔ palette)**
    Session composer + ProjectHome get Enter/Shift+Enter hint; palette footer uses the same calm kbd chip language; keep `nk-input-field` / `nk-project-composer` focus-within rings aligned (no new brand chrome).
 
-### P1 — Batch 2 (active — claimed in WIII-POLISH-BATCH2-2026-09-21.md)
+### P1 — Batch 2 (complete — #978 IME/submit · #979 hydrate skeleton)
 
-7. **Session composer parity** — deeper alignment with ProjectHome / ZCode composer cues (toolbar density, locked-model affordance, insert/slash chrome).
-8. **Loading chrome** — discovery / hydrate / harness probe skeletons and busy labels consistency.
-9. **Theme** — dark/light token polish, focus contrast, reduced-motion pass beyond chill tokens.
-10. **Empty-state hierarchy** — transcript / sidebar empty copy closer to ZCode calm density.
+7. ~~**Session composer parity**~~ → shipped #978 (IME Enter guard + submitting spinner). Residual toolbar density stays optional.
+8. ~~**Loading chrome**~~ → shipped #979 (hydrate recovery skeleton + busy label; reduced-motion).
+9. **Theme** — parked Batch3+ (light ghost==text-3 XS; no chill theme toggle unless product asks).
+10. **Empty-state hierarchy** — parked Batch3+ (transcript `py-[10vh]` + filter chrome when 0 sessions) — P2, not task-blocking.
 11. ~~Overview marketing hero~~ → shipped as follow-up PR after Batch1 (#976): calm dense operational header.
 12. **Connections / tools / coworker honesty follow-ups** — only if new mute-disabled gaps appear after Batch 1.
 
