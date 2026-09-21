@@ -437,6 +437,55 @@ fn resume_suspended_process(pid: u32) -> io::Result<()> {
     Ok(())
 }
 
+
+#[cfg(target_os = "linux")]
+fn spawn_linux_child_on_stable_parent_thread(
+    command: Command,
+) -> io::Result<std::process::Child> {
+    use std::sync::mpsc;
+    use std::sync::{Mutex, OnceLock};
+
+    struct SpawnRequest {
+        command: Command,
+        reply: mpsc::Sender<io::Result<std::process::Child>>,
+    }
+
+    static SPAWN_TX: OnceLock<Mutex<mpsc::Sender<SpawnRequest>>> = OnceLock::new();
+    let tx = SPAWN_TX.get_or_init(|| {
+        let (tx, rx) = mpsc::channel::<SpawnRequest>();
+        std::thread::Builder::new()
+            .name("neko-linux-provider-spawn".into())
+            .spawn(move || {
+                while let Ok(mut request) = rx.recv() {
+                    let result = request.command.spawn();
+                    let _ = request.reply.send(result);
+                }
+            })
+            .expect("neko linux provider spawn thread must start");
+        Mutex::new(tx)
+    });
+
+    let (reply_tx, reply_rx) = mpsc::channel();
+    tx.lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+        .send(SpawnRequest {
+            command,
+            reply: reply_tx,
+        })
+        .map_err(|_| {
+            io::Error::new(
+                io::ErrorKind::BrokenPipe,
+                "neko linux provider spawn thread is no longer accepting work",
+            )
+        })?;
+    reply_rx.recv().map_err(|_| {
+        io::Error::new(
+            io::ErrorKind::BrokenPipe,
+            "neko linux provider spawn thread dropped the reply channel",
+        )
+    })?
+}
+
 pub(crate) fn spawn_owned(command: &mut Command) -> Result<OwnedChild, SpawnOwnedError> {
     #[cfg(windows)]
     {
@@ -481,9 +530,18 @@ pub(crate) fn spawn_owned(command: &mut Command) -> Result<OwnedChild, SpawnOwne
     }
     #[cfg(target_os = "linux")]
     {
+        // CRITICAL: session/start runs under `tauri::async_runtime::spawn_blocking`.
+        // Tokio's blocking pool keeps idle workers for ~10s then exits the thread.
+        // bwrap `--die-with-parent` uses PR_SET_PDEATHSIG against the forking
+        // *thread*; when that worker exits, the kernel SIGKILLs the live ACP
+        // supervisor (~10.6s after attach). Spawn on a process-lifetime thread
+        // so PDEATHSIG stays aimed at a parent that outlives the session.
         linux_containment::attach_bwrap_supervisor(command)
             .map_err(SpawnOwnedError::safe)?;
-        let child = command.spawn()?;
+        let mut to_spawn = Command::new("true");
+        std::mem::swap(command, &mut to_spawn);
+        let child = spawn_linux_child_on_stable_parent_thread(to_spawn)
+            .map_err(SpawnOwnedError::safe)?;
         Ok(OwnedChild {
             child,
             linux_kill_on_drop: true,
