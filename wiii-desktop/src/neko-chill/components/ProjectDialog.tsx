@@ -3,6 +3,7 @@ import { Folder, FolderPlus, LoaderCircle, X } from "lucide-react";
 import type { NekoProject } from "../stores/neko-project-store";
 import { workspaceKey } from "../stores/neko-project-store";
 import {
+  canChooseWorkspaceFolder,
   chooseWorkspaceFolder,
   resolveWorkspaceFolder,
   type WorkspaceRef,
@@ -46,8 +47,16 @@ export function ProjectDialog({
     setError(null);
   }, [project?.id]);
 
+  const nativeFolderPicker = canChooseWorkspaceFolder();
+
   const addRoot = async () => {
     try {
+      if (!canChooseWorkspaceFolder()) {
+        setError(
+          "Bản xem trước trình duyệt không chọn được thư mục trên máy. Hãy dùng app desktop Wiii để gắn thư mục nguồn.",
+        );
+        return;
+      }
       const selected = await chooseWorkspaceFolder();
       if (!selected) return;
       setRoots((current) => current.some((root) =>
@@ -169,6 +178,11 @@ export function ProjectDialog({
               <p className="mt-0.5 text-[10.5px] text-[var(--nk-text-3)]">
                 Thêm thư mục để Neko làm việc. Mỗi phiên sử dụng một thư mục đã chọn.
               </p>
+              {!nativeFolderPicker ? (
+                <p className="mt-1.5 text-[10.5px] leading-4 text-[var(--nk-text-3)]" data-testid="browser-folder-picker-hint">
+                  Bản xem trước trình duyệt không mở được hộp chọn thư mục máy — dùng app desktop Wiii.
+                </p>
+              ) : null}
             </div>
             <button
               type="button"
