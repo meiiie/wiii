@@ -41,7 +41,7 @@ import {
 import { NEKO_SESSION_STATUS_LABELS } from "./session-status";
 import { sessionStatusDotClass } from "./session-catalog";
 import { NekoTranscript } from "./components/NekoTranscript";
-import { NekoComposer } from "./components/NekoComposer";
+import { NekoComposer, nekoComposerTurnBusy } from "./components/NekoComposer";
 import { NekoOverview } from "./components/NekoOverview";
 import { ProjectHome, type NekoTaskLaunchRequest } from "./components/ProjectHome";
 import { ProjectDialog } from "./components/ProjectDialog";
@@ -1005,7 +1005,7 @@ export default function NekoChillApp({
                 key={session.id}
                 session={session}
                 disabled={session.status === "connecting" || session.status === "error"}
-                streaming={session.status === "streaming"}
+                streaming={nekoComposerTurnBusy(session.status)}
                 onSend={(text, onAccepted) => sendPrompt(text, onAccepted)}
                 onCancel={() => void cancelTurn()}
                 onSetConfigOption={(optionId, value) => void setConfigOption(optionId, value)}

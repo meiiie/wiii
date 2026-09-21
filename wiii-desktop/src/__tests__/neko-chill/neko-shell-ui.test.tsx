@@ -804,6 +804,32 @@ describe("Neko Chill shell UI", () => {
     expect(screen.getByRole("status").textContent).toBe("Đang lưu quyết định…");
   });
 
+  it("shows Stop while dispatching instead of a mute disabled Send", () => {
+    const cancelTurn = vi.fn(async () => {});
+    useNekoSessionStore.setState({
+      sessions: {
+        active: makeSession(
+          "active",
+          "Phiên đang gửi",
+          { path: "C:/work/neko", name: "Neko" },
+          { status: "dispatching" },
+        ),
+      },
+      activeSessionId: "active",
+      cancelTurn,
+    });
+
+    render(<NekoChillApp />);
+
+    expect(screen.queryByTestId("neko-send")).toBeNull();
+    const cancel = screen.getByTestId("neko-cancel");
+    expect(cancel.getAttribute("title")).toBe("Dừng");
+    expect(cancel.getAttribute("aria-label")).toBe("Dừng lượt đang chạy");
+    expect(cancel.getAttribute("aria-disabled")).toBe("false");
+    fireEvent.click(cancel);
+    expect(cancelTurn).toHaveBeenCalledTimes(1);
+  });
+
   it("shows cancel durability progress and blocks duplicate stop clicks", () => {
     const cancelTurn = vi.fn(async () => {});
     useNekoSessionStore.setState({

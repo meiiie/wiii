@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 import { projectHomeSendTitle } from "@/neko-chill/components/ProjectHome";
-import { nekoComposerSendTitle } from "@/neko-chill/components/NekoComposer";
+import {
+  nekoComposerSendTitle,
+  nekoComposerStopTitle,
+  nekoComposerTurnBusy,
+} from "@/neko-chill/components/NekoComposer";
 
 describe("projectHomeSendTitle", () => {
   const base = {
@@ -71,5 +75,28 @@ describe("nekoComposerSendTitle", () => {
       pendingPermission: false,
       pendingControl: false,
     })).toBe("Gửi");
+  });
+});
+
+describe("nekoComposerTurnBusy", () => {
+  it("treats dispatching like streaming so Stop replaces mute Send", () => {
+    expect(nekoComposerTurnBusy("streaming")).toBe(true);
+    expect(nekoComposerTurnBusy("dispatching")).toBe(true);
+    expect(nekoComposerTurnBusy("idle")).toBe(false);
+    expect(nekoComposerTurnBusy("connecting")).toBe(false);
+    expect(nekoComposerTurnBusy("stopping")).toBe(false);
+    expect(nekoComposerTurnBusy("exited")).toBe(false);
+    expect(nekoComposerTurnBusy("error")).toBe(false);
+  });
+});
+
+describe("nekoComposerStopTitle", () => {
+  it("explains staged cancel and permission durability", () => {
+    expect(nekoComposerStopTitle({ cancelPending: true, resolvingPermission: false }))
+      .toBe("Đang lưu yêu cầu dừng…");
+    expect(nekoComposerStopTitle({ cancelPending: false, resolvingPermission: true }))
+      .toBe("Đang lưu quyết định…");
+    expect(nekoComposerStopTitle({ cancelPending: false, resolvingPermission: false }))
+      .toBe("Dừng");
   });
 });
