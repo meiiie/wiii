@@ -37,6 +37,19 @@ function sendButton() {
   return screen.getByRole("button", { name: "Gửi và mở phiên" }) as HTMLButtonElement;
 }
 
+function harnessTrigger() {
+  return screen.getByRole("button", { name: "Chọn Harness" }) as HTMLButtonElement;
+}
+
+async function pickHarness(label: string) {
+  await vi.waitFor(() => expect(harnessTrigger().disabled).toBe(false));
+  fireEvent.click(harnessTrigger());
+  const menu = await screen.findByTestId("project-home-harness-picker-menu");
+  const option = await within(menu).findByRole("option", { name: new RegExp(label, "i") });
+  fireEvent.click(option);
+}
+
+
 beforeEach(() => {
   host.native = false;
   manage.mockReset();
@@ -52,7 +65,7 @@ beforeEach(() => {
 describe("Project Home readiness and missing Neko recovery", () => {
   it("retains the Project draft when sendPrompt returns without acceptance", async () => {
     home([gemini]);
-    fireEvent.change(screen.getByRole("combobox", { name: "Chọn Harness" }), { target: { value: "gemini" } });
+    await pickHarness("Gemini CLI");
     await vi.waitFor(() => expect(sendButton().disabled).toBe(false));
     await act(async () => { fireEvent.click(sendButton()); });
     await vi.waitFor(() => expect(useNekoSessionStore.getState().sendPrompt).toHaveBeenCalledOnce());
@@ -64,7 +77,7 @@ describe("Project Home readiness and missing Neko recovery", () => {
   it("clears only an accepted Project draft", async () => {
     useNekoSessionStore.setState({ sendPrompt: vi.fn(async (_text, accepted) => { accepted?.(); }) });
     home([gemini]);
-    fireEvent.change(screen.getByRole("combobox", { name: "Chọn Harness" }), { target: { value: "gemini" } });
+    await pickHarness("Gemini CLI");
     await vi.waitFor(() => expect(sendButton().disabled).toBe(false));
     await act(async () => { fireEvent.click(sendButton()); });
     await vi.waitFor(() => expect(readNekoComposerDraft(`project:${project.id}`)).toBe(""));
@@ -101,16 +114,20 @@ describe("Project Home readiness and missing Neko recovery", () => {
     expect(send.getAttribute("title")).toBe(
       "Harness đã chọn chưa sẵn sàng. Bản nháp vẫn được giữ.",
     );
-    const harness = screen.getByRole("combobox", { name: "Chọn Harness" }) as HTMLSelectElement;
-    expect(harness.disabled).toBe(true);
+    const harness = harnessTrigger();
+    expect(harness.disabled).toBe(false); // openable to browse unavailable harnesses
     expect(harness.getAttribute("title")).toBe(
       "Harness đã chọn chưa sẵn sàng. Bản nháp vẫn được giữ.",
     );
+    fireEvent.click(harness);
+    const locked = screen.getByRole("option", { name: /Neko Core|Chưa sẵn sàng/i });
+    expect(locked.getAttribute("aria-disabled")).toBe("true");
+    fireEvent.keyDown(screen.getByTestId("project-home-harness-picker-menu"), { key: "Escape" });
   });
 
   it("titles an enabled send as Gửi và mở phiên", async () => {
     home([gemini]);
-    fireEvent.change(screen.getByRole("combobox", { name: "Chọn Harness" }), { target: { value: "gemini" } });
+    await pickHarness("Gemini CLI");
     await vi.waitFor(() => expect(sendButton().disabled).toBe(false));
     expect(sendButton().getAttribute("title")).toBe("Gửi và mở phiên");
   });
@@ -129,10 +146,10 @@ describe("Project Home readiness and missing Neko recovery", () => {
 
   it("never silently substitutes another agent for missing Neko", async () => {
     home([missing, gemini]);
-    const select = screen.getByRole("combobox", { name: "Chọn Harness" });
-    expect((select as HTMLSelectElement).value).toBe("neko");
+    const select = harnessTrigger();
+    expect(select.textContent).toMatch(/Neko|Chưa sẵn sàng/i);
     expect(sendButton().disabled).toBe(true);
-    fireEvent.change(select, { target: { value: "gemini" } });
+    await pickHarness("Gemini CLI");
     expect(screen.queryByRole("button", { name: "Quản lý harness" })).toBeNull();
     await vi.waitFor(() => expect(sendButton().disabled).toBe(false));
     fireEvent.click(sendButton());
@@ -160,19 +177,19 @@ describe("Project Home readiness and missing Neko recovery", () => {
     expect(useNekoSessionStore.getState().createSession).not.toHaveBeenCalled();
   });
 
-  it("keeps a provider-scoped probe failure separate from an alternative", () => {
+  it("keeps a provider-scoped probe failure separate from an alternative", async () => {
     home([{ ...missing, availability: "probe_failed", detail: "probe timed out" }, gemini]);
     expect(screen.getByText(/Harness đã chọn chưa sẵn sàng/)).toBeTruthy();
     expect(screen.queryByText("Cách cài Neko Core")).toBeNull();
     expect(sendButton().disabled).toBe(true);
-    fireEvent.change(screen.getByRole("combobox", { name: "Chọn Harness" }), { target: { value: "gemini" } });
+    await pickHarness("Gemini CLI");
     expect(sendButton().disabled).toBe(false);
   });
 
   it("defaults an unconfigured Project to Neko regardless of provider order", async () => {
     useNekoAgentStore.setState({ agents: [gemini, neko] });
     render(<ProjectHome project={{ ...project, preferredHarnessId: null }} resetToken={0} />);
-    expect((screen.getByRole("combobox", { name: "Chọn Harness" }) as HTMLSelectElement).value).toBe("neko");
+    expect(harnessTrigger().textContent).toMatch(/Neko|Chưa sẵn sàng/i);
     await vi.waitFor(() => expect(host.profiles).toHaveBeenCalledOnce());
     expect(useNekoSessionStore.getState().createSession).not.toHaveBeenCalled();
   });
@@ -180,7 +197,7 @@ describe("Project Home readiness and missing Neko recovery", () => {
   it("preserves a Project's explicit existing agent preference", () => {
     useNekoAgentStore.setState({ agents: [neko, gemini] });
     render(<ProjectHome project={{ ...project, preferredHarnessId: "gemini" }} resetToken={0} />);
-    expect((screen.getByRole("combobox", { name: "Chọn Harness" }) as HTMLSelectElement).value).toBe("gemini");
+    expect(harnessTrigger().textContent).toMatch(/Gemini/i);
     expect(host.profiles).not.toHaveBeenCalled();
   });
 
@@ -189,7 +206,8 @@ describe("Project Home readiness and missing Neko recovery", () => {
       home([neko], state);
       expect(host.profiles).not.toHaveBeenCalled();
       expect(sendButton().disabled).toBe(true);
-      expect((screen.getByRole("combobox", { name: "Chọn Harness" }) as HTMLSelectElement).disabled).toBe(true);
+      // Loading: picker stays openable. Discovery error: picker hard-disabled.
+      expect(harnessTrigger().disabled).toBe(Boolean((state as { error?: string }).error));
     },
   );
 
@@ -272,7 +290,7 @@ describe("Project Home readiness and missing Neko recovery", () => {
     host.providers.mockResolvedValue([gemini]);
     render(<ProjectHome project={{ ...project, preferredHarnessId: "gemini" }} resetToken={0} />);
     await vi.waitFor(() => expect(host.providers).toHaveBeenCalledExactlyOnceWith("gemini"));
-    await vi.waitFor(() => expect((screen.getByRole("combobox", { name: "Chọn Harness" }) as HTMLSelectElement).disabled).toBe(false));
+    await vi.waitFor(() => expect((harnessTrigger()).disabled).toBe(false));
     expect(useNekoSessionStore.getState().createSession).not.toHaveBeenCalled();
   });
 
