@@ -2394,6 +2394,7 @@ export const useNekoSessionStore = create<NekoSessionState>()(
             session.cancelPending = false;
             session.statusDetail = providerProcessExitDetail(event.code, {
               emptyModelReply: !sessionHasVisibleModelOutput(session.messages, session.events),
+              stderrTail: event.stderrTail,
             });
             return;
           }

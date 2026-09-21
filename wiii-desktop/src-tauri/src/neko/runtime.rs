@@ -11,7 +11,7 @@ use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 use std::collections::{HashMap, HashSet};
 use std::fs::{File, OpenOptions};
-use std::io::{self, BufRead, BufReader, Write};
+use std::io::{self, BufRead, BufReader, Read, Write};
 use std::path::Path;
 use std::process::{Command, Stdio};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -25,6 +25,9 @@ const WRITE_RESULT_TIMEOUT: Duration = Duration::from_secs(5);
 const PROCESS_EXIT_POLL_INTERVAL: Duration = Duration::from_millis(100);
 const PROVIDER_READER_DRAIN_TIMEOUT: Duration = Duration::from_secs(1);
 const MAX_PROVIDER_FRAME_BYTES: usize = 4 * 1024 * 1024;
+/// Last N bytes of provider stderr kept for exit diagnostics (signal kills).
+/// Honest capture only — never used to invent a kill cause in code.
+const MAX_PROVIDER_STDERR_BYTES: usize = 8 * 1024;
 
 pub(crate) const UNKNOWN_OUTCOME_PREFIX: &str = "unknown_outcome:";
 
@@ -40,6 +43,7 @@ struct WriteJob {
 struct AgentProc {
     child: OwnedChild,
     writer: SyncSender<WriteJob>,
+    stderr: StderrCapture,
 }
 
 struct ReaderWorker {
@@ -59,6 +63,9 @@ struct ProcessExitNotice {
     exit_code: Option<i32>,
     termination_proven: bool,
     terminal_state_persisted: bool,
+    /// Lossy UTF-8 tail of provider stderr (bounded). Absent when empty.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    stderr_tail: Option<String>,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -405,7 +412,7 @@ impl NekoRuntime {
             .current_dir(&request.workspace_path)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
-            .stderr(Stdio::null());
+            .stderr(Stdio::piped());
         let mut child = match spawn_owned(&mut command) {
             Ok(child) => child,
             Err(error) if error.cleanup_unproven() => {
@@ -439,8 +446,9 @@ impl NekoRuntime {
         };
         let stdin = child.child.stdin.take();
         let stdout = child.child.stdout.take();
-        let (stdin, stdout) = match (stdin, stdout) {
-            (Some(stdin), Some(stdout)) => (stdin, stdout),
+        let stderr = child.child.stderr.take();
+        let (stdin, stdout, stderr) = match (stdin, stdout, stderr) {
+            (Some(stdin), Some(stdout), Some(stderr)) => (stdin, stdout, stderr),
             _ => {
                 let termination = terminate_child_tree(&mut child).map_err(|error| {
                     format!(
@@ -478,9 +486,32 @@ impl NekoRuntime {
                 ));
             }
         };
+        let stderr = match spawn_stderr_capture(stderr) {
+            Ok(stderr) => stderr,
+            Err(error) => {
+                let termination = terminate_child_tree(&mut child).map_err(|cleanup| {
+                    format!(
+                        "terminate provider process tree failed: {}",
+                        bounded_error(&cleanup)
+                    )
+                });
+                return Err(self.classify_spawn_failure(
+                    &app,
+                    &request,
+                    "provider_stderr_unavailable",
+                    resolved.version.as_deref(),
+                    format!("provider stderr capture thread could not start: {error}"),
+                    termination,
+                ));
+            }
+        };
         lock(&self.inner.processes).insert(
             request.agent_session_id.clone(),
-            AgentProc { child, writer },
+            AgentProc {
+                child,
+                writer,
+                stderr,
+            },
         );
 
         let runtime = self.clone();
@@ -1260,6 +1291,11 @@ impl NekoRuntime {
         // renderer of exit. A broken descendant may still retain the pipe, so
         // draining is bounded and happens without the global lifecycle lock.
         let _ = reader_finished.recv_timeout(PROVIDER_READER_DRAIN_TIMEOUT);
+        let _ = process
+            .stderr
+            .finished
+            .recv_timeout(PROVIDER_READER_DRAIN_TIMEOUT);
+        let stderr_tail = lock(&process.stderr.tail).snapshot_lossy();
         let _operation = lock(&self.inner.operations);
         let session = session_or_retain_terminal_fact(
             self.inner.journal.session(agent_session_id),
@@ -1275,16 +1311,20 @@ impl NekoRuntime {
             None => false,
         };
         if let Some(session) = session {
+            let mut payload = json!({
+                "exitCode": code,
+                "terminationProven": termination.is_ok(),
+                "terminalStatePersisted": terminal_state_persisted,
+            });
+            if let Some(stderr_tail) = &stderr_tail {
+                payload["stderrTail"] = Value::String(stderr_tail.clone());
+            }
             let _ = self.emit_control_event(
                 app,
                 &session.run_id,
                 "process.exited",
                 agent_session_id,
-                json!({
-                    "exitCode": code,
-                    "terminationProven": termination.is_ok(),
-                    "terminalStatePersisted": terminal_state_persisted,
-                }),
+                payload,
             );
         }
         self.complete_exit_supervision(agent_session_id);
@@ -1292,6 +1332,7 @@ impl NekoRuntime {
             exit_code: code,
             termination_proven: termination.is_ok(),
             terminal_state_persisted,
+            stderr_tail,
         })
     }
 
@@ -1313,6 +1354,11 @@ impl NekoRuntime {
             agent_session_id,
             &fact,
         );
+        let _ = process
+            .stderr
+            .finished
+            .recv_timeout(PROVIDER_READER_DRAIN_TIMEOUT);
+        let stderr_tail = lock(&process.stderr.tail).snapshot_lossy();
         let Some(session) = session else {
             let _ = app.emit(
                 &format!("neko-session://exit/{agent_session_id}"),
@@ -1320,6 +1366,7 @@ impl NekoRuntime {
                     exit_code: None,
                     termination_proven: termination.is_ok(),
                     terminal_state_persisted: false,
+                    stderr_tail,
                 },
             );
             return;
@@ -1330,17 +1377,21 @@ impl NekoRuntime {
             self.persist_terminal_fact(app, agent_session_id, fact)
                 .is_ok()
         };
+        let mut payload = json!({
+            "exitCode": null,
+            "reason": "provider_protocol_failure",
+            "terminationProven": termination.is_ok(),
+            "terminalStatePersisted": terminal_state_persisted,
+        });
+        if let Some(stderr_tail) = &stderr_tail {
+            payload["stderrTail"] = Value::String(stderr_tail.clone());
+        }
         let _ = self.emit_control_event(
             app,
             &session.run_id,
             "process.exited",
             agent_session_id,
-            json!({
-                "exitCode": null,
-                "reason": "provider_protocol_failure",
-                "terminationProven": termination.is_ok(),
-                "terminalStatePersisted": terminal_state_persisted,
-            }),
+            payload,
         );
         let _ = app.emit(
             &format!("neko-session://exit/{agent_session_id}"),
@@ -1348,6 +1399,7 @@ impl NekoRuntime {
                 exit_code: None,
                 termination_proven: termination.is_ok(),
                 terminal_state_persisted,
+                stderr_tail,
             },
         );
     }
@@ -1475,6 +1527,93 @@ fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
     mutex
         .lock()
         .unwrap_or_else(|poisoned| poisoned.into_inner())
+}
+
+/// Bounded ring of provider stderr bytes. Overwrites from the front when full.
+struct StderrTail {
+    bytes: Vec<u8>,
+    max_bytes: usize,
+    truncated: bool,
+}
+
+impl StderrTail {
+    fn new(max_bytes: usize) -> Self {
+        Self {
+            bytes: Vec::new(),
+            max_bytes,
+            truncated: false,
+        }
+    }
+
+    fn extend(&mut self, chunk: &[u8]) {
+        if chunk.is_empty() || self.max_bytes == 0 {
+            return;
+        }
+        if chunk.len() >= self.max_bytes {
+            self.bytes.clear();
+            self.bytes.extend_from_slice(&chunk[chunk.len() - self.max_bytes..]);
+            self.truncated = true;
+            return;
+        }
+        let overflow = self
+            .bytes
+            .len()
+            .saturating_add(chunk.len())
+            .saturating_sub(self.max_bytes);
+        if overflow > 0 {
+            self.bytes.drain(..overflow);
+            self.truncated = true;
+        }
+        self.bytes.extend_from_slice(chunk);
+    }
+
+    /// Lossy UTF-8 snapshot for journal/UI. `None` when empty/whitespace-only.
+    /// Does not interpret kill cause — callers surface the text as-is.
+    fn snapshot_lossy(&self) -> Option<String> {
+        if self.bytes.is_empty() {
+            return None;
+        }
+        let text = String::from_utf8_lossy(&self.bytes);
+        let trimmed = text.trim();
+        if trimmed.is_empty() {
+            return None;
+        }
+        if self.truncated {
+            Some(format!("…[truncated]
+{trimmed}"))
+        } else {
+            Some(trimmed.to_string())
+        }
+    }
+}
+
+struct StderrCapture {
+    tail: Arc<Mutex<StderrTail>>,
+    finished: Receiver<()>,
+}
+
+fn spawn_stderr_capture(stderr: std::process::ChildStderr) -> io::Result<StderrCapture> {
+    let tail = Arc::new(Mutex::new(StderrTail::new(MAX_PROVIDER_STDERR_BYTES)));
+    let (finished_sender, finished_receiver) = channel::<()>();
+    let writer = Arc::clone(&tail);
+    std::thread::Builder::new()
+        .name("neko-provider-stderr".into())
+        .spawn(move || {
+            let mut reader = BufReader::new(stderr);
+            let mut buf = [0u8; 4096];
+            loop {
+                match reader.read(&mut buf) {
+                    Ok(0) => break,
+                    Ok(n) => lock(&writer).extend(&buf[..n]),
+                    Err(_) => break,
+                }
+            }
+            let _ = finished_sender.send(());
+        })?;
+    Ok(StderrCapture {
+        tail,
+        finished: finished_receiver,
+    })
 }
 
 fn spawn_writer(mut stdin: std::process::ChildStdin) -> io::Result<SyncSender<WriteJob>> {
@@ -1806,5 +1945,29 @@ mod tests {
             assert!(NekoRuntime::open(&path).is_ok());
         }
         remove_runtime_test_directory(&path);
+    }
+
+    #[test]
+    fn stderr_tail_keeps_only_the_last_n_bytes() {
+        let mut tail = StderrTail::new(8);
+        tail.extend(b"abcdefghij"); // 10 bytes → last 8
+        assert_eq!(tail.snapshot_lossy().as_deref(), Some("…[truncated]\ncdefghij"));
+        let mut tail = StderrTail::new(8);
+        tail.extend(b"abcd");
+        tail.extend(b"efghij");
+        assert_eq!(tail.snapshot_lossy().as_deref(), Some("…[truncated]\ncdefghij"));
+    }
+
+    #[test]
+    fn stderr_tail_snapshot_skips_empty_and_whitespace() {
+        let mut empty = StderrTail::new(32);
+        assert!(empty.snapshot_lossy().is_none());
+        empty.extend(b"   \n\t  ");
+        assert!(empty.snapshot_lossy().is_none());
+        empty.extend(b"bwrap: die-with-parent");
+        assert_eq!(
+            empty.snapshot_lossy().as_deref(),
+            Some("bwrap: die-with-parent")
+        );
     }
 }

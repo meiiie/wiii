@@ -1,5 +1,5 @@
 import { v4 as uuidv4 } from "uuid";
-import type { AcpTransport } from "./acp-transport";
+import type { AcpExitDetail, AcpTransport } from "./acp-transport";
 import type {
   NekoDetectedProvider,
   NekoLaunchProfile,
@@ -74,17 +74,19 @@ interface NativeProcessExitNotice {
   exitCode: number | null;
   terminationProven: boolean;
   terminalStatePersisted: boolean;
+  stderrTail?: string | null;
 }
 
 interface StartTransportState {
   lineHandlers: Array<(line: string) => void>;
-  exitHandlers: Array<(code: number | null) => void>;
+  exitHandlers: Array<(code: number | null, detail?: AcpExitDetail) => void>;
   pendingLines: string[];
   pendingLineBytes: number;
   terminalError: string | null;
   overflowCancellation: Promise<boolean> | null;
   exitObserved: boolean;
   pendingExitCode: number | null;
+  pendingStderrTail: string | null;
   killed: boolean;
   killPromise: Promise<void> | null;
   cancelRequestId: string;
@@ -646,9 +648,13 @@ class TauriNekoControlClient implements NekoControlClient {
           for (const line of buffered) handler(line);
         }
       },
-      onExit(handler: (code: number | null) => void): void {
+      onExit(handler: (code: number | null, detail?: AcpExitDetail) => void): void {
         if (transportState.killed && transportState.exitObserved) {
-          queueMicrotask(() => handler(transportState.pendingExitCode));
+          queueMicrotask(() =>
+            handler(transportState.pendingExitCode, {
+              stderrTail: transportState.pendingStderrTail,
+            }),
+          );
           return;
         }
         transportState.exitHandlers.push(handler);
@@ -708,6 +714,7 @@ function createStartTransportState(): StartTransportState {
     overflowCancellation: null,
     exitObserved: false,
     pendingExitCode: null,
+    pendingStderrTail: null,
     killed: false,
     killPromise: null,
     cancelRequestId: uuidv4(),
@@ -740,7 +747,8 @@ function detachStartListeners(state: StartTransportState): void {
 function notifyProvenExit(state: StartTransportState): void {
   if (!state.killed || !state.exitObserved) return;
   const handlers = state.exitHandlers.splice(0);
-  for (const handler of handlers) handler(state.pendingExitCode);
+  const detail = { stderrTail: state.pendingStderrTail };
+  for (const handler of handlers) handler(state.pendingExitCode, detail);
 }
 
 async function ensureStartListeners(
@@ -791,6 +799,10 @@ async function ensureStartListeners(
             : { exitCode: null, terminationProven: false, terminalStatePersisted: false };
           state.exitObserved = true;
           state.pendingExitCode = notice.exitCode;
+          state.pendingStderrTail =
+            typeof notice.stderrTail === "string" && notice.stderrTail.trim()
+              ? notice.stderrTail
+              : null;
           // A leader exit is not proof that its process tree disappeared.
           // Renderer-facing exit is also withheld until native authority has
           // durably recorded the terminal lifecycle fact.
@@ -916,7 +928,10 @@ function isNativeProcessExitNotice(value: unknown): value is NativeProcessExitNo
   return (
     (notice.exitCode === null || typeof notice.exitCode === "number") &&
     typeof notice.terminationProven === "boolean" &&
-    typeof notice.terminalStatePersisted === "boolean"
+    typeof notice.terminalStatePersisted === "boolean" &&
+    (notice.stderrTail === undefined ||
+      notice.stderrTail === null ||
+      typeof notice.stderrTail === "string")
   );
 }
 

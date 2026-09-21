@@ -35,7 +35,7 @@ class FakeTransport implements AcpTransport {
   sent: Frame[] = [];
   killed = false;
   private lineHandlers: Array<(line: string) => void> = [];
-  private exitHandlers: Array<(code: number | null) => void> = [];
+  private exitHandlers: Array<(code: number | null, detail?: { stderrTail?: string | null }) => void> = [];
 
   async send(line: string): Promise<void> {
     this.sent.push(JSON.parse(line));
@@ -43,7 +43,7 @@ class FakeTransport implements AcpTransport {
   onLine(handler: (line: string) => void): void {
     this.lineHandlers.push(handler);
   }
-  onExit(handler: (code: number | null) => void): void {
+  onExit(handler: (code: number | null, detail?: { stderrTail?: string | null }) => void): void {
     this.exitHandlers.push(handler);
   }
   async kill(): Promise<void> {

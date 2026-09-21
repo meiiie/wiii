@@ -145,7 +145,7 @@ export type DriverEvent =
   | { type: "permission-request"; sessionId: string; request: PermissionRequest }
   | { type: "turn-finished"; sessionId: string; stopReason: TurnStopReason }
   | { type: "error"; sessionId: string; message: string; fatal: boolean }
-  | { type: "process-exited"; sessionId: string; code: number | null };
+  | { type: "process-exited"; sessionId: string; code: number | null; stderrTail?: string | null };
 
 export type DriverEventType = DriverEvent["type"];
 

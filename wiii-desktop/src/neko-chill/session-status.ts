@@ -20,7 +20,7 @@ export const NEKO_SESSION_STATUS_LABELS = {
  */
 export function providerProcessExitDetail(
   code: number | null,
-  options?: { emptyModelReply?: boolean },
+  options?: { emptyModelReply?: boolean; stderrTail?: string | null },
 ): string {
   const base =
     code === null
@@ -28,10 +28,16 @@ export function providerProcessExitDetail(
       : code === 0
         ? "Agent đã thoát sạch (mã 0)."
         : `Agent thoát với mã lỗi ${code}.`;
+  const parts = [base];
   if (options?.emptyModelReply) {
-    return `${base} Chưa có phản hồi từ model trong lượt này.`;
+    parts.push("Chưa có phản hồi từ model trong lượt này.");
   }
-  return base;
+  const stderr = options?.stderrTail?.trim();
+  if (stderr) {
+    // Honest surface only — do not interpret/guess the kill cause from this text.
+    parts.push(`stderr (đuôi ghi nhận): ${stderr}`);
+  }
+  return parts.join(" ");
 }
 
 /** True when the transcript shows any assistant text, thinking, tool, or workspace activity. */

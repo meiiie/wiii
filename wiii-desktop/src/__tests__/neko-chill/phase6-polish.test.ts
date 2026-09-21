@@ -40,14 +40,14 @@ type Frame = Record<string, any>;
 class FakeTransport implements AcpTransport {
   sent: Frame[] = [];
   private lineHandlers: Array<(line: string) => void> = [];
-  private exitHandlers: Array<(code: number | null) => void> = [];
+  private exitHandlers: Array<(code: number | null, detail?: { stderrTail?: string | null }) => void> = [];
   async send(line: string): Promise<void> {
     this.sent.push(JSON.parse(line));
   }
   onLine(h: (line: string) => void): void {
     this.lineHandlers.push(h);
   }
-  onExit(h: (code: number | null) => void): void {
+  onExit(h: (code: number | null, detail?: { stderrTail?: string | null }) => void): void {
     this.exitHandlers.push(h);
   }
   async kill(): Promise<void> {}
