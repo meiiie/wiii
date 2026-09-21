@@ -218,7 +218,7 @@ export const SessionSidebar = memo(function SessionSidebar({
       </div>
 
       <div className="flex h-8 items-center justify-between px-3 text-[10px] font-semibold uppercase tracking-[0.08em] text-[var(--nk-ghost)]">
-        <span>Projects</span>
+        <span>Dự án</span>
         <button
           type="button"
           className="grid h-6 w-6 place-items-center rounded-md transition-colors hover:bg-[var(--nk-overlay)] hover:text-[var(--nk-text)]"
@@ -232,9 +232,26 @@ export const SessionSidebar = memo(function SessionSidebar({
 
       <div className="nk-scroll-surface min-h-0 flex-1 overflow-y-auto px-2 pb-3">
         {projectRows.length === 0 && legacySessions.length === 0 ? (
-          <p className="px-2.5 py-3 text-[12px] leading-5 text-[var(--nk-text-3)]">
-            {searching ? "Không tìm thấy phiên hoặc Project phù hợp." : "Chưa có Project. Nhấn + để thêm thư mục đầu tiên."}
-          </p>
+          searching ? (
+            <p className="px-2.5 py-3 text-[12px] leading-5 text-[var(--nk-text-3)]">
+              Không tìm thấy phiên hoặc Project phù hợp.
+            </p>
+          ) : (
+            <div className="px-2.5 py-3" data-testid="empty-projects-cta">
+              <p className="text-[12px] leading-5 text-[var(--nk-text-3)]">
+                Chưa có Project. Tạo Project đầu tiên để gắn thư mục nguồn — rồi mới mở Phiên mới.
+              </p>
+              <button
+                type="button"
+                className="mt-2.5 inline-flex h-8 w-full items-center justify-center gap-1.5 rounded-lg bg-[var(--nk-inverse)] px-3 text-[12px] font-medium text-[var(--nk-on-inverse)] transition-opacity hover:opacity-90"
+                onClick={onCreateProject}
+                data-testid="create-first-project"
+              >
+                <Plus aria-hidden="true" className="h-3.5 w-3.5" />
+                Tạo Project đầu tiên
+              </button>
+            </div>
+          )
         ) : (
           <div className="space-y-1" data-testid="project-session-tree">
             {projectRows.map(({ project, sessions: projectSessions }) => {

@@ -31,6 +31,7 @@ interface NekoCommandCenterProps {
   sessions: NekoSession[];
   activeSession: NekoSession | null;
   sidebarOpen: boolean;
+  hasProjects?: boolean;
   onClose: () => void;
   onAction: (action: WorkbenchActionName) => void;
   onSelectSession: (sessionId: string) => void;
@@ -67,6 +68,7 @@ function NekoCommandCenterComponent({
   sessions,
   activeSession,
   sidebarOpen,
+  hasProjects = true,
   onClose,
   onAction,
   onSelectSession,
@@ -80,8 +82,8 @@ function NekoCommandCenterComponent({
   const returnFocusRef = useRef<HTMLElement | null>(null);
   const wasOpenRef = useRef(false);
   const items = useMemo(
-    () => buildNekoCommandItems(sessions, activeSession, sidebarOpen),
-    [activeSession, sessions, sidebarOpen],
+    () => buildNekoCommandItems(sessions, activeSession, sidebarOpen, hasProjects),
+    [activeSession, hasProjects, sessions, sidebarOpen],
   );
   const metadataMatches = useMemo(
     () => filterNekoCommandMetadata(items, query),

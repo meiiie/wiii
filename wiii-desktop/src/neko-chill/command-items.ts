@@ -113,9 +113,16 @@ export function buildNekoCommandItems(
   sessions: NekoSession[],
   activeSession: NekoSession | null,
   sidebarOpen: boolean,
+  hasProjects = true,
 ): NekoCommandItem[] {
   const actions: ActionCommandItem[] = [
-    actionItem("new", "Phiên mới", "Soạn lời nhắn trong Project hiện tại"),
+    actionItem(
+      "new",
+      "Phiên mới",
+      hasProjects
+        ? "Soạn lời nhắn trong Project hiện tại"
+        : "Cần tạo Project trước — rồi mở phiên trong Project đó",
+    ),
     actionItem(
       "toggle-sidebar",
       sidebarOpen ? "Ẩn cây dự án và phiên" : "Hiện cây dự án và phiên",
