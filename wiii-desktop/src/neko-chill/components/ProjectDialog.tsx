@@ -4,6 +4,7 @@ import type { NekoProject } from "../stores/neko-project-store";
 import { workspaceKey } from "../stores/neko-project-store";
 import {
   BROWSER_FOLDER_PICKER_UNAVAILABLE_VI,
+  NATIVE_FOLDER_PICKER_SELECT_HINT_VI,
   canChooseWorkspaceFolder,
   chooseWorkspaceFolder,
   resolveWorkspaceFolder,
@@ -201,13 +202,17 @@ export function ProjectDialog({
                 <p className="mt-1.5 text-[10.5px] leading-4 text-[var(--nk-text-3)]" data-testid="browser-folder-picker-hint">
                   Bản xem trước trình duyệt không mở được hộp chọn thư mục máy — dùng app desktop Wiii.
                 </p>
-              ) : null}
+              ) : (
+                <p className="mt-1.5 text-[10.5px] leading-4 text-[var(--nk-text-3)]" data-testid="native-folder-picker-hint">
+                  {NATIVE_FOLDER_PICKER_SELECT_HINT_VI}
+                </p>
+              )}
             </div>
             <button
               type="button"
               className="inline-flex h-8 shrink-0 items-center gap-1.5 whitespace-nowrap rounded-lg px-2.5 text-[11px] text-[var(--nk-text-2)] transition-colors hover:bg-[var(--nk-overlay)] hover:text-[var(--nk-text)] disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-transparent disabled:hover:text-[var(--nk-text-2)]"
               disabled={saving || !nativeFolderPicker}
-              title={!nativeFolderPicker ? BROWSER_FOLDER_PICKER_UNAVAILABLE_VI : undefined}
+              title={!nativeFolderPicker ? BROWSER_FOLDER_PICKER_UNAVAILABLE_VI : NATIVE_FOLDER_PICKER_SELECT_HINT_VI}
               aria-disabled={!nativeFolderPicker || undefined}
               data-testid="project-dialog-add-folder"
               onClick={() => void addRoot()}
@@ -240,7 +245,7 @@ export function ProjectDialog({
                 type="button"
                 className="flex min-h-[96px] w-full flex-col items-center justify-center gap-2 text-[11.5px] text-[var(--nk-text-3)] transition-colors hover:bg-[var(--nk-overlay)] hover:text-[var(--nk-text)] disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-transparent disabled:hover:text-[var(--nk-text-3)]"
                 disabled={saving || !nativeFolderPicker}
-                title={!nativeFolderPicker ? BROWSER_FOLDER_PICKER_UNAVAILABLE_VI : undefined}
+                title={!nativeFolderPicker ? BROWSER_FOLDER_PICKER_UNAVAILABLE_VI : NATIVE_FOLDER_PICKER_SELECT_HINT_VI}
                 aria-disabled={!nativeFolderPicker || undefined}
                 data-testid="project-dialog-empty-folder"
                 onClick={() => void addRoot()}
