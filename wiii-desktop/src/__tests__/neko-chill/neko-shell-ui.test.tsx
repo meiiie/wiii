@@ -21,10 +21,11 @@ import {
 } from "@/neko-chill/stores/neko-session-store";
 import { useNekoWorkspaceStore } from "@/neko-chill/stores/neko-workspace-store";
 import { useNekoProjectStore } from "@/neko-chill/stores/neko-project-store";
-import { chooseWorkspaceFolder } from "@/neko-chill/workspace";
+import { canChooseWorkspaceFolder, chooseWorkspaceFolder } from "@/neko-chill/workspace";
 
 vi.mock("@/neko-chill/workspace", async (importOriginal) => ({
   ...await importOriginal<typeof import("@/neko-chill/workspace")>(),
+  canChooseWorkspaceFolder: vi.fn(() => true),
   chooseWorkspaceFolder: vi.fn(async () => null),
 }));
 
@@ -69,6 +70,7 @@ function makeSession(
 describe("Neko Chill shell UI", () => {
   const hydrateProjects = useNekoProjectStore.getState().hydrate;
   beforeEach(() => {
+    vi.mocked(canChooseWorkspaceFolder).mockReset().mockReturnValue(true);
     vi.mocked(chooseWorkspaceFolder).mockReset().mockResolvedValue(null);
     useNekoAgentStore.setState({
       agents: [],
