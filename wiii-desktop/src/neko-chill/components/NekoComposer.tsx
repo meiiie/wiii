@@ -47,6 +47,27 @@ interface NekoComposerProps {
   insertRequest?: ComposerInsertRequest | null;
 }
 
+
+/** Control-local send tooltip — never leave a mute disabled send as "Gửi". */
+export function nekoComposerSendTitle(args: {
+  streaming: boolean;
+  hasWorkspace: boolean;
+  composerDisabled: boolean;
+  submitting: boolean;
+  hasDraft: boolean;
+  pendingPermission: boolean;
+  pendingControl: boolean;
+}): string {
+  if (args.streaming) return "Dừng";
+  if (!args.hasWorkspace) return "Gắn dự án trước khi gửi.";
+  if (args.pendingPermission) return "Đang chờ bạn xác nhận quyền.";
+  if (args.pendingControl) return "Đang đổi cấu hình phiên…";
+  if (args.submitting) return "Đang gửi…";
+  if (args.composerDisabled) return "Phiên chưa sẵn sàng để nhận tin nhắn.";
+  if (!args.hasDraft) return "Nhập nội dung trước khi gửi.";
+  return "Gửi";
+}
+
 function controlLabel(option: DriverConfigOption): string {
   if (typeof option.currentValue === "boolean") return option.currentValue ? "Bật" : "Tắt";
   return option.choices?.find((choice) => choice.value === option.currentValue)?.label
@@ -133,6 +154,15 @@ function NekoComposerComponent({
       .slice(0, 8);
   }, [session.commands, slashQuery]);
   const slashOpen = slashQuery !== null && !slashDismissed && !composerDisabled;
+  const sendTitle = nekoComposerSendTitle({
+    streaming,
+    hasWorkspace: Boolean(session.workspace),
+    composerDisabled,
+    submitting,
+    hasDraft: Boolean(draft.trim()),
+    pendingPermission: Boolean(session.pendingPermission),
+    pendingControl: Boolean(session.pendingControlId),
+  });
 
   const setDraft = (value: string) => {
     setDraftState(value);
@@ -366,7 +396,7 @@ function NekoComposerComponent({
                 className="flex h-[28px] w-[28px] items-center justify-center rounded-full bg-[var(--nk-inverse)] text-[var(--nk-on-inverse)] disabled:opacity-30"
                 disabled={composerDisabled || !session.workspace || !draft.trim()}
                 onClick={submit}
-                title="Gửi"
+                title={sendTitle}
                 aria-label="Gửi tin nhắn"
                 data-testid="neko-send"
               >

@@ -93,6 +93,28 @@ describe("Project Home readiness and missing Neko recovery", () => {
     }
   });
 
+
+  it("explains a gated send with a control-local title (not mute disabled)", () => {
+    home([missing]);
+    const send = sendButton();
+    expect(send.disabled).toBe(true);
+    expect(send.getAttribute("title")).toBe(
+      "Harness đã chọn chưa sẵn sàng. Bản nháp vẫn được giữ.",
+    );
+    const harness = screen.getByRole("combobox", { name: "Chọn Harness" }) as HTMLSelectElement;
+    expect(harness.disabled).toBe(true);
+    expect(harness.getAttribute("title")).toBe(
+      "Harness đã chọn chưa sẵn sàng. Bản nháp vẫn được giữ.",
+    );
+  });
+
+  it("titles an enabled send as Gửi và mở phiên", async () => {
+    home([gemini]);
+    fireEvent.change(screen.getByRole("combobox", { name: "Chọn Harness" }), { target: { value: "gemini" } });
+    await vi.waitFor(() => expect(sendButton().disabled).toBe(false));
+    expect(sendButton().getAttribute("title")).toBe("Gửi và mở phiên");
+  });
+
   it("routes missing Neko management away from the draft without launching or installing", () => {
     const input = home([missing]);
     expect(screen.queryByText("Cách cài Neko Core")).toBeNull();
