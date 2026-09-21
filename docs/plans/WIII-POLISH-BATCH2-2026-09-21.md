@@ -1,11 +1,11 @@
 # WIII polish Batch 2 — 2026-09-21
 
-Status: Active · #978 merged · #979 shipping
-Owner: soft+BIG polish (this agent) · Teammate (WIII verify) keep off claimed paths
+Status: **Complete** · #978 + #979 merged on `main` @ `b873afa` · CLEAN-STOP → see WIII-POLISH-BATCH3-2026-09-21.md
+Owner: soft+BIG polish (this agent) · Claims **released** with CLEAN-STOP
 Base: `main` @ `#978` · Preview: `localhost:1420/?preview=neko-chill`
 Voice: VI-first · ZCode-selective (calm density / disabled=explained / keyboard honesty — **no ZCode brand copy**)
 
-## Claimed surfaces (Batch 2) — other agents keep off
+## Claimed surfaces (Batch 2) — released
 
 | Surface | Paths |
 |---|---|
@@ -23,3 +23,7 @@ Voice: VI-first · ZCode-selective (calm density / disabled=explained / keyboard
 ## Out of scope
 
 - Brand copy · backend/Tauri beyond existing helpers · Dependabot · broad CSS redesign
+
+## Handoff
+
+Lived retest after merge: IME/submitting + hydrate skeleton **PASS**. Remaining P2 items (empty transcript pad, filter-empty chrome, light ghost==text-3) parked under **WIII-POLISH-BATCH3 CLEAN-STOP** — not task-blocking vs ZCode.
