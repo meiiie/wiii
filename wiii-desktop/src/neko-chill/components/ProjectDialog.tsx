@@ -3,6 +3,7 @@ import { Folder, FolderPlus, LoaderCircle, X } from "lucide-react";
 import type { NekoProject } from "../stores/neko-project-store";
 import { workspaceKey } from "../stores/neko-project-store";
 import {
+  BROWSER_FOLDER_PICKER_UNAVAILABLE_VI,
   canChooseWorkspaceFolder,
   chooseWorkspaceFolder,
   resolveWorkspaceFolder,
@@ -192,7 +193,7 @@ export function ProjectDialog({
         <div className="mt-5">
           <div className="flex flex-wrap items-end justify-between gap-3">
             <div>
-              <h2 className="text-[11.5px] font-medium text-[var(--nk-text-2)]">Workspace / thư mục nguồn</h2>
+              <h2 className="text-[11.5px] font-medium text-[var(--nk-text-2)]">Thư mục nguồn</h2>
               <p className="mt-0.5 text-[10.5px] text-[var(--nk-text-3)]">
                 Thêm thư mục để Neko làm việc. Mỗi phiên sử dụng một thư mục đã chọn.
               </p>
@@ -204,8 +205,11 @@ export function ProjectDialog({
             </div>
             <button
               type="button"
-              className="inline-flex h-8 shrink-0 items-center gap-1.5 whitespace-nowrap rounded-lg px-2.5 text-[11px] text-[var(--nk-text-2)] transition-colors hover:bg-[var(--nk-overlay)] hover:text-[var(--nk-text)]"
-              disabled={saving}
+              className="inline-flex h-8 shrink-0 items-center gap-1.5 whitespace-nowrap rounded-lg px-2.5 text-[11px] text-[var(--nk-text-2)] transition-colors hover:bg-[var(--nk-overlay)] hover:text-[var(--nk-text)] disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-transparent disabled:hover:text-[var(--nk-text-2)]"
+              disabled={saving || !nativeFolderPicker}
+              title={!nativeFolderPicker ? BROWSER_FOLDER_PICKER_UNAVAILABLE_VI : undefined}
+              aria-disabled={!nativeFolderPicker || undefined}
+              data-testid="project-dialog-add-folder"
               onClick={() => void addRoot()}
             >
               <FolderPlus aria-hidden="true" className="h-3.5 w-3.5" />
@@ -234,8 +238,11 @@ export function ProjectDialog({
             )) : (
               <button
                 type="button"
-                className="flex min-h-[96px] w-full flex-col items-center justify-center gap-2 text-[11.5px] text-[var(--nk-text-3)] transition-colors hover:bg-[var(--nk-overlay)] hover:text-[var(--nk-text)]"
-                disabled={saving}
+                className="flex min-h-[96px] w-full flex-col items-center justify-center gap-2 text-[11.5px] text-[var(--nk-text-3)] transition-colors hover:bg-[var(--nk-overlay)] hover:text-[var(--nk-text)] disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-transparent disabled:hover:text-[var(--nk-text-3)]"
+                disabled={saving || !nativeFolderPicker}
+                title={!nativeFolderPicker ? BROWSER_FOLDER_PICKER_UNAVAILABLE_VI : undefined}
+                aria-disabled={!nativeFolderPicker || undefined}
+                data-testid="project-dialog-empty-folder"
                 onClick={() => void addRoot()}
               >
                 <FolderPlus aria-hidden="true" className="h-5 w-5" />

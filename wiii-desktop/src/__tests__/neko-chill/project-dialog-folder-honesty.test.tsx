@@ -1,7 +1,11 @@
 import { act, fireEvent, render, screen } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { ProjectDialog, projectDialogPrimaryTitle } from "@/neko-chill/components/ProjectDialog";
-import { canChooseWorkspaceFolder, chooseWorkspaceFolder } from "@/neko-chill/workspace";
+import {
+  BROWSER_FOLDER_PICKER_UNAVAILABLE_VI,
+  canChooseWorkspaceFolder,
+  chooseWorkspaceFolder,
+} from "@/neko-chill/workspace";
 
 vi.mock("@/neko-chill/workspace", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@/neko-chill/workspace")>();
@@ -19,7 +23,7 @@ describe("ProjectDialog browser folder-picker honesty", () => {
     vi.mocked(chooseWorkspaceFolder).mockReset().mockResolvedValue(null);
   });
 
-  it("shows a browser-preview hint and explains a silent picker no-op", async () => {
+  it("disables folder CTAs with a local title in browser preview", async () => {
     const onCancel = vi.fn();
     const onSave = vi.fn(async () => {});
     render(<ProjectDialog project={null} onCancel={onCancel} onSave={onSave} />);
@@ -28,13 +32,21 @@ describe("ProjectDialog browser folder-picker honesty", () => {
       /trình duyệt|desktop Wiii/i,
     );
 
+    const add = screen.getByTestId("project-dialog-add-folder");
+    const empty = screen.getByTestId("project-dialog-empty-folder");
+    expect((add as HTMLButtonElement).disabled).toBe(true);
+    expect((empty as HTMLButtonElement).disabled).toBe(true);
+    expect(add.getAttribute("title")).toBe(BROWSER_FOLDER_PICKER_UNAVAILABLE_VI);
+    expect(empty.getAttribute("title")).toBe(BROWSER_FOLDER_PICKER_UNAVAILABLE_VI);
+    expect(add.getAttribute("aria-disabled")).toBe("true");
+
     await act(async () => {
-      fireEvent.click(screen.getByRole("button", { name: /Thêm thư mục/i }));
+      fireEvent.click(add);
+      fireEvent.click(empty);
     });
 
     expect(chooseWorkspaceFolder).not.toHaveBeenCalled();
-    const alert = screen.getByRole("alert");
-    expect(alert.textContent).toMatch(/trình duyệt.*thư mục|desktop Wiii/i);
+    expect(screen.queryByRole("alert")).toBeNull();
   });
 
   it("still opens the native picker when the desktop shell is available", async () => {

@@ -76,7 +76,7 @@ export function SessionInspector({
             <div className="flex gap-2.5">
               <Bot aria-hidden="true" className="mt-0.5 h-3.5 w-3.5 shrink-0 text-[var(--nk-text-3)]" />
               <div className="min-w-0">
-                <dt className="text-[10px] uppercase tracking-wide text-[var(--nk-ghost)]">Agent</dt>
+                <dt className="text-[10px] uppercase tracking-wide text-[var(--nk-ghost)]">Harness / agent</dt>
                 <dd className="truncate text-[var(--nk-text-2)]">{session.agentName}</dd>
               </div>
             </div>
@@ -92,7 +92,7 @@ export function SessionInspector({
             <div className="flex gap-2.5">
               <HardDrive aria-hidden="true" className="mt-0.5 h-3.5 w-3.5 shrink-0 text-[var(--nk-text-3)]" />
               <div className="min-w-0">
-                <dt className="text-[10px] uppercase tracking-wide text-[var(--nk-ghost)]">Model / profile</dt>
+                <dt className="text-[10px] uppercase tracking-wide text-[var(--nk-ghost)]">Model / hồ sơ</dt>
                 <dd className="text-[var(--nk-text-2)]">
                   {session.launchProfile
                     ? `${session.launchProfile.provider} · ${session.launchProfile.model ?? session.launchProfile.id}`
@@ -110,9 +110,9 @@ export function SessionInspector({
               Công việc Wiii
             </h2>
             <dl className="space-y-1.5 font-mono text-[10px] leading-4 text-[var(--nk-text-3)]">
-              <div className="flex justify-between gap-2"><dt>Task</dt><dd className="truncate">{session.execution.taskId}</dd></div>
-              <div className="flex justify-between gap-2"><dt>Run</dt><dd className="truncate">{session.execution.runId}</dd></div>
-              <div className="flex justify-between gap-2"><dt>Environment</dt><dd className="truncate">{session.execution.environmentId}</dd></div>
+              <div className="flex justify-between gap-2"><dt>Mã task</dt><dd className="truncate">{session.execution.taskId}</dd></div>
+              <div className="flex justify-between gap-2"><dt>Mã run</dt><dd className="truncate">{session.execution.runId}</dd></div>
+              <div className="flex justify-between gap-2"><dt>Môi trường</dt><dd className="truncate">{session.execution.environmentId}</dd></div>
             </dl>
           </section>
         ) : null}

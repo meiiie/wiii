@@ -26,6 +26,10 @@ export async function resolveWorkspaceFolder(path: string): Promise<WorkspaceRef
   return invoke<WorkspaceRef>("neko_resolve_workspace", { workspace: path });
 }
 
+/** VI title when folder picker is unavailable (browser chill preview). */
+export const BROWSER_FOLDER_PICKER_UNAVAILABLE_VI =
+  "Bản xem trước trình duyệt không chọn được thư mục trên máy. Hãy dùng app desktop Wiii.";
+
 /** True only in the native desktop shell — browser preview cannot open a folder picker. */
 export function canChooseWorkspaceFolder(): boolean {
   return typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
