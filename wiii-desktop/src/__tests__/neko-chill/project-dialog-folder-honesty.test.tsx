@@ -1,6 +1,6 @@
 import { act, fireEvent, render, screen } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { ProjectDialog } from "@/neko-chill/components/ProjectDialog";
+import { ProjectDialog, projectDialogPrimaryTitle } from "@/neko-chill/components/ProjectDialog";
 import { canChooseWorkspaceFolder, chooseWorkspaceFolder } from "@/neko-chill/workspace";
 
 vi.mock("@/neko-chill/workspace", async (importOriginal) => {
@@ -54,5 +54,48 @@ describe("ProjectDialog browser folder-picker honesty", () => {
     expect(chooseWorkspaceFolder).toHaveBeenCalledOnce();
     expect(screen.getByText("demo")).toBeTruthy();
     expect(screen.queryByRole("alert")).toBeNull();
+  });
+});
+
+
+describe("projectDialogPrimaryTitle", () => {
+  it("explains missing name and folder together", () => {
+    expect(projectDialogPrimaryTitle({
+      mode: "create",
+      saving: false,
+      hasName: false,
+      hasRoots: false,
+    })).toBe("Hãy đặt tên Project và thêm ít nhất một thư mục nguồn.");
+  });
+
+  it("explains missing folder after name is set", () => {
+    expect(projectDialogPrimaryTitle({
+      mode: "create",
+      saving: false,
+      hasName: true,
+      hasRoots: false,
+    })).toBe("Project cần ít nhất một thư mục nguồn.");
+  });
+
+  it("returns the enabled create label when ready", () => {
+    expect(projectDialogPrimaryTitle({
+      mode: "create",
+      saving: false,
+      hasName: true,
+      hasRoots: true,
+    })).toBe("Tạo Project");
+  });
+});
+
+describe("ProjectDialog primary title wiring", () => {
+  it("puts the missing-folder reason on the disabled create button", () => {
+    render(<ProjectDialog project={null} onCancel={vi.fn()} onSave={vi.fn(async () => {})} />);
+    const primary = screen.getByTestId("project-dialog-primary");
+    expect((primary as HTMLButtonElement).disabled).toBe(true);
+    expect(primary.getAttribute("title")).toBe(
+      "Hãy đặt tên Project và thêm ít nhất một thư mục nguồn.",
+    );
+    fireEvent.change(screen.getByPlaceholderText(/Ví dụ/i), { target: { value: "Demo" } });
+    expect(primary.getAttribute("title")).toBe("Project cần ít nhất một thư mục nguồn.");
   });
 });
