@@ -77,7 +77,7 @@ class FakeCodexTransport implements AcpTransport {
     this.lineHandler = handler;
   }
 
-  onExit(handler: (code: number | null) => void): void {
+  onExit(handler: (code: number | null, detail?: { stderrTail?: string | null }) => void): void {
     this.exitHandler = handler;
   }
 

@@ -27,6 +27,17 @@ describe("providerProcessExitDetail", () => {
       "Chưa có phản hồi từ model",
     );
   });
+
+  it("surfaces captured stderr tail without inventing a kill cause", () => {
+    const detail = providerProcessExitDetail(null, {
+      emptyModelReply: true,
+      stderrTail: "bwrap: Child death from signal 9",
+    });
+    expect(detail).toContain("tín hiệu");
+    expect(detail).toContain("stderr (đuôi ghi nhận):");
+    expect(detail).toContain("bwrap: Child death from signal 9");
+    expect(detail.toLowerCase()).not.toContain("oom");
+  });
 });
 
 describe("sessionHasVisibleModelOutput", () => {

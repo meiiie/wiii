@@ -46,7 +46,7 @@ class AccountTransport implements AcpTransport {
     this.onLineHandler = handler;
   }
 
-  onExit(handler: (code: number | null) => void): void {
+  onExit(handler: (code: number | null, detail?: { stderrTail?: string | null }) => void): void {
     this.onExitHandler = handler;
   }
 

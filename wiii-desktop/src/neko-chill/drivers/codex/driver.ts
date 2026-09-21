@@ -278,10 +278,16 @@ export class CodexAppServerDriver implements Driver {
         fatal: false,
       }),
     });
-    options.transport.onExit((code) => {
+    options.transport.onExit((code, detail) => {
+      this.disposed = true;
       this.finishTurn?.("error");
       this.finishTurn = null;
-      this.emitEvent({ type: "process-exited", sessionId: this.sessionId, code });
+      this.emitEvent({
+        type: "process-exited",
+        sessionId: this.sessionId,
+        code,
+        ...(detail?.stderrTail ? { stderrTail: detail.stderrTail } : {}),
+      });
     });
   }
 

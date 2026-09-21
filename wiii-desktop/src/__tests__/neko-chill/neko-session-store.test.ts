@@ -580,6 +580,18 @@ describe("neko-session-store", () => {
     expect(session(id).statusDetail).toContain("Chưa có phản hồi từ model");
   });
 
+  it("process exit surfaces stderrTail honestly on the VI banner", async () => {
+    const id = await setup();
+    emit({
+      type: "process-exited",
+      sessionId: id,
+      code: null,
+      stderrTail: "neko: fatal: unexpected SIGTERM",
+    });
+    expect(session(id).statusDetail).toContain("stderr (đuôi ghi nhận):");
+    expect(session(id).statusDetail).toContain("neko: fatal: unexpected SIGTERM");
+  });
+
   it("closeSession disposes the driver but keeps the transcript (exited)", async () => {
     const id = await setup();
     await useNekoSessionStore.getState().closeSession(id);

@@ -359,10 +359,15 @@ export class AcpDriver implements Driver {
       onProtocolError: (message) =>
         this.emitEvent({ type: "error", sessionId: this.sessionId, message, fatal: true }),
     });
-    options.transport.onExit((code) => {
+    options.transport.onExit((code, detail) => {
       this.disposed = true;
       void this.revokeComputer().catch(() => {});
-      this.emitEvent({ type: "process-exited", sessionId: this.sessionId, code });
+      this.emitEvent({
+        type: "process-exited",
+        sessionId: this.sessionId,
+        code,
+        ...(detail?.stderrTail ? { stderrTail: detail.stderrTail } : {}),
+      });
     });
   }
 
