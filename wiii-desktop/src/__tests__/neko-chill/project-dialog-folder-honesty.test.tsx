@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { ProjectDialog, projectDialogPrimaryTitle } from "@/neko-chill/components/ProjectDialog";
 import {
   BROWSER_FOLDER_PICKER_UNAVAILABLE_VI,
+  NATIVE_FOLDER_PICKER_SELECT_HINT_VI,
   canChooseWorkspaceFolder,
   chooseWorkspaceFolder,
 } from "@/neko-chill/workspace";
@@ -58,6 +59,12 @@ describe("ProjectDialog browser folder-picker honesty", () => {
     render(<ProjectDialog project={null} onCancel={vi.fn()} onSave={vi.fn(async () => {})} />);
 
     expect(screen.queryByTestId("browser-folder-picker-hint")).toBeNull();
+    expect(screen.getByTestId("native-folder-picker-hint").textContent).toBe(
+      NATIVE_FOLDER_PICKER_SELECT_HINT_VI,
+    );
+    expect(screen.getByTestId("project-dialog-add-folder").getAttribute("title")).toBe(
+      NATIVE_FOLDER_PICKER_SELECT_HINT_VI,
+    );
 
     await act(async () => {
       fireEvent.click(screen.getByRole("button", { name: /Thêm thư mục/i }));

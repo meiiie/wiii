@@ -37,6 +37,7 @@ import {
   readNekoComposerDraft,
   writeNekoComposerDraft,
 } from "../composer-drafts";
+import { NEKO_STARTER_PROMPTS } from "../starter-prompts";
 
 export interface NekoTaskLaunchRequest {
   execution: NekoExecutionBinding;
@@ -427,6 +428,28 @@ export function ProjectHome({
             <MoreHorizontal aria-hidden="true" className="h-4 w-4" />
           </button> : null}
         </div>
+        {!taskLaunch ? (
+          <div
+            className="mt-5 flex max-w-[560px] flex-wrap justify-center gap-2"
+            data-testid="project-home-starters"
+            aria-label="Gợi ý bắt đầu"
+          >
+            {NEKO_STARTER_PROMPTS.map((starter) => (
+              <button
+                key={starter.label}
+                type="button"
+                aria-label={`Chèn gợi ý ${starter.label}`}
+                className="rounded-xl border border-[var(--nk-border)] bg-[var(--nk-composer)] px-3 py-2 text-[12px] text-[var(--nk-text-2)] transition-colors hover:border-[var(--nk-border-strong)] hover:bg-[var(--nk-raised)] hover:text-[var(--nk-text)]"
+                onClick={() => {
+                  setDraft(starter.prompt);
+                  textareaRef.current?.focus();
+                }}
+              >
+                {starter.label}
+              </button>
+            ))}
+          </div>
+        ) : null}
       </div>
 
       <div className="shrink-0 px-5 pb-5">

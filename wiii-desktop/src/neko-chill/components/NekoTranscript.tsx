@@ -6,6 +6,7 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { ArrowDown, BookOpen, ChevronRight, Command, FolderGit2 } from "lucide-react";
+import { NEKO_STARTER_PROMPTS } from "../starter-prompts";
 import { MarkdownRenderer } from "@/components/common/MarkdownRenderer";
 import { NekoActivityIcon, resolveNekoToolIconKind } from "@/components/icons/neko";
 import type { ContentBlock, ThinkingBlockData, ToolExecutionBlockData } from "@/api/types";
@@ -352,17 +353,6 @@ interface NekoTranscriptProps {
   onInsertPrompt: (text: string) => void;
 }
 
-const STARTER_PROMPTS = [
-  {
-    label: "Kiểm tra dự án này",
-    prompt: "Kiểm tra dự án này và cho tôi biết điểm cần chú ý.",
-  },
-  {
-    label: "Tóm tắt cấu trúc",
-    prompt: "Tóm tắt cấu trúc dự án và đề xuất bước tiếp theo.",
-  },
-];
-
 export function NekoTranscript({
   session,
   onResolvePermission,
@@ -492,7 +482,7 @@ export function NekoTranscript({
               các gợi ý dưới đây chỉ được chèn vào ô soạn để bạn xem lại.
             </p>
             <div className="mt-5 flex flex-wrap justify-center gap-2">
-              {STARTER_PROMPTS.map((starter) => (
+              {NEKO_STARTER_PROMPTS.map((starter) => (
                 <button
                   key={starter.label}
                   type="button"
