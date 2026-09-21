@@ -5,13 +5,14 @@ import type { CoworkerComputerStatus } from "@/neko-computer/contracts";
 const mocks = vi.hoisted(() => ({
   consultSignalInbox: vi.fn(),
   doctorComputer: vi.fn(),
+  hasNativeComputerAuthority: vi.fn(() => true),
+  installComputerPackage: vi.fn(),
+  removeComputer: vi.fn(),
+  removeComputerPackage: vi.fn(),
   refresh: vi.fn(),
   grant: vi.fn(),
   revoke: vi.fn(),
   ensure: vi.fn(),
-  installComputerPackage: vi.fn(),
-  removeComputer: vi.fn(),
-  removeComputerPackage: vi.fn(),
   status: {
     coworkerId: "neko",
     environmentId: null,
@@ -25,7 +26,10 @@ const mocks = vi.hoisted(() => ({
 vi.mock("@/neko-computer/client", () => ({
   consultSignalInbox: mocks.consultSignalInbox,
   doctorComputer: mocks.doctorComputer,
+  hasNativeComputerAuthority: mocks.hasNativeComputerAuthority,
   installComputerPackage: mocks.installComputerPackage,
+  NATIVE_COMPUTER_UNAVAILABLE_VI:
+    "Bản xem trước trình duyệt không điều khiển được máy tính của Neko. Hãy dùng app desktop Wiii để kiểm tra và tải gói.",
   removeComputer: mocks.removeComputer,
   removeComputerPackage: mocks.removeComputerPackage,
 }));
@@ -67,6 +71,7 @@ const summary = {
 describe("Neko coworker Signal Inbox", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mocks.hasNativeComputerAuthority.mockReturnValue(true);
     mocks.status = { coworkerId: "neko", environmentId: null, environment: null,
       activeProjectId: null, activeProjectPath: null, grants: [] };
     mocks.refresh.mockResolvedValue(mocks.status);

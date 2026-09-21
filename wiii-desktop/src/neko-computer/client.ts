@@ -56,8 +56,18 @@ function publishComputerSeatChange(change: ComputerSeatChange): void {
   }
 }
 
+/** VI honesty when Vite browser preview has no Tauri computer IPC. */
+export const NATIVE_COMPUTER_UNAVAILABLE_VI =
+  "Bản xem trước trình duyệt không điều khiển được máy tính của Neko. Hãy dùng app desktop Wiii để kiểm tra và tải gói.";
+
 export function hasNativeComputerAuthority(): boolean {
   return typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
+}
+
+export function assertNativeComputerAuthority(): void {
+  if (!hasNativeComputerAuthority()) {
+    throw new Error(NATIVE_COMPUTER_UNAVAILABLE_VI);
+  }
 }
 
 export function computerRequestId(): string {
@@ -65,6 +75,7 @@ export function computerRequestId(): string {
 }
 
 export async function doctorComputer(): Promise<ComputerDoctor> {
+  assertNativeComputerAuthority();
   return invoke<ComputerDoctor>("neko_computer_doctor");
 }
 
@@ -128,6 +139,7 @@ export async function installComputerPackage(
   requestId = computerRequestId(),
   packageId = COMPUTER_CORE_PACKAGE_ID,
 ): Promise<ComputerDoctor> {
+  assertNativeComputerAuthority();
   return invoke<ComputerDoctor>("neko_computer_package_install", {
     request: { requestId, coworkerId: DEFAULT_NEKO_COWORKER.id, packageId },
   });

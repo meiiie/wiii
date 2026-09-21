@@ -19,7 +19,9 @@ import type { NekoProject } from "@/workbench/contracts";
 import {
   consultSignalInbox,
   doctorComputer,
+  hasNativeComputerAuthority,
   installComputerPackage,
+  NATIVE_COMPUTER_UNAVAILABLE_VI,
   removeComputer,
   removeComputerPackage,
 } from "@/neko-computer/client";
@@ -98,8 +100,13 @@ export function NekoCoworkerHome({ projects }: { projects: NekoProject[] }) {
   const packageRemovalBlocked = status?.environment?.seat.state !== undefined
     && status.environment.seat.state !== "available";
   const signalCard = signalInboxCardState(signalInbox);
+  const nativeComputer = hasNativeComputerAuthority();
 
   const refreshSignalInbox = useCallback(async () => {
+    if (!hasNativeComputerAuthority()) {
+      setSignalInbox("unavailable");
+      return;
+    }
     try {
       setSignalInbox(await consultSignalInbox(8));
     } catch {
@@ -108,12 +115,18 @@ export function NekoCoworkerHome({ projects }: { projects: NekoProject[] }) {
   }, []);
 
   useEffect(() => {
+    if (!nativeComputer) {
+      setSignalInbox("unavailable");
+      setPageBusy(false);
+      setError(null);
+      return;
+    }
     setPageBusy(true);
     void Promise.all([refresh(), doctorComputer(), refreshSignalInbox()])
       .then(([, result]) => setInspectedDoctor(result))
-      .catch((reason) => setError(String(reason)))
+      .catch((reason) => setError(reason instanceof Error ? reason.message : String(reason)))
       .finally(() => setPageBusy(false));
-  }, [refresh, refreshSignalInbox]);
+  }, [nativeComputer, refresh, refreshSignalInbox]);
 
   const roots = useMemo(
     () => projects.flatMap((project) =>
@@ -146,6 +159,10 @@ export function NekoCoworkerHome({ projects }: { projects: NekoProject[] }) {
   };
 
   const refreshAll = async () => {
+    if (!hasNativeComputerAuthority()) {
+      setError(NATIVE_COMPUTER_UNAVAILABLE_VI);
+      return;
+    }
     setPageBusy(true);
     setError(null);
     try {
@@ -191,6 +208,10 @@ export function NekoCoworkerHome({ projects }: { projects: NekoProject[] }) {
   };
 
   const installPackage = async () => {
+    if (!hasNativeComputerAuthority()) {
+      setError(NATIVE_COMPUTER_UNAVAILABLE_VI);
+      return;
+    }
     setPageBusy(true);
     setError(null);
     try {
@@ -223,7 +244,8 @@ export function NekoCoworkerHome({ projects }: { projects: NekoProject[] }) {
           </div>
           <button
             type="button"
-            disabled={pageBusy}
+            disabled={pageBusy || !nativeComputer}
+            title={!nativeComputer ? NATIVE_COMPUTER_UNAVAILABLE_VI : undefined}
             className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-[var(--nk-border)] bg-[var(--nk-composer)] px-3 text-[10.5px] font-medium text-[var(--nk-text-2)] hover:bg-[var(--nk-overlay)] disabled:opacity-40"
             onClick={() => void refreshAll()}
           >
@@ -355,7 +377,8 @@ export function NekoCoworkerHome({ projects }: { projects: NekoProject[] }) {
               {!packageInstalled ? (
                 <button
                   type="button"
-                  disabled={pageBusy || doctor?.runtimeReady === false}
+                  disabled={pageBusy || !nativeComputer || doctor?.runtimeReady === false}
+                  title={!nativeComputer ? NATIVE_COMPUTER_UNAVAILABLE_VI : undefined}
                   className="inline-flex h-8 items-center gap-1.5 rounded-lg bg-[var(--nk-text)] px-3 text-[9.5px] font-semibold text-[var(--nk-canvas)] hover:opacity-90 disabled:opacity-35"
                   onClick={() => void installPackage()}
                 >
@@ -435,8 +458,18 @@ export function NekoCoworkerHome({ projects }: { projects: NekoProject[] }) {
           </div>
         </section>
 
+        {!nativeComputer ? (
+          <p
+            role="status"
+            data-testid="browser-computer-honesty"
+            className="mt-4 rounded-xl border border-[var(--nk-border)] bg-[var(--nk-overlay)]/60 px-3 py-2.5 text-[10px] leading-4 text-[var(--nk-text-2)]"
+          >
+            {NATIVE_COMPUTER_UNAVAILABLE_VI}
+          </p>
+        ) : null}
+
         {error ? (
-          <p className="mt-4 rounded-xl border border-[var(--nk-danger-soft)] bg-[var(--nk-danger-soft)]/35 px-3 py-2.5 text-[10px] leading-4 text-[var(--nk-danger)]">
+          <p className="mt-4 rounded-xl border border-[var(--nk-danger-soft)] bg-[var(--nk-danger-soft)]/35 px-3 py-2.5 text-[10px] leading-4 text-[var(--nk-danger)]" role="alert">
             {error}
           </p>
         ) : null}

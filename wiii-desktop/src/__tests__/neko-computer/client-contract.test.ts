@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const tauri = vi.hoisted(() => ({ invoke: vi.fn() }));
 
@@ -43,7 +43,15 @@ describe("Neko Computer client authority contract", () => {
     projectPath: "E:\\Projects\\Wiii",
   };
   beforeEach(() => {
+    Object.defineProperty(window, "__TAURI_INTERNALS__", {
+      configurable: true,
+      value: {},
+    });
     tauri.invoke.mockReset().mockResolvedValue({});
+  });
+
+  afterEach(() => {
+    Reflect.deleteProperty(window, "__TAURI_INTERNALS__");
   });
 
   it("sends project intent without renderer-owned Docker configuration", async () => {
