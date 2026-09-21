@@ -304,14 +304,41 @@ function SessionRecoveryState({
   if (loading) {
     return (
       <main
-        className="grid min-h-0 flex-1 place-items-center px-6"
+        className="flex min-h-0 flex-1"
         role="status"
         aria-live="polite"
+        aria-busy="true"
+        data-testid="session-recovery-loading"
       >
-        <div className="flex items-center gap-3 text-[13px] text-[var(--nk-text-3)]">
-          <LoaderCircle aria-hidden="true" className="h-4 w-4 animate-spin" />
-          Đang khôi phục lịch sử phiên…
-        </div>
+        <aside
+          className="hidden w-[292px] shrink-0 flex-col border-r border-[var(--nk-border)] bg-[var(--nk-sidebar)] sm:flex"
+          aria-hidden="true"
+        >
+          <div className="flex h-12 items-center px-3">
+            <span className="nk-skeleton h-4 w-16 rounded" />
+          </div>
+          <div className="space-y-2 px-3 pb-3">
+            <span className="nk-skeleton block h-8 w-full rounded-lg" />
+            <span className="nk-skeleton block h-8 w-[85%] rounded-lg" />
+            <span className="nk-skeleton block h-8 w-[70%] rounded-lg" />
+            <span className="nk-skeleton mt-3 block h-3 w-20 rounded" />
+            <span className="nk-skeleton block h-7 w-full rounded-lg" />
+            <span className="nk-skeleton block h-7 w-[90%] rounded-lg" />
+            <span className="nk-skeleton block h-7 w-[60%] rounded-lg" />
+          </div>
+        </aside>
+        <section className="flex min-h-0 min-w-0 flex-1 flex-col bg-[var(--nk-canvas)]">
+          <div className="flex h-12 shrink-0 items-center gap-2.5 border-b border-[var(--nk-border)] px-4">
+            <span className="nk-skeleton h-1.5 w-1.5 rounded-full" />
+            <span className="nk-skeleton h-3.5 w-40 rounded" />
+          </div>
+          <div className="grid min-h-0 flex-1 place-items-center px-6">
+            <div className="flex items-center gap-3 text-[13px] text-[var(--nk-text-3)]">
+              <LoaderCircle aria-hidden="true" className="h-4 w-4 animate-spin" />
+              Đang khôi phục lịch sử phiên…
+            </div>
+          </div>
+        </section>
       </main>
     );
   }
