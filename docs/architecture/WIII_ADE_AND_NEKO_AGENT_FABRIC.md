@@ -102,11 +102,13 @@ owner and cannot infer that the Task is idle. Cancellation is terminal only afte
 termination succeeds; an unavailable process owner or failed OS tree kill is
 recorded as `unknown_outcome`, never as permission to launch a replacement.
 Windows launches are assigned to a kill-on-close Job Object while the leader is
-still suspended; only then is execution resumed. Unix local-provider launches
-currently reject before spawn: a POSIX process group is escapable, and a
-same-UID provider can migrate out of a writable cgroup leaf. Linux and macOS
-packages still build, but local Neko execution remains unavailable there until
-an approved boundary prevents that migration. Live exit IPC carries both `terminationProven` and
+still suspended; only then is execution resumed. Linux local-provider launches
+use bubblewrap (`bwrap`) when present: `--unshare-pid --as-pid-1
+--die-with-parent` so the supervisor is killable as a process tree and dies with
+Wiii — mirroring Job Object kill semantics as closely as practical without claiming
+perfect escape-proof equivalence. macOS and Linux hosts without a working `bwrap`
+reject before spawn (a POSIX process group remains escapable and is not treated
+as proof). Live exit IPC carries both `terminationProven` and
 `terminalStatePersisted`, so the renderer cannot mistake leader exit—or an
 uncommitted journal transition—for complete cleanup. A verified exit whose
 terminal transaction temporarily fails is retained in a dedicated durable
@@ -219,12 +221,13 @@ Implemented across the foundation and Phase 2A slices:
 - shutdown releases lifecycle serialization and waits for every published exit
   supervisor to finish exact terminal reconciliation before native authority
   exits;
-- shutdown admission closes before process drain; Windows probes use a
+- shutdown admission closes before process drain; Windows and Linux probes use a
   producer-bounded pipe, and checked tree cleanup plus bounded reaping gate
-  successful discovery; Unix provider discovery and execution both reject
-  before spawn until non-escapable containment exists;
+  successful discovery; Linux requires working bubblewrap containment, and other
+  Unix hosts reject before spawn;
 - provider discovery reports host containment as unsupported instead of
-  mislabelling every Unix provider as not installed; one renderer write is one
+  mislabelling every provider as not installed when `bwrap`/Job Objects are
+  unavailable; one renderer write is one
   delimiter-free frame, and suspended Windows setup cleanup is checked and
   deadline-bounded;
 - provider launch and discovery preserve post-spawn cleanup uncertainty as a
