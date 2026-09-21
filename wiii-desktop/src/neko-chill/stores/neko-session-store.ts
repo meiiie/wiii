@@ -38,6 +38,7 @@ import {
   persistSessionStrict,
 } from "../persistence";
 import { appendSessionEvent, type NekoSessionEvent, type NekoSessionEventData } from "../session-events";
+import { providerProcessExitDetail, sessionHasVisibleModelOutput } from "../session-status";
 import {
   RuntimeRegistry,
   type RuntimeDisposalResult,
@@ -2391,8 +2392,9 @@ export const useNekoSessionStore = create<NekoSessionState>()(
             session.pendingPermission = null;
             session.resolvingPermissionId = null;
             session.cancelPending = false;
-            session.statusDetail =
-              event.code === 0 || event.code === null ? "Agent đã thoát." : `Agent thoát với mã lỗi ${event.code}.`;
+            session.statusDetail = providerProcessExitDetail(event.code, {
+              emptyModelReply: !sessionHasVisibleModelOutput(session.messages, session.events),
+            });
             return;
           }
         }
