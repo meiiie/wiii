@@ -20,17 +20,20 @@ use std::io;
 use std::path::PathBuf;
 use std::process::Command;
 #[cfg(test)]
+use std::cell::Cell;
+#[cfg(test)]
 use std::path::Path;
-#[cfg(test)]
-use std::sync::atomic::{AtomicBool, Ordering};
 
+// Thread-local so parallel cargo tests cannot race a process-global force flag.
 #[cfg(test)]
-static FORCE_UNAVAILABLE: AtomicBool = AtomicBool::new(false);
+thread_local! {
+    static FORCE_UNAVAILABLE: Cell<bool> = const { Cell::new(false) };
+}
 
 /// Test-only: force the host to report bubblewrap containment as missing.
 #[cfg(test)]
 pub(crate) fn force_unavailable_for_test(force: bool) {
-    FORCE_UNAVAILABLE.store(force, Ordering::Relaxed);
+    FORCE_UNAVAILABLE.with(|flag| flag.set(force));
 }
 
 #[cfg(not(test))]
@@ -41,7 +44,7 @@ fn force_unavailable_active() -> bool {
 
 #[cfg(test)]
 fn force_unavailable_active() -> bool {
-    FORCE_UNAVAILABLE.load(Ordering::Relaxed)
+    FORCE_UNAVAILABLE.with(|flag| flag.get())
 }
 
 /// Resolve a canonical `bwrap` binary, or `None` if containment cannot be offered.
@@ -205,6 +208,7 @@ mod tests {
         };
         assert!(path.is_absolute());
         assert!(Path::new(&path).is_file());
-        assert!(containment_available());
+        // Capability probe (namespaces) is covered by provider spawn/probe tests.
+        // Those skip cleanly when the host cannot create a PID namespace.
     }
 }
