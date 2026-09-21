@@ -37,7 +37,36 @@ describe("calm workbench interaction contracts", () => {
     useNekoWorkspaceStore.getState().toggle(project.id);
   });
 
-  it("keeps an unaccepted session draft across failure and remount, and clears only on acceptance", async () => {
+
+  it("explains a disabled session send instead of a mute Gửi title", () => {
+    const session = {
+      id: "composer-review", agentName: "Neko Core", status: "idle", controls: [], commands: [],
+      workspace: null,
+    } as unknown as NekoSession;
+    render(<NekoComposer
+      session={session} disabled={false} streaming={false}
+      onSend={vi.fn()} onCancel={vi.fn()} onSetConfigOption={vi.fn()} onClientCommand={vi.fn()}
+    />);
+    const send = screen.getByRole("button", { name: "Gửi tin nhắn" }) as HTMLButtonElement;
+    expect(send.disabled).toBe(true);
+    expect(send.getAttribute("title")).toBe("Gắn dự án trước khi gửi.");
+  });
+
+  it("titles an enabled session send as Gửi", () => {
+    const session = {
+      id: "composer-review", agentName: "Neko Core", status: "idle", controls: [], commands: [], workspace,
+    } as unknown as NekoSession;
+    render(<NekoComposer
+      session={session} disabled={false} streaming={false}
+      onSend={vi.fn()} onCancel={vi.fn()} onSetConfigOption={vi.fn()} onClientCommand={vi.fn()}
+    />);
+    fireEvent.change(screen.getByRole("textbox"), { target: { value: "Xin chào" } });
+    const send = screen.getByRole("button", { name: "Gửi tin nhắn" }) as HTMLButtonElement;
+    expect(send.disabled).toBe(false);
+    expect(send.getAttribute("title")).toBe("Gửi");
+  });
+
+    it("keeps an unaccepted session draft across failure and remount, and clears only on acceptance", async () => {
     const session = {
       id: "composer-review", agentName: "Neko Core", status: "idle", controls: [], commands: [], workspace,
     } as unknown as NekoSession;

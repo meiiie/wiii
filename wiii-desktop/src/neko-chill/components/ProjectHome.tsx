@@ -45,6 +45,31 @@ export interface NekoTaskLaunchRequest {
   onLaunchError?: (error: unknown) => void | Promise<void>;
 }
 
+
+/** Control-local reason when send is gated (ZCode cue: disabled = explained). */
+export function projectHomeSendTitle(args: {
+  canStart: boolean;
+  starting: boolean;
+  isLoading: boolean;
+  discoveryError: string | null;
+  selectedRoot: boolean;
+  selectedAgent: boolean;
+  draftReady: boolean;
+  nekoProfileBlocked: boolean;
+  codexBlocked: boolean;
+}): string | undefined {
+  if (args.canStart) return "Gửi và mở phiên";
+  if (args.starting) return "Đang mở phiên…";
+  if (args.isLoading) return "Đang kiểm tra harness…";
+  if (args.discoveryError) return "Không kiểm tra được harness trên máy. Bản nháp vẫn được giữ.";
+  if (!args.selectedRoot) return "Project cần thư mục nguồn trước khi gửi.";
+  if (!args.selectedAgent) return "Harness đã chọn chưa sẵn sàng. Bản nháp vẫn được giữ.";
+  if (args.nekoProfileBlocked) return "Chưa đọc được cấu hình Neko Core. Bản nháp vẫn được giữ.";
+  if (args.codexBlocked) return "Cần đăng nhập Codex trước khi mở phiên.";
+  if (!args.draftReady) return "Nhập lời nhắn đầu tiên trước khi gửi.";
+  return "Chưa thể gửi và mở phiên.";
+}
+
 export function ProjectHome({
   project,
   resetToken,
@@ -269,6 +294,24 @@ export function ProjectHome({
     && !(selectedAgent.id === "neko" && (profileLoading || profileError))
     && !(selectedAgent.id === "codex" && codexAccountState !== "signed-in"),
   );
+  const sendTitle = projectHomeSendTitle({
+    canStart,
+    starting,
+    isLoading,
+    discoveryError,
+    selectedRoot: Boolean(selectedRoot),
+    selectedAgent: Boolean(selectedAgent),
+    draftReady: Boolean(taskLaunch || draft.trim()),
+    nekoProfileBlocked: Boolean(selectedAgent?.id === "neko" && (profileLoading || profileError)),
+    codexBlocked: Boolean(selectedAgent?.id === "codex" && codexAccountState !== "signed-in"),
+  });
+  const harnessSelectTitle = (
+    starting ? "Đang mở phiên…"
+    : isLoading ? "Đang kiểm tra harness…"
+    : discoveryError ? "Không kiểm tra được harness trên máy."
+    : launchableAgents.length === 0 ? "Harness đã chọn chưa sẵn sàng. Bản nháp vẫn được giữ."
+    : undefined
+  );
 
   const start = async () => {
     if (!selectedRoot || !selectedAgent || !canStart) return;
@@ -455,7 +498,10 @@ export function ProjectHome({
             />
 
             <div className="mt-2 flex min-h-8 flex-wrap items-center gap-1.5">
-              <label className="relative flex h-8 min-w-0 max-w-[190px] items-center gap-1.5 rounded-md px-1.5 text-[12px] text-[var(--nk-text-2)] transition-colors hover:bg-[var(--nk-overlay)]">
+              <label
+                className="relative flex h-8 min-w-0 max-w-[190px] items-center gap-1.5 rounded-md px-1.5 text-[12px] text-[var(--nk-text-2)] transition-colors hover:bg-[var(--nk-overlay)]"
+                title={harnessSelectTitle}
+              >
                 <Bot aria-hidden="true" className="h-3.5 w-3.5 shrink-0" />
                 <span className="sr-only">Chọn Harness</span>
                 <select
@@ -463,6 +509,7 @@ export function ProjectHome({
                   disabled={starting || isLoading || Boolean(discoveryError) || launchableAgents.length === 0}
                   className="min-w-0 flex-1 appearance-none truncate bg-transparent pr-4 outline-none"
                   aria-label="Chọn Harness"
+                  title={harnessSelectTitle}
                   onChange={(event) => selectAgent(event.target.value)}
                 >
                   {!launchableAgents.some((agent) => agent.id === selectedAgentId) ? <option value={selectedAgentId} disabled>
@@ -522,6 +569,7 @@ export function ProjectHome({
                 className="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-[var(--nk-inverse)] text-[var(--nk-on-inverse)] disabled:opacity-30"
                 disabled={!canStart}
                 aria-label={starting ? "Đang mở phiên" : "Gửi và mở phiên"}
+                title={sendTitle}
                 onClick={() => void start()}
               >
                 {starting
