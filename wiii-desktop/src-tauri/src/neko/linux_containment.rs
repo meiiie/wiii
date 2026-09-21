@@ -3,6 +3,10 @@
 //! Goal: mirror Windows Job Object kill-on-close / killable process-tree
 //! semantics as closely as practical for same-UID provider children:
 //! - `--die-with-parent` — provider supervisor dies if Wiii dies
+//!   (PR_SET_PDEATHSIG). The actual `Command::spawn` MUST run on a
+//!   process-lifetime thread (see `spawn_linux_child_on_stable_parent_thread`);
+//!   Tokio `spawn_blocking` workers exit after ~10s idle and would otherwise
+//!   SIGKILL a live ACP session.
 //! - `--unshare-pid --as-pid-1` — provider runs as PID 1 in a new PID
 //!   namespace so leftovers are torn down when that leader exits, and killing
 //!   the outer `bwrap` supervisor collapses the namespaced tree
