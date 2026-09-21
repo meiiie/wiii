@@ -80,7 +80,9 @@ export function NekoOverview({
   agents,
   providerCatalogs,
   discoveryLoading,
+  projectCount = 0,
   onNewSession,
+  onCreateProject,
   onOpenSession,
   onRefreshDiscovery,
   onImportProviderSession,
@@ -90,7 +92,9 @@ export function NekoOverview({
   agents: DetectedAgent[];
   providerCatalogs: NekoProviderSessionCatalog[];
   discoveryLoading: boolean;
+  projectCount?: number;
   onNewSession: () => void;
+  onCreateProject?: () => void;
   onOpenSession: (sessionId: string) => void;
   onRefreshDiscovery: () => void;
   onImportProviderSession: (session: NekoProviderSessionRecord) => Promise<void>;
@@ -132,17 +136,28 @@ export function NekoOverview({
       <div className="mx-auto w-full max-w-[1080px] px-7 pb-14 pt-[7vh]">
         <div className="flex flex-wrap items-end justify-between gap-5">
           <div>
-            <p className="mb-2 text-[11px] font-semibold uppercase tracking-[0.12em] text-[var(--nk-accent)]">Neko Chill · Agent sessions</p>
+            <p className="mb-2 text-[11px] font-semibold uppercase tracking-[0.12em] text-[var(--nk-accent)]">Neko Chill · Phiên agent</p>
             <h1 className="text-[30px] font-normal tracking-[-0.03em] text-[var(--nk-text)]" style={{ fontFamily: "var(--font-serif)" }}>
               Mọi phiên agent, ở một nơi.
             </h1>
             <p className="mt-2 max-w-[650px] text-[13px] leading-5 text-[var(--nk-text-2)]">
               Tìm lại công việc theo dự án, tiếp tục các phiên đã lưu và quản lý agent trên máy.
             </p>
+            {projectCount === 0 ? (
+              <p className="mt-2 max-w-[650px] text-[12.5px] leading-5 text-[var(--nk-text-3)]" data-testid="overview-project-required-hint">
+                Cần tạo Project trước — mỗi phiên thuộc một Project có thư mục nguồn.
+              </p>
+            ) : null}
           </div>
-          <button type="button" className="inline-flex h-9 items-center gap-2 rounded-lg bg-[var(--nk-inverse)] px-3.5 text-[12.5px] font-medium text-[var(--nk-on-inverse)] transition-opacity hover:opacity-90" onClick={onNewSession}>
-            <Plus aria-hidden="true" className="h-3.5 w-3.5" /> Phiên mới
-          </button>
+          {projectCount === 0 && onCreateProject ? (
+            <button type="button" className="inline-flex h-9 items-center gap-2 rounded-lg bg-[var(--nk-inverse)] px-3.5 text-[12.5px] font-medium text-[var(--nk-on-inverse)] transition-opacity hover:opacity-90" onClick={onCreateProject} data-testid="overview-create-first-project">
+              <Plus aria-hidden="true" className="h-3.5 w-3.5" /> Tạo Project đầu tiên
+            </button>
+          ) : (
+            <button type="button" className="inline-flex h-9 items-center gap-2 rounded-lg bg-[var(--nk-inverse)] px-3.5 text-[12.5px] font-medium text-[var(--nk-on-inverse)] transition-opacity hover:opacity-90" onClick={onNewSession}>
+              <Plus aria-hidden="true" className="h-3.5 w-3.5" /> Phiên mới
+            </button>
+          )}
         </div>
 
         <div className="mt-7 grid grid-cols-3 gap-2" aria-label="Tổng quan phiên">

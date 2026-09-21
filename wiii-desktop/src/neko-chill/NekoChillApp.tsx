@@ -512,9 +512,10 @@ export default function NekoChillApp({
     panelIds: projectPanelIds,
     storage: nekoLayoutStorage,
   });
-  const editingProject = projectDialog && projectDialog !== "create"
+  const editingProject = projectDialog && projectDialog !== "create" && projectDialog !== "create-for-session"
     ? projects.find((project) => project.id === projectDialog) ?? null
     : null;
+  const projectDialogReason = projectDialog === "create-for-session" ? "new-session" as const : null;
   const sessionWorkspaceTarget = useMemo<NekoWorkspaceTarget | null>(() =>
     session?.workspace ? {
       id: session.id,
@@ -771,7 +772,7 @@ export default function NekoChillApp({
     setActiveSession(null);
     setCoworkerHomeOpen(false);
     if (!target) {
-      setProjectDialog("create");
+      setProjectDialog("create-for-session");
       return;
     }
     setSelectedProjectId(target.id);
@@ -1096,7 +1097,9 @@ export default function NekoChillApp({
                 agents={agents}
                 providerCatalogs={providerCatalogs}
                 discoveryLoading={providerDiscoveryLoading}
+                projectCount={projects.length}
                 onNewSession={handleNewSession}
+                onCreateProject={openProjectDialog}
                 onOpenSession={openSessionFromCatalog}
                 onRefreshDiscovery={() => void refreshProviderSessions(
                   agents,
@@ -1116,6 +1119,7 @@ export default function NekoChillApp({
           sessions={sessions}
           activeSession={session}
           sidebarOpen={sidebarOpen}
+          hasProjects={projects.length > 0}
           onClose={() => setCommandCenterOpen(false)}
           onAction={handleWorkbenchAction}
           onSelectSession={openSessionFromCatalog}
@@ -1125,6 +1129,7 @@ export default function NekoChillApp({
       {projectDialog ? (
         <ProjectDialog
           project={editingProject}
+          reason={projectDialogReason}
           onCancel={() => setProjectDialog(null)}
           onSave={async (name, roots) => {
             let projectId: string;

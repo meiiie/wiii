@@ -278,6 +278,18 @@ describe("Project Home readiness and missing Neko recovery", () => {
     expect(host.providers).toHaveBeenCalledTimes(2);
   });
 
+  it("surfaces an obvious create-Project CTA on empty overview", () => {
+    const onCreateProject = vi.fn();
+    render(<NekoOverview agents={[missing]} sessions={[]} providerCatalogs={[]} discoveryLoading={false}
+      projectCount={0} onNewSession={vi.fn()} onCreateProject={onCreateProject}
+      onOpenSession={vi.fn()} onRefreshDiscovery={vi.fn()}
+      onImportProviderSession={vi.fn(async () => {})} />);
+    expect(screen.getByTestId("overview-project-required-hint").textContent).toContain("Cần tạo Project trước");
+    fireEvent.click(screen.getByTestId("overview-create-first-project"));
+    expect(onCreateProject).toHaveBeenCalledOnce();
+    expect(screen.queryByRole("button", { name: "Phiên mới", exact: true })).toBeNull();
+  });
+
   it("offers missing-agent guidance before a first Project exists", async () => {
     const createProject = vi.fn();
     render(<NekoOverview agents={[missing]} sessions={[]} providerCatalogs={[]} discoveryLoading={false}

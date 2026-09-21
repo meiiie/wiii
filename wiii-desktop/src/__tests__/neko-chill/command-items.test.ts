@@ -102,4 +102,11 @@ describe("Neko command items", () => {
       .toEqual(["Phân tích nhanh"]);
     expect(transcriptSearchText).toHaveBeenCalledTimes(1);
   });
+
+  it("explains that Phiên mới needs a Project when none exist", () => {
+    const items = buildNekoCommandItems([], null, true, false);
+    const neu = items.find((item) => item.id === "action:new");
+    expect(neu?.description).toContain("Cần tạo Project trước");
+  });
+
 });

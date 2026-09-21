@@ -10,10 +10,13 @@ import {
 
 export function ProjectDialog({
   project,
+  reason = null,
   onCancel,
   onSave,
 }: {
   project: NekoProject | null;
+  /** Why create was opened — e.g. user chose Phiên mới with no Project yet. */
+  reason?: "new-session" | null;
   onCancel: () => void;
   onSave: (name: string, roots: WorkspaceRef[]) => Promise<void>;
 }) {
@@ -115,6 +118,15 @@ export function ProjectDialog({
             <h1 id="project-dialog-title" className="mt-1 text-[21px] font-semibold tracking-[-0.025em] text-[var(--nk-text)]">
               {project ? "Chỉnh sửa Project" : "Tạo Project"}
             </h1>
+            {!project && reason === "new-session" ? (
+              <p className="mt-2 max-w-[420px] text-[12.5px] leading-5 text-[var(--nk-text-2)]" data-testid="project-required-hint">
+                Phiên mới cần một Project trước. Hãy tạo Project và chọn thư mục nguồn — sau đó bạn có thể mở phiên trong Project đó.
+              </p>
+            ) : !project ? (
+              <p className="mt-2 max-w-[420px] text-[12.5px] leading-5 text-[var(--nk-text-3)]">
+                Project gắn thư mục nguồn để Neko làm việc. Mỗi phiên thuộc một Project.
+              </p>
+            ) : null}
           </div>
           <button
             type="button"

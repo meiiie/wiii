@@ -16,6 +16,8 @@ interface MenuAction {
   shortcut?: string;
   disabled?: boolean;
   checked?: boolean;
+  /** Explains why the item is unavailable (shown as title + View-menu helper). */
+  disabledReason?: string;
   run: () => void;
 }
 
@@ -92,7 +94,16 @@ export function NekoMenuBar(props: NekoMenuBarProps) {
     [
       { label: "Tìm kiếm và lệnh…", shortcut: `${modifier}K`, disabled: !props.ready, run: props.onSearch },
       { label: "Thanh bên", shortcut: `${modifier}B`, checked: props.sidebarOpen, run: props.onToggleSidebar },
-      { label: "Công cụ dự án", shortcut: `${modifier}Alt+B`, checked: props.workspaceOpen, disabled: !props.workspaceAvailable, run: props.onToggleWorkspace },
+      {
+        label: "Công cụ dự án",
+        shortcut: `${modifier}Alt+B`,
+        checked: props.workspaceOpen,
+        disabled: !props.workspaceAvailable,
+        disabledReason: props.workspaceAvailable
+          ? undefined
+          : "Cần mở Project hoặc phiên có thư mục nguồn trước khi dùng công cụ dự án.",
+        run: props.onToggleWorkspace,
+      },
     ],
     [
       { label: "Phím tắt", run: () => setHelp("shortcuts") },
@@ -195,6 +206,7 @@ export function NekoMenuBar(props: NekoMenuBarProps) {
             {actions[open].map((action) => (
               <button key={action.label} type="button" role={action.checked === undefined ? "menuitem" : "menuitemcheckbox"}
                 tabIndex={-1} aria-disabled={action.disabled || undefined} aria-checked={action.checked}
+                title={action.disabled ? action.disabledReason : undefined}
                 className="nk-menu-action flex min-h-8 w-full items-center gap-2 rounded px-2 text-left text-[12px]"
                 onClick={() => {
                   if (action.disabled) return;
@@ -210,6 +222,11 @@ export function NekoMenuBar(props: NekoMenuBarProps) {
             {open === 1 && <p className="border-t border-[var(--nk-border)] px-3 py-2 text-[11px] leading-4 text-[var(--nk-text-3)]">
               Sửa ô nhập trong Wiii. Trình sửa tệp và Computer dùng phím tắt trong vùng đó.
             </p>}
+            {open === 2 && !props.workspaceAvailable ? (
+              <p className="border-t border-[var(--nk-border)] px-3 py-2 text-[11px] leading-4 text-[var(--nk-text-3)]" data-testid="workspace-tools-disabled-hint">
+                Công cụ dự án chỉ bật khi đã có Project hoặc phiên với thư mục nguồn.
+              </p>
+            ) : null}
           </div>
         )}
       </nav>
