@@ -37,26 +37,45 @@ function SessionRow({ item, showProject, importing, onOpenManaged, onImportProvi
   onImportProvider: (item: UnifiedSessionItem) => void;
 }) {
   const actionable = Boolean(item.managedSessionId || item.providerSession?.canResume);
+  const activate = () => {
+    if (!actionable || importing) return;
+    if (item.managedSessionId) onOpenManaged(item.managedSessionId);
+    else onImportProvider(item);
+  };
+  const meta = (
+    <>
+      <strong className="block truncate text-[12px] font-medium text-[var(--nk-text)]">{item.title}</strong>
+      <span className="mt-0.5 flex min-w-0 items-center gap-1.5 text-[10.5px] text-[var(--nk-text-3)]">
+        {showProject ? <><span className="truncate">{item.projectName}</span><span aria-hidden="true">›</span></> : null}
+        <span className="shrink-0">{item.harnessName}</span><span aria-hidden="true">·</span>
+        <span className="shrink-0">{item.stateLabel}</span><span aria-hidden="true">·</span>
+        <span className="shrink-0">{timeLabel(item.updatedAt)}</span>
+        {item.model ? <><span aria-hidden="true">·</span><span className="truncate">{item.model}</span></> : null}
+      </span>
+    </>
+  );
   return (
     <div className="group flex min-w-0 items-center gap-3 rounded-lg px-3 py-2.5 hover:bg-[var(--nk-overlay)]">
       <span aria-hidden="true" className={`h-1.5 w-1.5 shrink-0 rounded-full ${stateDotClass(item.state)}`} />
-      <span className="min-w-0 flex-1">
-        <strong className="block truncate text-[12px] font-medium text-[var(--nk-text)]">{item.title}</strong>
-        <span className="mt-0.5 flex min-w-0 items-center gap-1.5 text-[10.5px] text-[var(--nk-text-3)]">
-          {showProject ? <><span className="truncate">{item.projectName}</span><span aria-hidden="true">›</span></> : null}
-          <span className="shrink-0">{item.harnessName}</span><span aria-hidden="true">·</span>
-          <span className="shrink-0">{item.stateLabel}</span><span aria-hidden="true">·</span>
-          <span className="shrink-0">{timeLabel(item.updatedAt)}</span>
-          {item.model ? <><span aria-hidden="true">·</span><span className="truncate">{item.model}</span></> : null}
-        </span>
-      </span>
+      {actionable ? (
+        <button
+          type="button"
+          className="min-w-0 flex-1 text-left disabled:opacity-50"
+          disabled={importing}
+          aria-label={`${item.managedSessionId ? "Mở phiên" : "Gắn phiên vào Wiii"} ${item.title}`}
+          onClick={activate}
+        >
+          {meta}
+        </button>
+      ) : (
+        <span className="min-w-0 flex-1">{meta}</span>
+      )}
       {actionable ? (
         <button
           type="button"
           className="inline-flex h-8 shrink-0 items-center gap-1.5 rounded-lg border border-[var(--nk-border)] bg-[var(--nk-raised)] px-2.5 text-[11px] font-medium text-[var(--nk-text-2)] opacity-0 transition-opacity hover:border-[var(--nk-border-strong)] hover:text-[var(--nk-text)] group-hover:opacity-100 focus:opacity-100 disabled:opacity-50"
           disabled={importing}
-          aria-label={`${item.managedSessionId ? "Mở phiên" : "Gắn phiên vào Wiii"} ${item.title}`}
-          onClick={() => item.managedSessionId ? onOpenManaged(item.managedSessionId) : onImportProvider(item)}
+          onClick={activate}
         >
           {importing ? <LoaderCircle aria-hidden="true" className="h-3 w-3 animate-spin" />
             : item.managedSessionId ? <ChevronRight aria-hidden="true" className="h-3 w-3" />
