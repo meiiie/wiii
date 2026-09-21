@@ -564,6 +564,22 @@ describe("neko-session-store", () => {
     expect(driver.prompts).toEqual([]);
   });
 
+  it("process exit with null code admits signal death and empty model reply", async () => {
+    const id = await setup();
+    emit({ type: "turn-started", sessionId: id });
+    // Open an empty assistant shell the way live dispatch does before deltas arrive.
+    useNekoSessionStore.setState((state) => {
+      const current = state.sessions[id];
+      if (!current) return;
+      current.messages.push({ id: "asst-empty", role: "assistant", blocks: [] });
+      current.status = "streaming";
+    });
+    emit({ type: "process-exited", sessionId: id, code: null });
+    expect(session(id).status).toBe("exited");
+    expect(session(id).statusDetail).toContain("tín hiệu");
+    expect(session(id).statusDetail).toContain("Chưa có phản hồi từ model");
+  });
+
   it("closeSession disposes the driver but keeps the transcript (exited)", async () => {
     const id = await setup();
     await useNekoSessionStore.getState().closeSession(id);
