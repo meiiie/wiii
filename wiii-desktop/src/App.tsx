@@ -8,6 +8,7 @@ import { useUIStore } from "@/stores/ui-store";
 import { WorkbenchApp } from "@/workbench/WorkbenchApp";
 import { detectWorkbenchHost, type WorkbenchHost } from "@/workbench/host";
 import { BootSplash } from "@/workbench/WorkbenchBoot";
+import { explainConnectionsUnavailableInPreview } from "@/neko-chill/connections-preview";
 
 const WiiiCloudApp = lazy(async () => import("@/workbench/WiiiCloudApp"));
 
@@ -117,7 +118,7 @@ export default function App() {
   if (localPreviewEnabled && window.location.search.includes("preview=neko-chill")) {
     return (
       <Suspense fallback={<BootSplash label="Neko Chill đang mở bản xem trước..." />}>
-        <NekoChillApp />
+        <NekoChillApp onOpenConnections={explainConnectionsUnavailableInPreview} />
       </Suspense>
     );
   }
