@@ -108,6 +108,46 @@ describe("calm workbench interaction contracts", () => {
     ["IME composition", { isComposing: true }],
     ["IME completion key", { keyCode: 229 }],
     ["multiline input", { shiftKey: true }],
+  ])("does not send a session draft during %s", async (_label, key) => {
+    const session = {
+      id: "composer-review", agentName: "Neko Core", status: "idle", controls: [], commands: [], workspace,
+    } as unknown as NekoSession;
+    const onSend = vi.fn(async () => {});
+    render(<NekoComposer
+      session={session} disabled={false} streaming={false}
+      onSend={onSend} onCancel={vi.fn()} onSetConfigOption={vi.fn()} onClientCommand={vi.fn()}
+    />);
+    const input = screen.getByTestId("neko-composer-input");
+    fireEvent.change(input, { target: { value: "Tiếng Việt đang được nhập" } });
+    fireEvent.keyDown(input, { key: "Enter", ...key });
+    expect(onSend).not.toHaveBeenCalled();
+    expect((input as HTMLTextAreaElement).value).toBe("Tiếng Việt đang được nhập");
+  });
+
+  it("shows an honest busy spinner on session send while submitting", async () => {
+    const session = {
+      id: "composer-review", agentName: "Neko Core", status: "idle", controls: [], commands: [], workspace,
+    } as unknown as NekoSession;
+    let complete!: () => void;
+    const onSend = vi.fn((_text: string, _accepted: () => void) =>
+      new Promise<void>((resolve) => { complete = resolve; }));
+    render(<NekoComposer
+      session={session} disabled={false} streaming={false}
+      onSend={onSend} onCancel={vi.fn()} onSetConfigOption={vi.fn()} onClientCommand={vi.fn()}
+    />);
+    fireEvent.change(screen.getByTestId("neko-composer-input"), { target: { value: "Gửi đi" } });
+    fireEvent.click(screen.getByRole("button", { name: "Gửi tin nhắn" }));
+    const busy = await vi.waitFor(() =>
+      screen.getByRole("button", { name: "Đang gửi" }) as HTMLButtonElement);
+    expect(busy.getAttribute("aria-busy")).toBe("true");
+    expect(busy.getAttribute("title")).toBe("Đang gửi…");
+    await act(async () => { complete(); });
+  });
+
+  it.each([
+    ["IME composition", { isComposing: true }],
+    ["IME completion key", { keyCode: 229 }],
+    ["multiline input", { shiftKey: true }],
   ])("does not send a draft during %s", async (_label, key) => {
     render(<ProjectHome project={project} />);
     const input = screen.getByRole("textbox", { name: "Lời nhắn đầu tiên" });

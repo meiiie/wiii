@@ -5,6 +5,7 @@ import {
   Command,
   Folder,
   Gauge,
+  LoaderCircle,
   LockKeyhole,
   Search,
   Settings2,
@@ -354,9 +355,14 @@ function NekoComposerComponent({
                 setSlashDismissed(true);
                 return;
               }
-              if (event.key === "Enter" && !event.shiftKey) {
+              if (
+                event.key === "Enter"
+                && !event.shiftKey
+                && !event.nativeEvent.isComposing
+                && event.keyCode !== 229
+              ) {
                 event.preventDefault();
-                submit();
+                void submit();
               }
             }}
           />
@@ -430,12 +436,15 @@ function NekoComposerComponent({
                 type="button"
                 className="flex h-[28px] w-[28px] items-center justify-center rounded-full bg-[var(--nk-inverse)] text-[var(--nk-on-inverse)] disabled:opacity-30"
                 disabled={composerDisabled || !session.workspace || !draft.trim()}
-                onClick={submit}
+                onClick={() => void submit()}
                 title={sendTitle}
-                aria-label="Gửi tin nhắn"
+                aria-label={submitting ? "Đang gửi" : "Gửi tin nhắn"}
+                aria-busy={submitting || undefined}
                 data-testid="neko-send"
               >
-                <ArrowUp aria-hidden="true" className="h-3 w-3" strokeWidth={1.8} />
+                {submitting
+                  ? <LoaderCircle aria-hidden="true" className="h-3 w-3 animate-spin" />
+                  : <ArrowUp aria-hidden="true" className="h-3 w-3" strokeWidth={1.8} />}
               </button>
             )}
           </div>
