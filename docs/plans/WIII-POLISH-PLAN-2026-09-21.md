@@ -1,6 +1,6 @@
 # WIII polish plan — 2026-09-21
 
-Status: Active · Batch 1 shipping now · Batch 2 deferred
+Status: Batch 1 merged (#976/#977) · Batch 2 active — see WIII-POLISH-BATCH2-2026-09-21.md
 Owner: soft+BIG polish (this agent) · Teammate may parallel-live elsewhere — **do not edit claimed paths**
 Base: `main` @ `#975` · Preview: `localhost:1420/?preview=neko-chill`
 Voice: VI-first · ZCode-selective (calm density / disabled=explained / keyboard honesty — **no ZCode brand copy**)
@@ -41,7 +41,7 @@ Voice: VI-first · ZCode-selective (calm density / disabled=explained / keyboard
 6. **Keyboard footer + focus consistency (composer ↔ palette)**
    Session composer + ProjectHome get Enter/Shift+Enter hint; palette footer uses the same calm kbd chip language; keep `nk-input-field` / `nk-project-composer` focus-within rings aligned (no new brand chrome).
 
-### P1 — Batch 2 (next round — leave for teammate / next pass)
+### P1 — Batch 2 (active — claimed in WIII-POLISH-BATCH2-2026-09-21.md)
 
 7. **Session composer parity** — deeper alignment with ProjectHome / ZCode composer cues (toolbar density, locked-model affordance, insert/slash chrome).
 8. **Loading chrome** — discovery / hydrate / harness probe skeletons and busy labels consistency.
