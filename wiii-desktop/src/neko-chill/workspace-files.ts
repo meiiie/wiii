@@ -45,18 +45,36 @@ export interface WorkspaceDiff {
   binary: boolean;
 }
 
-export function listWorkspaceFiles(workspace: string): Promise<WorkspaceListing> {
+/** VI honesty when Vite browser preview has no Tauri workspace IPC. */
+export const NATIVE_WORKSPACE_UNAVAILABLE_VI =
+  "Bản xem trước trong trình duyệt không đọc được workspace trên máy. Hãy dùng app desktop Wiii để mở tệp Project.";
+
+export function hasNativeWorkspaceAuthority(): boolean {
+  return typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
+}
+
+export function assertNativeWorkspaceAuthority(): void {
+  if (!hasNativeWorkspaceAuthority()) {
+    throw new Error(NATIVE_WORKSPACE_UNAVAILABLE_VI);
+  }
+}
+
+export async function listWorkspaceFiles(workspace: string): Promise<WorkspaceListing> {
+  assertNativeWorkspaceAuthority();
   return invoke("neko_list_workspace_files", { workspace });
 }
 
-export function readWorkspaceFile(workspace: string, path: string): Promise<WorkspaceFile> {
+export async function readWorkspaceFile(workspace: string, path: string): Promise<WorkspaceFile> {
+  assertNativeWorkspaceAuthority();
   return invoke("neko_read_workspace_file", { workspace, path });
 }
 
-export function listWorkspaceChanges(workspace: string): Promise<WorkspaceChanges> {
+export async function listWorkspaceChanges(workspace: string): Promise<WorkspaceChanges> {
+  assertNativeWorkspaceAuthority();
   return invoke("neko_workspace_changes", { workspace });
 }
 
-export function readWorkspaceDiff(workspace: string, path: string): Promise<WorkspaceDiff> {
+export async function readWorkspaceDiff(workspace: string, path: string): Promise<WorkspaceDiff> {
+  assertNativeWorkspaceAuthority();
   return invoke("neko_workspace_diff", { workspace, path });
 }

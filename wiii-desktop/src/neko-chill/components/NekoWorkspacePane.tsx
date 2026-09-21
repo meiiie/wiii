@@ -43,6 +43,8 @@ import {
   type ObservedWorkspaceActivity,
 } from "../stores/neko-workspace-store";
 import {
+  hasNativeWorkspaceAuthority,
+  NATIVE_WORKSPACE_UNAVAILABLE_VI,
   readWorkspaceFile,
   type WorkspaceEntry,
   type WorkspaceFile,
@@ -604,6 +606,8 @@ function NekoWorkspacePaneComponent({
 
   if (!workspace || !pane || (!pane.open && !exiting)) return null;
 
+  const nativeWorkspace = hasNativeWorkspaceAuthority();
+
   const computerSurface = (mode: "terminal" | "browser" | "computer") =>
     computerProjectId ? (
       <NekoComputerSurface
@@ -908,8 +912,10 @@ function NekoWorkspacePaneComponent({
                   <button
                     type="button"
                     className="mt-4 inline-flex h-8 items-center gap-2 rounded-lg border border-[var(--nk-border-strong)] bg-[var(--nk-composer)] px-3 text-[12px] text-[var(--nk-text)] hover:bg-[var(--nk-raised)] disabled:opacity-50"
-                    disabled={pane.refreshing}
+                    disabled={pane.refreshing || !nativeWorkspace}
+                    title={!nativeWorkspace ? NATIVE_WORKSPACE_UNAVAILABLE_VI : undefined}
                     onClick={() => {
+                      if (!nativeWorkspace) return;
                       if (pane.selectedPath) {
                         void (surface === "changes" ? openChange : openFile)(targetId, workspace, pane.selectedPath);
                       } else void refresh(targetId, workspace, { force: true });
