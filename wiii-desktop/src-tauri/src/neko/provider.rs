@@ -3,18 +3,18 @@ use serde::{Deserialize, Serialize};
 use std::ffi::OsString;
 use std::fmt;
 use std::io;
-#[cfg(windows)]
+#[cfg(any(windows, target_os = "linux"))]
 use std::io::Read;
 use std::path::{Path, PathBuf};
-#[cfg(windows)]
+#[cfg(any(windows, target_os = "linux"))]
 use std::process::Stdio;
 use std::process::{Child, Command, ExitStatus};
-#[cfg(windows)]
+#[cfg(any(windows, target_os = "linux"))]
 use std::sync::mpsc;
-#[cfg(windows)]
+#[cfg(any(windows, target_os = "linux"))]
 use std::thread;
 use std::time::Duration;
-#[cfg(windows)]
+#[cfg(any(windows, target_os = "linux"))]
 use std::time::Instant;
 
 #[cfg(windows)]
@@ -25,13 +25,13 @@ const CREATE_NEW_PROCESS_GROUP: u32 = 0x0000_0200;
 const CREATE_SUSPENDED: u32 = 0x0000_0004;
 const PROBE_TIMEOUT: Duration = Duration::from_secs(3);
 const NEKO_STARTUP_TIMEOUT: Duration = Duration::from_secs(10);
-#[cfg(windows)]
+#[cfg(any(windows, target_os = "linux"))]
 const PROCESS_TERMINATION_TIMEOUT: Duration = Duration::from_secs(2);
-#[cfg(windows)]
+#[cfg(any(windows, target_os = "linux"))]
 const PROBE_READER_DRAIN_TIMEOUT: Duration = Duration::from_secs(1);
-#[cfg(windows)]
+#[cfg(any(windows, target_os = "linux"))]
 const PROCESS_POLL_INTERVAL: Duration = Duration::from_millis(25);
-#[cfg(windows)]
+#[cfg(any(windows, target_os = "linux"))]
 const MAX_PROBE_OUTPUT_BYTES: usize = 64 * 1024;
 
 struct ProbeOutput {
@@ -39,14 +39,30 @@ struct ProbeOutput {
     stdout: Vec<u8>,
 }
 
-/// An approved provider process plus its non-escapable host containment.
-/// Windows uses a Job Object. Unix hosts reject the launch before spawn until
-/// Wiii has an approved boundary that the same-UID provider cannot migrate out
-/// of; a process group or writable cgroup leaf is not treated as proof.
+/// An approved provider process plus its host containment.
+/// Windows uses a Job Object (`JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE`).
+/// Linux uses bubblewrap (`bwrap`) with `--unshare-pid --as-pid-1
+/// --die-with-parent` when available; other Unix hosts reject before spawn.
+/// A POSIX process group or writable cgroup leaf is not treated as proof.
 pub(crate) struct OwnedChild {
     pub(crate) child: Child,
     #[cfg(windows)]
     job: WindowsJob,
+    /// When true, Drop must kill the Linux bwrap supervisor (kill-on-close).
+    #[cfg(target_os = "linux")]
+    linux_kill_on_drop: bool,
+}
+
+#[cfg(target_os = "linux")]
+impl Drop for OwnedChild {
+    fn drop(&mut self) {
+        if !self.linux_kill_on_drop {
+            return;
+        }
+        // Mirror Job Object kill-on-close: abandoning the owner must not leave
+        // the provider PID-namespace tree running.
+        let _ = terminate_child_tree(self);
+    }
 }
 
 /// Distinguishes a launch rejection that leaves no child behind from a
@@ -81,7 +97,7 @@ impl SpawnOwnedError {
         }
     }
 
-    #[cfg(any(windows, test))]
+    #[cfg(any(windows, target_os = "linux", test))]
     fn after_unproven_cleanup(error: io::Error) -> Self {
         Self {
             error,
@@ -147,7 +163,7 @@ impl Drop for WindowsJob {
     }
 }
 
-#[cfg(windows)]
+#[cfg(any(windows, target_os = "linux"))]
 fn probe_failure_after_cleanup(child: &mut OwnedChild, original: io::Error) -> SpawnOwnedError {
     match terminate_child_tree(child) {
         Ok(()) => SpawnOwnedError::after_proven_cleanup(original),
@@ -157,9 +173,8 @@ fn probe_failure_after_cleanup(child: &mut OwnedChild, original: io::Error) -> S
     }
 }
 
-/// Unix provider discovery is staged behind the same non-escapable containment
-/// primitive as provider execution. Do not probe by spawning an unowned child.
-#[cfg(unix)]
+/// Non-Linux Unix stays fail-closed: do not probe by spawning an unowned child.
+#[cfg(all(unix, not(target_os = "linux")))]
 fn run_probe_with_timeout(
     _command: Command,
     _timeout: Duration,
@@ -167,11 +182,11 @@ fn run_probe_with_timeout(
     Err(SpawnOwnedError::safe(unix_containment_unavailable()))
 }
 
-/// Windows discovery uses a bounded anonymous-pipe consumer instead of a
-/// capture file. The reader closes the pipe after MAX+1 bytes, so a producer
-/// cannot allocate unbounded disk space between monitor polls. Process-tree
-/// cleanup is checked before any output is trusted.
-#[cfg(windows)]
+/// Discovery uses a bounded anonymous-pipe consumer instead of a capture file.
+/// The reader closes the pipe after MAX+1 bytes, so a producer cannot allocate
+/// unbounded disk space between monitor polls. Process-tree cleanup is checked
+/// before any output is trusted. Windows uses Job Objects; Linux uses bwrap.
+#[cfg(any(windows, target_os = "linux"))]
 fn run_probe_with_timeout(
     mut command: Command,
     timeout: Duration,
@@ -460,7 +475,17 @@ pub(crate) fn spawn_owned(command: &mut Command) -> Result<OwnedChild, SpawnOwne
         }
         Ok(OwnedChild { child, job })
     }
-    #[cfg(unix)]
+    #[cfg(target_os = "linux")]
+    {
+        super::linux_containment::attach_bwrap_supervisor(command)
+            .map_err(SpawnOwnedError::safe)?;
+        let child = command.spawn()?;
+        Ok(OwnedChild {
+            child,
+            linux_kill_on_drop: true,
+        })
+    }
+    #[cfg(all(unix, not(target_os = "linux")))]
     {
         let _ = command;
         Err(SpawnOwnedError::safe(unix_containment_unavailable()))
@@ -491,15 +516,24 @@ fn spawn_cleanup_error(primary: io::Error, cleanup: io::Result<()>) -> io::Error
     }
 }
 
-#[cfg(unix)]
 fn unix_containment_unavailable() -> io::Error {
-    io::Error::new(
-        io::ErrorKind::Unsupported,
-        "local Neko providers require non-escapable process containment; Unix execution is disabled until an approved primitive prevents same-UID migration",
-    )
+    #[cfg(target_os = "linux")]
+    {
+        return io::Error::new(
+            io::ErrorKind::Unsupported,
+            super::linux_containment::unavailable_message(),
+        );
+    }
+    #[cfg(not(target_os = "linux"))]
+    {
+        io::Error::new(
+            io::ErrorKind::Unsupported,
+            "local Neko providers require approved process-tree containment; Linux needs bubblewrap (bwrap), Windows uses Job Objects; other hosts remain fail-closed",
+        )
+    }
 }
 
-#[cfg(windows)]
+#[cfg(any(windows, target_os = "linux"))]
 fn reap_child_before(child: &mut Child, deadline: Instant) -> io::Result<()> {
     loop {
         match child.try_wait()? {
@@ -554,7 +588,25 @@ pub(crate) fn terminate_child_tree(owned: &mut OwnedChild) -> io::Result<()> {
     }
 }
 
-#[cfg(unix)]
+#[cfg(target_os = "linux")]
+pub(crate) fn terminate_child_tree(owned: &mut OwnedChild) -> io::Result<()> {
+    let deadline = Instant::now() + PROCESS_TERMINATION_TIMEOUT;
+    match owned.child.kill() {
+        Ok(()) => {}
+        Err(error) if error.kind() == io::ErrorKind::InvalidInput => {
+            // Leader already exited; still prove reap below.
+        }
+        Err(error) => return Err(error),
+    }
+    reap_child_before(&mut owned.child, deadline)?;
+    // Killing the outer bwrap supervisor tears down the PID namespace; with
+    // --as-pid-1, leftovers in that namespace are reaped by the kernel. Mark
+    // kill-on-drop satisfied so Drop does not re-enter.
+    owned.linux_kill_on_drop = false;
+    Ok(())
+}
+
+#[cfg(all(unix, not(target_os = "linux")))]
 pub(crate) fn terminate_child_tree(_owned: &mut OwnedChild) -> io::Result<()> {
     Err(io::Error::new(
         io::ErrorKind::Unsupported,
@@ -783,7 +835,18 @@ fn probe_definition(
 }
 
 fn host_supports_provider_containment() -> bool {
-    cfg!(windows)
+    #[cfg(windows)]
+    {
+        true
+    }
+    #[cfg(target_os = "linux")]
+    {
+        super::linux_containment::containment_available()
+    }
+    #[cfg(not(any(windows, target_os = "linux")))]
+    {
+        false
+    }
 }
 
 fn format_discovery_failure(provider_name: &str, error: &SpawnOwnedError) -> String {
@@ -805,20 +868,15 @@ pub fn resolve(provider_id: &str) -> Result<ResolvedProvider, SpawnOwnedError> {
             format!("unknown Neko provider '{provider_id}'"),
         ))
     })?;
-    #[cfg(unix)]
-    {
-        let _ = provider;
-        Err(SpawnOwnedError::safe(unix_containment_unavailable()))
+    if !host_supports_provider_containment() {
+        return Err(SpawnOwnedError::safe(unix_containment_unavailable()));
     }
-    #[cfg(windows)]
-    {
-        probe_definition(provider)?.ok_or_else(|| {
-            SpawnOwnedError::safe(io::Error::new(
-                io::ErrorKind::NotFound,
-                format!("provider '{}' is not available on this host", provider.name),
-            ))
-        })
-    }
+    probe_definition(provider)?.ok_or_else(|| {
+        SpawnOwnedError::safe(io::Error::new(
+            io::ErrorKind::NotFound,
+            format!("provider '{}' is not available on this host", provider.name),
+        ))
+    })
 }
 
 pub fn list_selected(provider_id: Option<&str>) -> Result<Vec<AgentInfo>, String> {
@@ -1103,7 +1161,7 @@ mod tests {
         }
     }
 
-    #[cfg(unix)]
+    #[cfg(all(unix, not(target_os = "linux")))]
     #[test]
     fn provider_probe_rejects_before_spawn_without_containment() {
         let mut command = Command::new("sh");
@@ -1114,6 +1172,37 @@ mod tests {
             Err(error) => error,
         };
         assert_eq!(error.kind(), io::ErrorKind::Unsupported);
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn linux_probe_rejects_before_spawn_when_bwrap_forced_missing() {
+        super::super::linux_containment::force_unavailable_for_test(true);
+        let mut command = Command::new("sh");
+        command.args(["-c", "exit 99"]);
+        let error = match run_probe(command) {
+            Ok(_) => {
+                super::super::linux_containment::force_unavailable_for_test(false);
+                panic!("Linux probe spawned without bwrap");
+            }
+            Err(error) => error,
+        };
+        super::super::linux_containment::force_unavailable_for_test(false);
+        assert_eq!(error.kind(), io::ErrorKind::Unsupported);
+        assert!(error.to_string().contains("bubblewrap") || error.to_string().contains("bwrap"));
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn linux_probe_runs_under_bwrap_when_available() {
+        if !super::super::linux_containment::containment_available() {
+            return;
+        }
+        let mut command = Command::new("sh");
+        command.args(["-c", "printf ready"]);
+        let output = run_probe(command).expect("bwrap probe should spawn");
+        assert!(output.status.success());
+        assert_eq!(String::from_utf8_lossy(&output.stdout), "ready");
     }
 
     #[test]
@@ -1154,7 +1243,7 @@ mod tests {
         assert!(format_discovery_failure("Codex", &uncertain).contains("could not be proven"));
     }
 
-    #[cfg(unix)]
+    #[cfg(all(unix, not(target_os = "linux")))]
     #[test]
     fn provider_roster_reports_host_containment_as_unsupported() {
         let providers = list_selected(None).unwrap();
@@ -1162,6 +1251,31 @@ mod tests {
         assert!(providers.iter().all(|provider| {
             !provider.found && provider.availability == AgentAvailability::HostUnsupported
         }));
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn linux_roster_reports_host_unsupported_when_bwrap_missing() {
+        super::super::linux_containment::force_unavailable_for_test(true);
+        let providers = list_selected(None).unwrap();
+        super::super::linux_containment::force_unavailable_for_test(false);
+        assert!(!providers.is_empty());
+        assert!(providers.iter().all(|provider| {
+            !provider.found && provider.availability == AgentAvailability::HostUnsupported
+        }));
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn linux_roster_does_not_claim_host_unsupported_when_bwrap_works() {
+        if !super::super::linux_containment::containment_available() {
+            return;
+        }
+        let providers = list_selected(None).unwrap();
+        assert!(!providers.is_empty());
+        assert!(providers
+            .iter()
+            .all(|provider| provider.availability != AgentAvailability::HostUnsupported));
     }
 
     #[test]
@@ -1185,9 +1299,17 @@ mod tests {
             command
         };
         let Ok(mut child) = spawn_owned(&mut command) else {
-            // Unix hosts reject before spawn instead of silently downgrading
-            // to an escapable process group or writable cgroup leaf.
-            #[cfg(unix)]
+            // Non-Linux Unix, or Linux without bwrap, rejects before spawn
+            // instead of silently downgrading to an escapable process group.
+            #[cfg(target_os = "linux")]
+            {
+                assert!(
+                    !super::super::linux_containment::containment_available(),
+                    "Linux bwrap containment available but spawn_owned failed"
+                );
+                return;
+            }
+            #[cfg(all(unix, not(target_os = "linux")))]
             return;
             #[cfg(windows)]
             panic!("Windows Job Object containment unexpectedly failed");
@@ -1197,7 +1319,7 @@ mod tests {
         assert!(child.child.try_wait().unwrap().is_some());
     }
 
-    #[cfg(unix)]
+    #[cfg(all(unix, not(target_os = "linux")))]
     #[test]
     fn unix_without_unprivileged_non_escapable_containment_rejects_before_spawn() {
         let mut command = Command::new("sh");
@@ -1207,6 +1329,55 @@ mod tests {
             Err(error) => error,
         };
         assert_eq!(error.kind(), io::ErrorKind::Unsupported);
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn linux_without_bwrap_rejects_before_spawn() {
+        super::super::linux_containment::force_unavailable_for_test(true);
+        let mut command = Command::new("sh");
+        command.args(["-c", "sleep 30"]);
+        let error = match spawn_owned(&mut command) {
+            Ok(_) => {
+                super::super::linux_containment::force_unavailable_for_test(false);
+                panic!("provider launch bypassed bwrap gate");
+            }
+            Err(error) => error,
+        };
+        super::super::linux_containment::force_unavailable_for_test(false);
+        assert_eq!(error.kind(), io::ErrorKind::Unsupported);
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn linux_bwrap_termination_kills_descendant_tree() {
+        if !super::super::linux_containment::containment_available() {
+            return;
+        }
+        let script = std::env::temp_dir().join(format!(
+            "wiii-neko-linux-tree-{}.sh",
+            std::process::id()
+        ));
+        std::fs::write(
+            &script,
+            "#!/bin/bash\nsleep 400 &\nsleep 400 &\nwait\n",
+        )
+        .unwrap();
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let mut perms = std::fs::metadata(&script).unwrap().permissions();
+            perms.set_mode(0o755);
+            std::fs::set_permissions(&script, perms).unwrap();
+        }
+        let mut command = Command::new(&script);
+        let mut child = spawn_owned(&mut command).expect("bwrap spawn");
+        thread::sleep(Duration::from_millis(300));
+        terminate_child_tree(&mut child).unwrap();
+        assert!(child.child.try_wait().unwrap().is_some());
+        let _ = std::fs::remove_file(&script);
+        // Best-effort: no host-visible sleep 400 leftovers from this test script.
+        // (Other concurrent tests could race; we only assert supervisor reap above.)
     }
 
     #[cfg(windows)]
