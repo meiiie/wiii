@@ -109,4 +109,24 @@ describe("unified session catalog panel", () => {
     expect(onOpenManaged).toHaveBeenCalledWith("managed-1");
     expect(screen.getByText("Ngoài Wiii")).toBeTruthy();
   });
+
+  it("opens managed transcript from row body click; Mở CTA still opens once", () => {
+    const onOpenManaged = vi.fn();
+    panel({
+      managedSessions: [managed()],
+      onOpenManaged,
+    });
+
+    const title = screen.getByRole("button", { name: "Mở phiên Managed auth work" });
+    // Title/body is a real button (Enter/Space + click). Native dblclick also
+    // synthesizes click events, so the same handler covers double-click.
+    fireEvent.click(title);
+    expect(onOpenManaged).toHaveBeenCalledTimes(1);
+    expect(onOpenManaged).toHaveBeenCalledWith("managed-1");
+
+    onOpenManaged.mockClear();
+    fireEvent.click(screen.getByRole("button", { name: "Mở" }));
+    expect(onOpenManaged).toHaveBeenCalledTimes(1);
+    expect(onOpenManaged).toHaveBeenCalledWith("managed-1");
+  });
 });
