@@ -76,6 +76,7 @@ import {
   workspaceFromPath,
 } from "./workspace";
 import "./theme.css";
+import { explainConnectionsUnavailableInPreview } from "./connections-preview";
 
 if (import.meta.env.VITE_ENABLE_LOCAL_PREVIEW === "1" && typeof window !== "undefined") {
   (window as Window & {
@@ -381,9 +382,11 @@ function LiveNekoTranscript({
   );
 }
 
+const NEKO_CHILL_OPEN_MANAGED_NOOP = () => {};
+
 export default function NekoChillApp({
-  onOpenManaged = () => {},
-  onOpenConnections = onOpenManaged,
+  onOpenManaged = NEKO_CHILL_OPEN_MANAGED_NOOP,
+  onOpenConnections,
   onOpenWork = () => {},
   showWorkNavigation = false,
   taskLaunch = null,
@@ -394,6 +397,13 @@ export default function NekoChillApp({
   showWorkNavigation?: boolean;
   taskLaunch?: NekoTaskLaunchRequest | null;
 }) {
+  // Preview / bare mount: no Workbench host → do not silently no-op Kết nối.
+  // When only onOpenManaged is wired (ADE), keep falling through to managed.
+  const openConnections =
+    onOpenConnections
+    ?? (onOpenManaged === NEKO_CHILL_OPEN_MANAGED_NOOP
+      ? explainConnectionsUnavailableInPreview
+      : onOpenManaged);
   const detect = useNekoAgentStore((state) => state.detect);
   const agents = useNekoAgentStore((state) => state.agents);
   const hydrate = useNekoSessionStore((state) => state.hydrate);
@@ -786,8 +796,8 @@ export default function NekoChillApp({
   }, []);
   const openConnectionsFromSidebar = useCallback(() => {
     if (compactSidebar) setSidebarOpen(false);
-    onOpenConnections();
-  }, [compactSidebar, onOpenConnections]);
+    openConnections();
+  }, [compactSidebar, openConnections]);
   const openProjectDialogFromSidebar = useCallback(() => {
     if (compactSidebar) setSidebarOpen(false);
     openProjectDialog();
@@ -880,7 +890,7 @@ export default function NekoChillApp({
   const sidebarSurface = (
     <SessionSidebar
       header={<>
-        <WiiiNavigation onOpenManaged={onOpenManaged} onOpenConnections={onOpenConnections} onOpenWork={onOpenWork} showWorkNavigation={showWorkNavigation} />
+        <WiiiNavigation onOpenManaged={onOpenManaged} onOpenConnections={openConnections} onOpenWork={onOpenWork} showWorkNavigation={showWorkNavigation} />
         <button type="button" className="nk-chrome-button grid h-8 w-8 place-items-center rounded-md text-[var(--nk-text-2)]"
           aria-label="Tìm phiên hoặc chạy lệnh" title="Tìm phiên hoặc chạy lệnh (Ctrl+K / ⌘K)" aria-keyshortcuts="Control+K Meta+K"
           onClick={openCommandCenter}><Search size={16} aria-hidden="true" /></button>
@@ -914,7 +924,7 @@ export default function NekoChillApp({
           onNewSession={handleNewSession} onCreateProject={openProjectDialog} onSearch={openCommandCenter}
           onToggleSidebar={() => setSidebarOpen((value) => !value)}
           onToggleWorkspace={session?.workspace ? handleToggleSessionWorkspace : toggleProjectWorkspace}
-          onConnections={onOpenConnections} /></>}
+          onConnections={openConnections} /></>}
         commandCenter={false}
       />
       {!projectsHydrated && projectLoadError ? (
