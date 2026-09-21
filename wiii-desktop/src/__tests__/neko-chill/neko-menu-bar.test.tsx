@@ -184,4 +184,16 @@ describe("application menu and local editing", () => {
     fireEvent.click(screen.getByRole("menuitem", { name: /Hoàn tác/ }));
     expect((await screen.findByRole("alert")).textContent).toContain("chưa hỗ trợ");
   });
+
+  it("lists Enter and Shift+Enter in the shortcuts help dialog", () => {
+    setup();
+    fireEvent.click(screen.getByRole("menuitem", { name: "Trợ giúp", exact: true }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "Phím tắt" }));
+    const dialog = screen.getByRole("dialog", { name: /Phím tắt Wiii/i });
+    expect(dialog.textContent).toMatch(/Gửi tin nhắn/);
+    expect(dialog.textContent).toMatch(/Enter/);
+    expect(dialog.textContent).toMatch(/Xuống dòng/);
+    expect(dialog.textContent).toMatch(/Shift\+Enter/);
+  });
+
 });

@@ -4,6 +4,7 @@ import { ProjectHome } from "@/neko-chill/components/ProjectHome";
 import { NekoWorkspacePane } from "@/neko-chill/components/NekoWorkspacePane";
 import { NekoComposer } from "@/neko-chill/components/NekoComposer";
 import { clearNekoComposerDraft, readNekoComposerDraft } from "@/neko-chill/composer-drafts";
+import { BROWSER_FOLDER_PICKER_UNAVAILABLE_VI } from "@/neko-chill/workspace";
 import type { NekoSession } from "@/neko-chill/stores/neko-session-store";
 import { useNekoAgentStore } from "@/neko-chill/stores/neko-agent-store";
 import { useNekoProjectStore } from "@/neko-chill/stores/neko-project-store";
@@ -43,13 +44,23 @@ describe("calm workbench interaction contracts", () => {
       id: "composer-review", agentName: "Neko Core", status: "idle", controls: [], commands: [],
       workspace: null,
     } as unknown as NekoSession;
+    const onClientCommand = vi.fn();
     render(<NekoComposer
       session={session} disabled={false} streaming={false}
-      onSend={vi.fn()} onCancel={vi.fn()} onSetConfigOption={vi.fn()} onClientCommand={vi.fn()}
+      onSend={vi.fn()} onCancel={vi.fn()} onSetConfigOption={vi.fn()} onClientCommand={onClientCommand}
     />);
     const send = screen.getByRole("button", { name: "Gửi tin nhắn" }) as HTMLButtonElement;
     expect(send.disabled).toBe(true);
     expect(send.getAttribute("title")).toBe("Gắn dự án trước khi gửi.");
+
+    const folder = screen.getByTestId("neko-composer-choose-folder") as HTMLButtonElement;
+    expect(folder.disabled).toBe(true);
+    expect(folder.getAttribute("title")).toBe(BROWSER_FOLDER_PICKER_UNAVAILABLE_VI);
+    fireEvent.click(folder);
+    expect(onClientCommand).not.toHaveBeenCalled();
+
+    expect(document.body.textContent).toMatch(/Enter\s*gửi/);
+    expect(document.body.textContent).toMatch(/Shift\+Enter\s*xuống dòng/);
   });
 
   it("titles an enabled session send as Gửi", () => {

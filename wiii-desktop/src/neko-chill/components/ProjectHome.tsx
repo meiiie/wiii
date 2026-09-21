@@ -490,7 +490,7 @@ export function ProjectHome({
 
             <div className="relative flex min-w-0 flex-1 items-center gap-2 rounded-md px-1.5 py-1.5" title={selectedRoot?.path}>
               <span className="min-w-0 flex-1">
-                <span className="sr-only">Workspace</span>
+                <span className="sr-only">Thư mục nguồn</span>
                 {project.roots.length > 1 ? (
                   <span className="relative block min-w-0">
                     <select
@@ -615,9 +615,15 @@ export function ProjectHome({
             </div>
           </div>
 
-          <p className="mt-3 flex items-center justify-center gap-1.5 text-[11px] text-[var(--nk-text-3)]">
-            <ShieldCheck aria-hidden="true" className="h-3 w-3" />
-            Thư mục đã chọn là ngữ cảnh làm việc của phiên.
+          <p className="mt-3 flex flex-wrap items-center justify-center gap-x-3 gap-y-1 text-[11px] text-[var(--nk-text-3)]">
+            <span className="inline-flex items-center gap-1.5">
+              <ShieldCheck aria-hidden="true" className="h-3 w-3" />
+              Thư mục đã chọn là ngữ cảnh làm việc của phiên.
+            </span>
+            <span className="inline-flex items-center gap-2 text-[10px] text-[var(--nk-ghost)]" aria-hidden="true">
+              <span><kbd className="rounded border border-[var(--nk-border)] bg-[var(--nk-raised)] px-1 py-px text-[9.5px]">Enter</kbd> gửi</span>
+              <span><kbd className="rounded border border-[var(--nk-border)] bg-[var(--nk-raised)] px-1 py-px text-[9.5px]">Shift+Enter</kbd> xuống dòng</span>
+            </span>
           </p>
         </div>
       </div>

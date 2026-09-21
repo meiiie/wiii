@@ -107,8 +107,9 @@
   outline-offset: 2px;
 }
 .nk-input-field:focus-within {
-  outline: 2px solid var(--nk-text-3);
+  outline: 2px solid var(--nk-accent);
   outline-offset: -1px;
+  box-shadow: 0 0 0 2px var(--nk-focus-soft);
 }
 .nk-root .nk-input-field :is(input, textarea):focus-visible {
   outline: none;

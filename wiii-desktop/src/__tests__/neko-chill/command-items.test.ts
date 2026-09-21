@@ -5,6 +5,15 @@ import {
   filterNekoCommandItems,
 } from "@/neko-chill/command-items";
 import type { NekoSession } from "@/neko-chill/stores/neko-session-store";
+import { canChooseWorkspaceFolder } from "@/neko-chill/workspace";
+
+vi.mock("@/neko-chill/workspace", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/neko-chill/workspace")>();
+  return {
+    ...actual,
+    canChooseWorkspaceFolder: vi.fn(() => false),
+  };
+});
 
 function session(index: number, overrides: Partial<NekoSession> = {}): NekoSession {
   return {
@@ -107,6 +116,28 @@ describe("Neko command items", () => {
     const items = buildNekoCommandItems([], null, true, false);
     const neu = items.find((item) => item.id === "action:new");
     expect(neu?.description).toContain("Cần tạo Project trước");
+  });
+
+
+  it("marks attach-project action aria-gate when folder picker is unavailable", () => {
+    vi.mocked(canChooseWorkspaceFolder).mockReturnValue(false);
+    const active = session(1, { workspace: null });
+    const items = buildNekoCommandItems([active], active, true);
+    const project = items.find((item) => item.id === "action:project");
+    expect(project?.kind).toBe("action");
+    if (project?.kind !== "action") throw new Error("expected action");
+    expect(project.disabled).toBe(true);
+    expect(project.disabledTitle).toMatch(/trình duyệt|desktop Wiii/i);
+  });
+
+  it("keeps view-project action enabled when workspace is already attached", () => {
+    vi.mocked(canChooseWorkspaceFolder).mockReturnValue(false);
+    const active = session(1);
+    const items = buildNekoCommandItems([active], active, true);
+    const project = items.find((item) => item.id === "action:project");
+    expect(project?.kind).toBe("action");
+    if (project?.kind !== "action") throw new Error("expected action");
+    expect(project.disabled).toBeFalsy();
   });
 
 });

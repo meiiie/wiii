@@ -1,4 +1,8 @@
 import type { NekoSession } from "./stores/neko-session-store";
+import {
+  BROWSER_FOLDER_PICKER_UNAVAILABLE_VI,
+  canChooseWorkspaceFolder,
+} from "./workspace";
 
 export type ClientCommandName = "new" | "project" | "search" | "info";
 export type WorkbenchActionName = "new" | "project" | "info" | "toggle-sidebar";
@@ -28,6 +32,9 @@ interface CommandItemBase {
 export interface ActionCommandItem extends CommandItemBase {
   kind: "action";
   action: WorkbenchActionName;
+  /** When true, palette shows aria-disabled and skips execute. */
+  disabled?: boolean;
+  disabledTitle?: string;
 }
 
 export interface AgentCommandItem extends CommandItemBase {
@@ -98,6 +105,7 @@ function actionItem(
   action: WorkbenchActionName,
   label: string,
   description: string,
+  gate?: { disabled?: boolean; disabledTitle?: string },
 ): ActionCommandItem {
   return {
     id: `action:${action}`,
@@ -106,6 +114,8 @@ function actionItem(
     label,
     description,
     searchText: normalize(`${label} ${description}`),
+    disabled: gate?.disabled,
+    disabledTitle: gate?.disabledTitle,
   };
 }
 
@@ -135,6 +145,12 @@ export function buildNekoCommandItems(
         "project",
         activeSession.workspace ? "Xem dự án hiện tại" : "Gắn dự án cho phiên",
         activeSession.workspace?.path ?? "Chọn ranh giới làm việc của agent",
+        !activeSession.workspace && !canChooseWorkspaceFolder()
+          ? {
+            disabled: true,
+            disabledTitle: BROWSER_FOLDER_PICKER_UNAVAILABLE_VI,
+          }
+          : undefined,
       ),
       actionItem("info", "Thông tin phiên", "Agent, model, trạng thái và điều khiển"),
     );

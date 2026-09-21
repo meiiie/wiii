@@ -152,6 +152,7 @@ function NekoCommandCenterComponent({
 
   const execute = (item: NekoCommandItem | undefined) => {
     if (!item) return;
+    if (item.kind === "action" && item.disabled) return;
     if (item.kind === "action") onAction(item.action);
     else if (item.kind === "command") onInsertCommand(item.commandText);
     else onSelectSession(item.sessionId);
@@ -254,9 +255,16 @@ function NekoCommandCenterComponent({
                       type="button"
                       role="option"
                       aria-selected={selected}
+                      aria-disabled={item.kind === "action" && item.disabled ? true : undefined}
+                      title={item.kind === "action" && item.disabled ? item.disabledTitle : undefined}
                       data-selected={selected}
+                      data-disabled={item.kind === "action" && item.disabled ? "true" : undefined}
                       className={`flex min-h-[46px] w-full items-center gap-3 rounded-xl px-3 text-left transition-colors ${
-                        selected ? "bg-[var(--nk-item-active)]" : "hover:bg-[var(--nk-overlay)]"
+                        item.kind === "action" && item.disabled
+                          ? "cursor-not-allowed opacity-45"
+                          : selected
+                            ? "bg-[var(--nk-item-active)]"
+                            : "hover:bg-[var(--nk-overlay)]"
                       }`}
                       onMouseEnter={() => setSelectedIndex(index)}
                       onClick={() => execute(item)}
@@ -292,10 +300,10 @@ function NekoCommandCenterComponent({
           })}
         </div>
 
-        <footer className="flex items-center gap-4 border-t border-[var(--nk-border)] px-4 py-2 text-[10px] text-[var(--nk-ghost)]">
-          <span>↑↓ di chuyển</span>
-          <span>Enter chọn</span>
-          <span>Esc đóng</span>
+        <footer className="flex flex-wrap items-center gap-x-3 gap-y-1 border-t border-[var(--nk-border)] px-4 py-2 text-[10px] text-[var(--nk-ghost)]">
+          <span className="inline-flex items-center gap-1"><kbd className="rounded border border-[var(--nk-border)] bg-[var(--nk-raised)] px-1 py-px text-[9.5px]">↑↓</kbd> di chuyển</span>
+          <span className="inline-flex items-center gap-1"><kbd className="rounded border border-[var(--nk-border)] bg-[var(--nk-raised)] px-1 py-px text-[9.5px]">Enter</kbd> chọn</span>
+          <span className="inline-flex items-center gap-1"><kbd className="rounded border border-[var(--nk-border)] bg-[var(--nk-raised)] px-1 py-px text-[9.5px]">Esc</kbd> đóng</span>
           <span className="ml-auto">
             {filtered.length > visibleItems.length
               ? `${visibleItems.length}/${filtered.length} kết quả · nhập thêm để thu hẹp`

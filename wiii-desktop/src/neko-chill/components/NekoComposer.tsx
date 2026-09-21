@@ -21,6 +21,10 @@ import {
   readNekoComposerDraft,
   writeNekoComposerDraft,
 } from "../composer-drafts";
+import {
+  BROWSER_FOLDER_PICKER_UNAVAILABLE_VI,
+  canChooseWorkspaceFolder,
+} from "../workspace";
 import { ChillCatalogPicker, type ChillCatalogItem } from "./ChillCatalogPicker";
 
 interface SlashSuggestion {
@@ -293,8 +297,14 @@ function NekoComposerComponent({
           {!session.workspace ? (
             <button
               type="button"
-              className="rounded px-1.5 py-0.5 text-[var(--nk-accent)] hover:bg-[var(--nk-overlay)]"
-              onClick={() => onClientCommand("project")}
+              className="rounded px-1.5 py-0.5 text-[var(--nk-accent)] hover:bg-[var(--nk-overlay)] disabled:cursor-not-allowed disabled:opacity-45 disabled:hover:bg-transparent"
+              disabled={!canChooseWorkspaceFolder()}
+              title={!canChooseWorkspaceFolder() ? BROWSER_FOLDER_PICKER_UNAVAILABLE_VI : "Chọn thư mục dự án"}
+              aria-disabled={!canChooseWorkspaceFolder() || undefined}
+              data-testid="neko-composer-choose-folder"
+              onClick={() => {
+                if (canChooseWorkspaceFolder()) onClientCommand("project");
+              }}
             >
               Chọn thư mục
             </button>
@@ -430,6 +440,10 @@ function NekoComposerComponent({
             )}
           </div>
         </div>
+        <p className="mx-3 mt-1.5 flex items-center gap-2 px-1 text-[10px] text-[var(--nk-ghost)]" aria-hidden="true">
+          <span><kbd className="rounded border border-[var(--nk-border)] bg-[var(--nk-raised)] px-1 py-px text-[9.5px]">Enter</kbd> gửi</span>
+          <span><kbd className="rounded border border-[var(--nk-border)] bg-[var(--nk-raised)] px-1 py-px text-[9.5px]">Shift+Enter</kbd> xuống dòng</span>
+        </p>
       </div>
     </div>
   );

@@ -133,11 +133,11 @@ export function NekoOverview({
 
   return (
     <main className="min-w-0 flex-1 overflow-y-auto" data-testid="neko-overview">
-      <div className="mx-auto w-full max-w-[1080px] px-7 pb-14 pt-[7vh]">
+      <div className="mx-auto w-full max-w-[1080px] px-7 pb-12 pt-[5vh]">
         <div className="flex flex-wrap items-end justify-between gap-5">
           <div>
             <p className="mb-2 text-[11px] font-semibold uppercase tracking-[0.12em] text-[var(--nk-accent)]">Neko Chill · Phiên agent</p>
-            <h1 className="text-[30px] font-normal tracking-[-0.03em] text-[var(--nk-text)]" style={{ fontFamily: "var(--font-serif)" }}>
+            <h1 className="text-[28px] font-normal tracking-[-0.03em] text-[var(--nk-text)]" style={{ fontFamily: "var(--font-serif)" }}>
               Mọi phiên agent, ở một nơi.
             </h1>
             <p className="mt-2 max-w-[650px] text-[13px] leading-5 text-[var(--nk-text-2)]">
@@ -160,7 +160,7 @@ export function NekoOverview({
           )}
         </div>
 
-        <div className="mt-7 grid grid-cols-3 gap-2" aria-label="Tổng quan phiên">
+        <div className="mt-5 grid grid-cols-3 gap-2" aria-label="Tổng quan phiên">
           {[
             { label: "Phiên trên máy", value: sessions.length + discoveredSessions.length, icon: Bot },
             { label: "Đang hoạt động", value: working, icon: Radio },
@@ -168,7 +168,7 @@ export function NekoOverview({
           ].map((item) => {
             const Icon = item.icon;
             return (
-              <div key={item.label} className="rounded-xl border border-[var(--nk-border)] bg-[var(--nk-composer)] px-4 py-3">
+              <div key={item.label} className="rounded-xl border border-[var(--nk-border)] bg-[var(--nk-composer)] px-3.5 py-2.5">
                 <div className="flex items-center justify-between text-[11px] text-[var(--nk-text-3)]">{item.label}<Icon aria-hidden="true" className="h-3.5 w-3.5" /></div>
                 <strong className="mt-1 block text-[22px] font-medium tabular-nums text-[var(--nk-text)]">{item.value}</strong>
               </div>
