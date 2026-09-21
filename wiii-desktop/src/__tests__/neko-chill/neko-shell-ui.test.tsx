@@ -145,6 +145,27 @@ describe("Neko Chill shell UI", () => {
     expect(onOpenConnections).toHaveBeenCalledTimes(1);
   });
 
+  it("shows skeleton chrome while session history is hydrating", () => {
+    useNekoSessionStore.setState({
+      sessions: {},
+      activeSessionId: null,
+      hydrated: false,
+      hydrating: true,
+      hydrationError: null,
+      hydrate: vi.fn(async () => {}),
+    });
+
+    render(<NekoChillApp />);
+
+    const busy = screen.getByTestId("session-recovery-loading");
+    expect(busy.getAttribute("role")).toBe("status");
+    expect(busy.getAttribute("aria-busy")).toBe("true");
+    expect(busy.textContent).toContain("Đang khôi phục lịch sử phiên");
+    expect(busy.querySelectorAll(".nk-skeleton").length).toBeGreaterThan(3);
+    expect(screen.queryByTestId("session-sidebar")).toBeNull();
+    expect(screen.queryByTestId("start-neko")).toBeNull();
+  });
+
   it("keeps history closed on hydration failure and exposes a retry", () => {
     const hydrate = vi.fn(async () => {});
     useNekoSessionStore.setState({

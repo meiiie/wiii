@@ -287,3 +287,17 @@
     animation: none;
   }
 }
+
+.nk-skeleton {
+  background: var(--nk-inset);
+  opacity: 0.9;
+}
+@media (prefers-reduced-motion: no-preference) {
+  .nk-skeleton {
+    animation: nk-skeleton-pulse 1.2s ease-in-out infinite;
+  }
+}
+@keyframes nk-skeleton-pulse {
+  0%, 100% { opacity: 0.55; }
+  50% { opacity: 1; }
+}
