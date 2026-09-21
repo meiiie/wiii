@@ -48,6 +48,13 @@ interface NekoComposerProps {
 }
 
 
+/** Turn in flight — show Stop instead of a mute disabled Send (ZCode cue #4). */
+export function nekoComposerTurnBusy(
+  status: NekoSession["status"],
+): boolean {
+  return status === "streaming" || status === "dispatching";
+}
+
 /** Control-local send tooltip — never leave a mute disabled send as "Gửi". */
 export function nekoComposerSendTitle(args: {
   streaming: boolean;
@@ -66,6 +73,16 @@ export function nekoComposerSendTitle(args: {
   if (args.composerDisabled) return "Phiên chưa sẵn sàng để nhận tin nhắn.";
   if (!args.hasDraft) return "Nhập nội dung trước khi gửi.";
   return "Gửi";
+}
+
+/** Stop control title — explain when cancel is staged / blocked. */
+export function nekoComposerStopTitle(args: {
+  cancelPending: boolean;
+  resolvingPermission: boolean;
+}): string {
+  if (args.cancelPending) return "Đang lưu yêu cầu dừng…";
+  if (args.resolvingPermission) return "Đang lưu quyết định…";
+  return "Dừng";
 }
 
 
@@ -158,6 +175,16 @@ function NekoComposerComponent({
     hasDraft: Boolean(draft.trim()),
     pendingPermission: Boolean(session.pendingPermission),
     pendingControl: Boolean(session.pendingControlId),
+  });
+  const cancelBlocked = Boolean(
+    session.cancelPending
+    || session.resolvingPermissionId
+    || session.closePending
+    || session.deletePending
+  );
+  const stopTitle = nekoComposerStopTitle({
+    cancelPending: Boolean(session.cancelPending),
+    resolvingPermission: Boolean(session.resolvingPermissionId),
   });
 
   const setDraft = (value: string) => {
@@ -377,13 +404,13 @@ function NekoComposerComponent({
               <button
                 type="button"
                 className="flex h-[28px] w-[28px] items-center justify-center rounded-full bg-[var(--nk-danger-soft)] text-[var(--nk-danger)] transition-colors hover:bg-[var(--nk-danger)] hover:text-[var(--nk-on-inverse)] aria-disabled:cursor-wait aria-disabled:opacity-50 aria-disabled:hover:bg-[var(--nk-danger-soft)] aria-disabled:hover:text-[var(--nk-danger)]"
-                aria-disabled={session.cancelPending}
+                aria-disabled={cancelBlocked}
                 onClick={() => {
-                  if (!session.cancelPending) onCancel();
+                  if (!cancelBlocked) onCancel();
                 }}
-                title={session.cancelPending ? "Đang lưu yêu cầu dừng…" : "Dừng"}
-                aria-label={session.cancelPending ? "Đang lưu yêu cầu dừng" : "Dừng lượt đang chạy"}
-                aria-busy={session.cancelPending}
+                title={stopTitle}
+                aria-label={cancelBlocked ? stopTitle.replace(/…$/, "") : "Dừng lượt đang chạy"}
+                aria-busy={Boolean(session.cancelPending || session.resolvingPermissionId)}
                 data-testid="neko-cancel"
               >
                 <Square aria-hidden="true" className="h-2.5 w-2.5 fill-current" />
@@ -422,6 +449,9 @@ export const NekoComposer = memo(
     && previous.session.pendingPermission === next.session.pendingPermission
     && previous.session.pendingControlId === next.session.pendingControlId
     && previous.session.cancelPending === next.session.cancelPending
+    && previous.session.resolvingPermissionId === next.session.resolvingPermissionId
+    && previous.session.closePending === next.session.closePending
+    && previous.session.deletePending === next.session.deletePending
     && previous.disabled === next.disabled
     && previous.streaming === next.streaming
     && previous.insertRequest?.token === next.insertRequest?.token
