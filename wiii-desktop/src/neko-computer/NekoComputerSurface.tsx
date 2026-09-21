@@ -37,6 +37,8 @@ import type {
 } from "./contracts";
 import {
   deleteComputerHistory,
+  hasNativeComputerAuthority,
+  NATIVE_COMPUTER_UNAVAILABLE_VI,
   readComputerHistory,
   readComputerHistoryStatus,
   setComputerHistoryEnabled,
@@ -156,6 +158,7 @@ function NekoComputerSurfaceComponent({
     ),
   );
   const workstationExists = Boolean(status?.environmentId);
+  const nativeComputer = hasNativeComputerAuthority();
   const viewerOwnershipLabel = environment
     ? describeCoworkerSeat(coworker, environment.seat.state, userOwnsSeat)
     : "Đang quan sát";
@@ -401,9 +404,12 @@ function NekoComputerSurfaceComponent({
         ) : (
           <button
             type="button"
-            disabled={project?.mutating}
+            disabled={project?.mutating || !nativeComputer}
+            title={!nativeComputer ? NATIVE_COMPUTER_UNAVAILABLE_VI : undefined}
+            data-testid="computer-setup-cta"
             className="mx-auto mt-5 inline-flex h-9 items-center gap-2 rounded-lg bg-[var(--nk-text)] px-4 text-[11px] font-semibold text-[var(--nk-canvas)] transition-opacity hover:opacity-90 disabled:opacity-50"
             onClick={() => void (async () => {
+              if (!nativeComputer) return;
               if (!projectGranted) await grant(projectRef);
               await ensure(projectRef, resourcePreset);
             })().catch(() => undefined)}
@@ -849,8 +855,21 @@ function ComputerControl({
   );
 }
 
-function ComputerError({ message, compact = false }: { message: string; compact?: boolean }) {
+function honestyComputerErrorMessage(message: string): string {
   const normalized = message.toLocaleLowerCase();
+  if (
+    normalized.includes("reading 'invoke'")
+    || normalized.includes('reading "invoke"')
+    || (normalized.includes("invoke") && normalized.includes("undefined"))
+  ) {
+    return NATIVE_COMPUTER_UNAVAILABLE_VI;
+  }
+  return message;
+}
+
+function ComputerError({ message, compact = false }: { message: string; compact?: boolean }) {
+  const displayMessage = honestyComputerErrorMessage(message);
+  const normalized = displayMessage.toLocaleLowerCase();
   const description = normalized.includes("not a valid windows path")
     ? {
         title: "Không thể kết nối thư mục Project",
@@ -880,7 +899,7 @@ function ComputerError({ message, compact = false }: { message: string; compact?
       <details className="mt-1.5 text-[9px] text-[var(--nk-text-3)]">
         <summary className="cursor-pointer select-none hover:text-[var(--nk-text-2)]">Chi tiết lỗi</summary>
         <code className="mt-1.5 block max-h-24 overflow-auto whitespace-pre-wrap break-all rounded-md bg-[var(--nk-inset)] px-2 py-1.5 font-mono text-[8.5px] leading-4 text-[var(--nk-danger)]">
-          {message}
+          {displayMessage}
         </code>
       </details>
     </div>

@@ -206,6 +206,10 @@ export const useNekoComputerStore = create<NekoComputerState>((set, get) => {
     },
 
     grant: async (project) => {
+      if (!hasNativeComputerAuthority()) {
+        update(project, { mutating: false, error: "Computer chỉ hoạt động trong Wiii Desktop." });
+        return;
+      }
       update(project, { mutating: true, error: null });
       try {
         await grantCoworkerProject(project);
@@ -235,6 +239,10 @@ export const useNekoComputerStore = create<NekoComputerState>((set, get) => {
     },
 
     ensure: async (project, resourcePreset = "auto") => {
+      if (!hasNativeComputerAuthority()) {
+        update(project, { mutating: false, error: "Computer chỉ hoạt động trong Wiii Desktop." });
+        return;
+      }
       update(project, { mutating: true, error: null });
       try {
         await ensureComputer(project, resourcePreset);
