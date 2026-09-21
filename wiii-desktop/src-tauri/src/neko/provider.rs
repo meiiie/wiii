@@ -523,10 +523,10 @@ fn spawn_cleanup_error(primary: io::Error, cleanup: io::Result<()>) -> io::Error
 fn unix_containment_unavailable() -> io::Error {
     #[cfg(target_os = "linux")]
     {
-        return io::Error::new(
+        io::Error::new(
             io::ErrorKind::Unsupported,
             linux_containment::unavailable_message(),
-        );
+        )
     }
     #[cfg(not(target_os = "linux"))]
     {
