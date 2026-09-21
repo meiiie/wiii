@@ -26,9 +26,14 @@ export async function resolveWorkspaceFolder(path: string): Promise<WorkspaceRef
   return invoke<WorkspaceRef>("neko_resolve_workspace", { workspace: path });
 }
 
+/** True only in the native desktop shell — browser preview cannot open a folder picker. */
+export function canChooseWorkspaceFolder(): boolean {
+  return typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
+}
+
 /** Opens Tauri's native directory chooser. Browser/test environments return null. */
 export async function chooseWorkspaceFolder(): Promise<WorkspaceRef | null> {
-  if (typeof window === "undefined" || !("__TAURI_INTERNALS__" in window)) return null;
+  if (!canChooseWorkspaceFolder()) return null;
   const { open } = await import("@tauri-apps/plugin-dialog");
   const selected = await open({
     directory: true,
