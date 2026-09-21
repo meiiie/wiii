@@ -34,6 +34,11 @@ import {
   DEFAULT_NEKO_COWORKER,
   coworkerWorkstationTitle,
 } from "./profile";
+import {
+  COWORKER_CHILL_SEPARATION_VI,
+  coworkerGrantsCard,
+  coworkerOpenProjectCard,
+} from "./coworker-project-honesty";
 
 export type SignalInboxViewState = SignalInboxSummary | "loading" | "unavailable";
 
@@ -145,6 +150,23 @@ export function NekoCoworkerHome({ projects }: { projects: NekoProject[] }) {
   );
   const activeKey = status?.activeProjectId && status.activeProjectPath
     ? JSON.stringify([status.activeProjectId, status.activeProjectPath]) : null;
+
+  const openProjectCard = useMemo(
+    () => coworkerOpenProjectCard({
+      environmentProjectName: status?.environment?.projectName,
+      environmentProjectPath: status?.environment?.projectPath,
+      wiiiProjects: projects,
+    }),
+    [projects, status?.environment?.projectName, status?.environment?.projectPath],
+  );
+  const grantsCard = useMemo(
+    () => coworkerGrantsCard({
+      grantCount: status?.grants.length ?? 0,
+      wiiiProjectCount: projects.length,
+    }),
+    [projects.length, status?.grants.length],
+  );
+  const showChillSeparation = openProjectCard.needsCoworkerGrant || grantsCard.needsCoworkerGrant;
 
   const runProjectAction = async (key: string, operation: () => Promise<void>) => {
     setBusyProject(key);
@@ -264,14 +286,18 @@ export function NekoCoworkerHome({ projects }: { projects: NekoProject[] }) {
           <SummaryCard
             icon={Folder}
             label="Project đang mở"
-            value={status?.environment?.projectName ?? "Không có"}
-            detail={status?.environment?.projectPath ?? "Neko chưa nhận thư mục nào"}
+            value={openProjectCard.value}
+            detail={openProjectCard.detail}
+            attention={openProjectCard.needsCoworkerGrant}
+            testId="neko-coworker-open-project"
           />
           <SummaryCard
             icon={ShieldCheck}
             label="Quyền Project"
-            value={`${status?.grants.length ?? 0} Project`}
-            detail="Chỉ thư mục được cấp quyền mới được gắn vào"
+            value={grantsCard.value}
+            detail={grantsCard.detail}
+            attention={grantsCard.needsCoworkerGrant}
+            testId="neko-coworker-grants"
           />
           <SummaryCard
             icon={BellRing}
@@ -287,7 +313,9 @@ export function NekoCoworkerHome({ projects }: { projects: NekoProject[] }) {
           <div className="flex items-center justify-between border-b border-[var(--nk-border)] px-4 py-3">
             <div>
               <h2 className="text-[12.5px] font-semibold text-[var(--nk-text)]">Quyền truy cập Project</h2>
-              <p className="mt-0.5 text-[10px] text-[var(--nk-text-3)]">Neko chỉ nhìn thấy Project đang được mở trong máy của mình.</p>
+              <p className="mt-0.5 text-[10px] text-[var(--nk-text-3)]">
+                Neko trên máy Đồng nghiệp chỉ thấy thư mục đã cấp quyền bên dưới — khác với phiên Chill trong sidebar.
+              </p>
             </div>
             <span className="rounded-md bg-[var(--nk-overlay)] px-2 py-1 text-[9px] font-medium text-[var(--nk-text-3)]">
               Read + Write
@@ -457,6 +485,16 @@ export function NekoCoworkerHome({ projects }: { projects: NekoProject[] }) {
             />
           </div>
         </section>
+
+        {showChillSeparation ? (
+          <p
+            role="status"
+            data-testid="coworker-chill-separation-honesty"
+            className="mt-4 rounded-xl border border-[var(--nk-warning)]/35 bg-[var(--nk-warning)]/8 px-3 py-2.5 text-[10px] leading-4 text-[var(--nk-text-2)]"
+          >
+            {COWORKER_CHILL_SEPARATION_VI}
+          </p>
+        ) : null}
 
         {!nativeComputer ? (
           <p

@@ -124,6 +124,31 @@ describe("Neko coworker Signal Inbox", () => {
     expect(screen.queryByText("inbox unavailable")).toBeNull();
   });
 
+
+  it("shows Chill vs Coworker honesty when Wiii has a project but 0 coworker grants", async () => {
+    render(<NekoCoworkerHome projects={[{
+      id: "project-test",
+      name: "wiii-real-linux-session",
+      roots: [{ name: "wiii-real-linux-session", path: "/tmp/wiii-real-linux-session" }],
+      preferredHarnessId: "neko",
+      createdAt: 1,
+      updatedAt: 1,
+    }]} />);
+
+    const openCard = await screen.findByTestId("neko-coworker-open-project");
+    expect(openCard.textContent).toContain("wiii-real-linux-session");
+    expect(openCard.textContent).toContain("/tmp/wiii-real-linux-session");
+    expect(openCard.textContent).not.toContain("Không có");
+
+    const grantsCard = screen.getByTestId("neko-coworker-grants");
+    expect(grantsCard.textContent).toContain("0 quyền máy Neko");
+    expect(grantsCard.textContent).toMatch(/Project Wiii/);
+
+    const banner = await screen.findByTestId("coworker-chill-separation-honesty");
+    expect(banner.textContent).toMatch(/không tự cấp quyền/i);
+    expect(screen.getByRole("button", { name: /Cấp quyền/ })).toBeTruthy();
+  });
+
   it("does not mark a fully processed inbox as attention-worthy", () => {
     expect(signalInboxCardState({
       ...summary,
