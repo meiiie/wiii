@@ -46,8 +46,9 @@ Voice: VI-first · ZCode-selective (calm density / disabled=explained / keyboard
 7. **Session composer parity** — deeper alignment with ProjectHome / ZCode composer cues (toolbar density, locked-model affordance, insert/slash chrome).
 8. **Loading chrome** — discovery / hydrate / harness probe skeletons and busy labels consistency.
 9. **Theme** — dark/light token polish, focus contrast, reduced-motion pass beyond chill tokens.
-10. **Empty-state hierarchy** — transcript / sidebar / overview empty copy closer to ZCode calm density (if not absorbed in #6).
-11. **Connections / tools / coworker honesty follow-ups** — only if new mute-disabled gaps appear after Batch 1.
+10. **Empty-state hierarchy** — transcript / sidebar empty copy closer to ZCode calm density.
+11. ~~Overview marketing hero~~ → shipped as follow-up PR after Batch1 (#976): calm dense operational header.
+12. **Connections / tools / coworker honesty follow-ups** — only if new mute-disabled gaps appear after Batch 1.
 
 ## Out of scope this batch
 

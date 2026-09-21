@@ -387,7 +387,7 @@ describe("Neko Chill shell UI", () => {
     useNekoSessionStore.setState({ createSession, sendPrompt });
 
     render(<NekoChillApp />);
-    expect(screen.getByText("Mọi phiên agent, ở một nơi.")).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "Phiên trên máy" })).toBeTruthy();
     expect(screen.getByTestId("neko-overview-link").getAttribute("aria-current")).toBe("page");
     fireEvent.click(screen.getByTestId("new-session"));
     expect(screen.getByTestId("project-home")).toBeTruthy();
@@ -500,7 +500,7 @@ describe("Neko Chill shell UI", () => {
 
     render(<NekoChillApp />);
 
-    expect(screen.getByText("Mọi phiên agent, ở một nơi.")).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "Phiên trên máy" })).toBeTruthy();
     expect(within(screen.getByLabelText("Tổng quan phiên")).getByText("3")).toBeTruthy();
     expect(screen.getByRole("button", { name: "Wiii 2" })).toBeTruthy();
     expect(screen.getByRole("button", { name: "neko-video-cut 1" })).toBeTruthy();
