@@ -9,6 +9,7 @@ import {
   MoreHorizontal,
   ShieldCheck,
 } from "lucide-react";
+import { ChillCatalogPicker, type ChillCatalogItem } from "./ChillCatalogPicker";
 import { WiiiMark } from "@/components/common/WiiiMark";
 import { getNekoControlClient } from "@/neko/control-client";
 import type { NekoExecutionBinding } from "@/neko/control-client";
@@ -313,6 +314,53 @@ export function ProjectHome({
     : undefined
   );
 
+  const harnessItems = useMemo<ChillCatalogItem[]>(() => {
+    const launchableIds = new Set(launchableAgents.map((agent) => agent.id));
+    const rows: ChillCatalogItem[] = agents.map((agent) => {
+      const ready = launchableIds.has(agent.id);
+      return {
+        id: agent.id,
+        label: agent.name,
+        group: "Harness trên máy",
+        description: ready
+          ? (agent.version ? `v${agent.version}` : "Sẵn sàng")
+          : agent.found
+            ? "Chưa sẵn sàng để mở phiên"
+            : "Chưa tìm thấy trên máy",
+        disabled: !ready,
+        title: ready
+          ? undefined
+          : agent.found
+            ? "Harness chưa sẵn sàng. Bản nháp vẫn được giữ."
+            : "Chưa tìm thấy harness trên máy. Quản lý harness để cài hoặc kiểm tra lại.",
+      };
+    });
+    if (!rows.some((row) => row.id === selectedAgentId)) {
+      rows.unshift({
+        id: selectedAgentId,
+        label: isLoading
+          ? "Đang kiểm tra…"
+          : selectedAgentId === "neko"
+            ? "Neko Core · Chưa sẵn sàng"
+            : "Agent đã chọn chưa sẵn sàng",
+        group: "Harness trên máy",
+        disabled: true,
+        title: harnessSelectTitle ?? "Harness đã chọn chưa sẵn sàng. Bản nháp vẫn được giữ.",
+      });
+    }
+    return rows;
+  }, [agents, harnessSelectTitle, isLoading, launchableAgents, selectedAgentId]);
+
+  const profileItems = useMemo<ChillCatalogItem[]>(
+    () => profiles.map((profile) => ({
+      id: profile.id,
+      label: `${profile.id} · ${profile.model ?? profile.provider}`,
+      group: "Profile / model",
+      description: profile.provider ?? undefined,
+    })),
+    [profiles],
+  );
+
   const start = async () => {
     if (!selectedRoot || !selectedAgent || !canStart) return;
     const profile = selectedAgent.id === "neko"
@@ -498,44 +546,32 @@ export function ProjectHome({
             />
 
             <div className="mt-2 flex min-h-8 flex-wrap items-center gap-1.5">
-              <label
-                className="relative flex h-8 min-w-0 max-w-[190px] items-center gap-1.5 rounded-md px-1.5 text-[12px] text-[var(--nk-text-2)] transition-colors hover:bg-[var(--nk-overlay)]"
-                title={harnessSelectTitle}
-              >
-                <Bot aria-hidden="true" className="h-3.5 w-3.5 shrink-0" />
-                <span className="sr-only">Chọn Harness</span>
-                <select
-                  value={selectedAgentId}
-                  disabled={starting || isLoading || Boolean(discoveryError) || launchableAgents.length === 0}
-                  className="min-w-0 flex-1 appearance-none truncate bg-transparent pr-4 outline-none"
-                  aria-label="Chọn Harness"
-                  title={harnessSelectTitle}
-                  onChange={(event) => selectAgent(event.target.value)}
-                >
-                  {!launchableAgents.some((agent) => agent.id === selectedAgentId) ? <option value={selectedAgentId} disabled>
-                    {isLoading ? "Đang kiểm tra Neko Core…" : selectedAgentId === "neko" ? "Neko Core · Chưa sẵn sàng" : "Agent đã chọn chưa sẵn sàng"}
-                  </option> : null}
-                  {launchableAgents.map((agent) => <option key={agent.id} value={agent.id}>{agent.name}</option>)}
-                </select>
-                <ChevronDown aria-hidden="true" className="pointer-events-none absolute right-1 h-3 w-3 text-[var(--nk-ghost)]" />
-              </label>
+              <ChillCatalogPicker
+                items={harnessItems}
+                value={selectedAgentId}
+                onChange={selectAgent}
+                ariaLabel="Chọn Harness"
+                disabled={starting || Boolean(discoveryError)}
+                pending={isLoading}
+                triggerTitle={harnessSelectTitle}
+                searchPlaceholder="Tìm harness…"
+                emptyLabel="Không tìm thấy harness phù hợp."
+                icon={<Bot aria-hidden="true" className="h-3.5 w-3.5 shrink-0" />}
+                testId="project-home-harness-picker"
+              />
 
               {selectedAgent?.id === "neko" && profiles.length ? (
-                <label className="relative flex h-8 min-w-0 max-w-[210px] items-center rounded-md px-1.5 text-[12px] text-[var(--nk-text-3)] hover:bg-[var(--nk-overlay)]">
-                  <span className="sr-only">Profile / model</span>
-                  <select
-                    value={selectedProfileId}
-                    disabled={starting || profileLoading}
-                    className="min-w-0 appearance-none truncate bg-transparent pr-4 outline-none"
-                    aria-label="Profile / model"
-                    onChange={(event) => setSelectedProfileId(event.target.value)}
-                  >
-                    {profiles.map((profile) => (
-                      <option key={profile.id} value={profile.id}>{profile.id} · {profile.model ?? profile.provider}</option>
-                    ))}
-                  </select>
-                  <ChevronDown aria-hidden="true" className="pointer-events-none absolute right-1 h-3 w-3" />
-                </label>
+                <ChillCatalogPicker
+                  items={profileItems}
+                  value={selectedProfileId}
+                  onChange={setSelectedProfileId}
+                  ariaLabel="Profile / model"
+                  disabled={starting || profileLoading}
+                  searchPlaceholder="Tìm profile / model…"
+                  emptyLabel="Không tìm thấy profile phù hợp."
+                  testId="project-home-profile-picker"
+                  className="text-[var(--nk-text-3)]"
+                />
               ) : null}
 
               {selectedAgent?.id === "codex" ? (

@@ -592,8 +592,8 @@ describe("Neko Chill shell UI", () => {
 
     render(<NekoChillApp />);
 
-    const modeSelects = screen.getAllByLabelText("Chế độ");
-    fireEvent.change(modeSelects[0], { target: { value: "plan" } });
+    fireEvent.click(screen.getByRole("button", { name: "Chế độ" }));
+    fireEvent.click(screen.getByRole("option", { name: /Plan/i }));
     expect(setConfigOption).toHaveBeenCalledWith("mode", "plan");
     expect(screen.getAllByText("C:/work/neko").length).toBeGreaterThan(0);
     expect(screen.getAllByText(/gpt-5\.6-luna/).length).toBeGreaterThan(0);
@@ -876,7 +876,7 @@ describe("Neko Chill shell UI", () => {
 
     const composer = screen.getByTestId("neko-composer-input") as HTMLTextAreaElement;
     expect(composer.readOnly).toBe(false);
-    expect((screen.getByRole("combobox", { name: "Model" }) as HTMLSelectElement).disabled)
+    expect((screen.getByRole("button", { name: "Model" }) as HTMLButtonElement).disabled)
       .toBe(true);
     fireEvent.change(composer, { target: { value: "khởi động lại" } });
     fireEvent.click(screen.getByRole("button", { name: "Gửi tin nhắn" }));
@@ -1062,8 +1062,8 @@ describe("Neko Chill shell UI", () => {
     expect(screen.getByText("Wiii chưa hỗ trợ chạy trên hệ điều hành này")).toBeTruthy();
     fireEvent.click(screen.getByTestId("new-session"));
 
-    const harness = await screen.findByRole("combobox", { name: "Chọn Harness" }) as HTMLSelectElement;
-    expect(harness.value).toBe("neko");
+    const harness = await screen.findByRole("button", { name: "Chọn Harness" }) as HTMLButtonElement;
+    expect(harness.textContent).toMatch(/Neko|Chưa sẵn sàng/i);
     expect((screen.getByRole("button", { name: "Gửi và mở phiên" }) as HTMLButtonElement).disabled).toBe(true);
   });
 
@@ -1152,9 +1152,14 @@ describe("Neko Chill shell UI", () => {
     render(<NekoChillApp />);
     fireEvent.click(screen.getByTestId("new-session"));
 
-    const harness = await screen.findByRole("combobox", { name: "Chọn Harness" }) as HTMLSelectElement;
-    expect(within(harness).getByRole("option", { name: "Neko Core" })).toBeTruthy();
-    expect(within(harness).queryByRole("option", { name: "Gemini CLI" })).toBeNull();
+    const harness = await screen.findByRole("button", { name: "Chọn Harness" }) as HTMLButtonElement;
+    fireEvent.click(harness);
+    const menu = await screen.findByTestId("project-home-harness-picker-menu");
+    const nekoOpt = within(menu).getByRole("option", { name: /Neko Core/i });
+    const geminiOpt = within(menu).getByRole("option", { name: /Gemini CLI/i });
+    expect(nekoOpt.getAttribute("aria-disabled")).not.toBe("true");
+    expect(geminiOpt.getAttribute("aria-disabled")).toBe("true");
+    expect(geminiOpt.getAttribute("title")).toMatch(/Chưa tìm thấy|chưa sẵn sàng|probe/i);
     expect(screen.queryByText(/Không thể hoàn tất việc dò harness an toàn/)).toBeNull();
   });
 });

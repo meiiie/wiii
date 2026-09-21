@@ -2,7 +2,6 @@ import { memo, useEffect, useMemo, useRef, useState } from "react";
 import {
   ArrowUp,
   Bot,
-  ChevronDown,
   Command,
   Folder,
   Gauge,
@@ -22,6 +21,7 @@ import {
   readNekoComposerDraft,
   writeNekoComposerDraft,
 } from "../composer-drafts";
+import { ChillCatalogPicker, type ChillCatalogItem } from "./ChillCatalogPicker";
 
 interface SlashSuggestion {
   name: string;
@@ -68,11 +68,6 @@ export function nekoComposerSendTitle(args: {
   return "Gửi";
 }
 
-function controlLabel(option: DriverConfigOption): string {
-  if (typeof option.currentValue === "boolean") return option.currentValue ? "Bật" : "Tắt";
-  return option.choices?.find((choice) => choice.value === option.currentValue)?.label
-    ?? option.currentValue;
-}
 
 function ControlSelect({
   option,
@@ -86,26 +81,27 @@ function ControlSelect({
   onChange(value: string): void;
 }) {
   const Icon = option.category === "mode" ? Gauge : Bot;
+  const items: ChillCatalogItem[] = (option.choices ?? []).map((choice) => ({
+    id: choice.value,
+    label: choice.label,
+    group: option.label,
+    description: choice.description,
+  }));
   return (
-    <label
-      className="relative flex h-7 max-w-[190px] items-center gap-1.5 rounded-md px-1.5 text-[11.5px] text-[var(--nk-text-3)] transition-colors hover:bg-[var(--nk-overlay)]"
-      title={option.description ?? option.label}
-    >
-      <Icon aria-hidden="true" className="h-3.5 w-3.5 shrink-0" />
-      <span className="truncate">{pending ? "Đang đổi…" : controlLabel(option)}</span>
-      <ChevronDown aria-hidden="true" className="h-3 w-3 shrink-0" />
-      <select
-        aria-label={option.label}
-        className="absolute inset-0 cursor-pointer opacity-0 disabled:cursor-not-allowed"
-        value={String(option.currentValue)}
-        disabled={disabled || pending}
-        onChange={(event) => onChange(event.target.value)}
-      >
-        {(option.choices ?? []).map((choice) => (
-          <option key={choice.value} value={choice.value}>{choice.label}</option>
-        ))}
-      </select>
-    </label>
+    <ChillCatalogPicker
+      items={items}
+      value={String(option.currentValue)}
+      onChange={onChange}
+      ariaLabel={option.label}
+      disabled={disabled}
+      pending={pending}
+      triggerTitle={option.description ?? option.label}
+      searchPlaceholder={`Tìm ${option.label.toLocaleLowerCase("vi")}…`}
+      emptyLabel="Không tìm thấy mục phù hợp."
+      icon={<Icon aria-hidden="true" className="h-3.5 w-3.5 shrink-0" />}
+      testId={`neko-control-${option.category}`}
+      className="max-w-[190px] text-[11.5px] text-[var(--nk-text-3)]"
+    />
   );
 }
 
@@ -351,7 +347,9 @@ function NekoComposerComponent({
               <button
                 type="button"
                 className="flex h-7 max-w-[190px] items-center gap-1.5 rounded-md px-1.5 text-[11.5px] text-[var(--nk-text-3)] hover:bg-[var(--nk-overlay)]"
-                title={`Model ${session.launchProfile.model ?? session.launchProfile.id} được chọn khi khởi động. Tạo phiên mới để đổi.`}
+                title={`Model ${session.launchProfile.model ?? session.launchProfile.id} cố định cho phiên này (chọn lúc khởi động). Bản nháp vẫn giữ — tạo phiên mới để đổi model.`}
+                aria-label={`Model ${session.launchProfile.model ?? session.launchProfile.id} — khóa trong phiên`}
+                data-testid="neko-model-locked"
                 onClick={() => onClientCommand("info")}
               >
                 <LockKeyhole aria-hidden="true" className="h-3.5 w-3.5 shrink-0" />
