@@ -140,7 +140,7 @@ export function NekoOverview({
               Phiên trên máy
             </h1>
             <p className="mt-0.5 max-w-[520px] text-[12px] leading-4 text-[var(--nk-text-3)]">
-              Theo Project · tiếp tục phiên đã lưu · quản lý harness
+              Theo Project · tiếp tục phiên Wiii · quét phiên harness trên máy
             </p>
             {projectCount === 0 ? (
               <p className="mt-1.5 max-w-[520px] text-[11.5px] leading-4 text-[var(--nk-text-3)]" data-testid="overview-project-required-hint">
@@ -161,7 +161,7 @@ export function NekoOverview({
 
         <div className="mt-4 grid grid-cols-3 gap-1.5" aria-label="Tổng quan phiên">
           {[
-            { label: "Tổng phiên", value: sessions.length + discoveredSessions.length, icon: Bot },
+            { label: "Phiên Wiii", value: sessions.length, icon: Bot },
             { label: "Đang chạy", value: working, icon: Radio },
             { label: "Cần bạn", value: attention, icon: AlertCircle },
           ].map((item) => {
@@ -174,6 +174,11 @@ export function NekoOverview({
             );
           })}
         </div>
+        {discoveredSessions.length ? (
+          <p className="mt-1.5 text-[10.5px] leading-4 text-[var(--nk-text-3)]" data-testid="overview-harness-session-hint">
+            {discoveredSessions.length} phiên harness trên máy — chưa gắn vào Wiii (khác với {sessions.length} phiên Wiii ở trên).
+          </p>
+        ) : null}
 
         <ProviderSessionCatalogPanel
           managedSessions={sessions}
@@ -214,7 +219,7 @@ export function NekoOverview({
                     className="shrink-0 rounded px-1 py-1 text-[11px] text-[var(--nk-text-2)] hover:underline disabled:opacity-50"
                     onClick={() => { void detectAgents(harness.id); }}>Kiểm tra</button>}
                   <span className="text-[10.5px] tabular-nums text-[var(--nk-ghost)]">
-                    {harness.managedSessionCount} Wiii{harness.discoveredSessionCount ? ` · ${harness.discoveredSessionCount} ngoài Wiii` : ""}
+                    {harness.managedSessionCount} phiên Wiii{harness.discoveredSessionCount ? ` · ${harness.discoveredSessionCount} từ harness` : ""}
                   </span>
                 </div>
               ))}

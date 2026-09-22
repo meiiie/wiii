@@ -167,7 +167,7 @@ export const SessionSidebar = memo(function SessionSidebar({
         >
           <LayoutDashboard aria-hidden="true" className="h-3.5 w-3.5 text-[var(--nk-text-3)]" />
           Tổng quan
-          {externalSessionCount ? <span className="ml-auto text-[9.5px] font-normal tabular-nums text-[var(--nk-ghost)]">{externalSessionCount} ngoài Wiii</span> : null}
+          {externalSessionCount ? <span className="ml-auto text-[9.5px] font-normal tabular-nums text-[var(--nk-ghost)]" title="Phiên harness phát hiện trên máy — chưa gắn vào Wiii">{externalSessionCount} từ harness</span> : null}
         </button>
         <button
           type="button"

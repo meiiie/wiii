@@ -1,6 +1,7 @@
 # WIII polish plan — 2026-09-21
 
 Status: Batch 1 merged (#976/#977) · Batch 2 complete (#978/#979 @ `b873afa`) · Batch 3 **CLEAN-STOP** — see WIII-POLISH-BATCH3-2026-09-21.md
+Lived soft P2 (2026-09-22): overview/catalog count honesty · Files empty without tool-legend stack · ProjectHome crumb dedupe — note `WIII-SOFT-P2-2026-09-22.md` (wiii-lab)
 Owner: soft+BIG polish (this agent) · Teammate may parallel-live elsewhere — **do not edit claimed paths**
 Base: `main` @ `#975` · Preview: `localhost:1420/?preview=neko-chill`
 Voice: VI-first · ZCode-selective (calm density / disabled=explained / keyboard honesty — **no ZCode brand copy**)

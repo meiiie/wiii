@@ -407,39 +407,6 @@ function SurfaceEmptyState({
   );
 }
 
-function WorkspaceLauncher({ onSelect }: { onSelect: (surface: WorkspaceSurface) => void }) {
-  const actions: Array<{
-    id: WorkspaceSurface;
-    label: string;
-    detail: string;
-    icon: typeof File;
-  }> = [
-    { id: "changes", label: "Thay đổi", detail: "Xem diff và trạng thái Git", icon: GitCompareArrows },
-    { id: "computer", label: "Máy tính", detail: "Màn hình dùng chung của agent và bạn", icon: MonitorUp },
-    { id: "browser", label: "Trình duyệt", detail: "Chromium và phiên đăng nhập bền vững", icon: Globe2 },
-    { id: "terminal", label: "Terminal", detail: "Chạy lệnh trong cùng computer", icon: TerminalSquare },
-    { id: "files", label: "Tệp", detail: "Mở mã nguồn trong Project", icon: FolderOpen },
-  ];
-
-  return (
-    <nav className="mx-auto grid w-full max-w-sm gap-1" aria-label="Mở công cụ Project">
-      {actions.map((action) => (
-        <button
-          key={action.id}
-          type="button"
-          className="group flex items-center gap-3 rounded-lg px-3 py-2.5 text-left transition-colors hover:bg-[var(--nk-overlay)] active:translate-y-px focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--nk-focus-soft)]"
-          onClick={() => onSelect(action.id)}
-        >
-          <action.icon aria-hidden="true" className="h-4 w-4 text-[var(--nk-text-3)] transition-colors group-hover:text-[var(--nk-text)]" />
-          <span className="min-w-0 flex-1">
-            <span className="block text-[12px] font-medium text-[var(--nk-text)]">{action.label}</span>
-            <span className="block text-[10px] text-[var(--nk-text-3)]">{action.detail}</span>
-          </span>
-        </button>
-      ))}
-    </nav>
-  );
-}
 
 function EmptyContent({ tab }: { tab: "files" | "changes" }) {
   return (
@@ -963,10 +930,6 @@ function NekoWorkspacePaneComponent({
               ) : (
                 <FilePreview file={pane.selectedFile} workspacePath={workspace.path} />
               )
-            ) : surface === "files" ? (
-              <div className="grid h-full place-items-center px-8">
-                <WorkspaceLauncher onSelect={selectSurface} />
-              </div>
             ) : (
               <EmptyContent tab={surface === "changes" ? "changes" : "files"} />
             )}

@@ -343,3 +343,63 @@ describe("Project Home readiness and missing Neko recovery", () => {
     expect(useNekoSessionStore.getState().createSession).not.toHaveBeenCalled();
   });
 });
+
+describe("soft P2 lived UX honesty", () => {
+  it("composer crumb drops duplicate project/root name", () => {
+    const twin = {
+      ...project,
+      name: "wiii-real-linux-session",
+      roots: [{ name: "wiii-real-linux-session", path: "/tmp/wiii-real-linux-session" }],
+    };
+    render(<ProjectHome project={twin} resetToken={0} onManageHarness={manage} />);
+    const crumb = screen.getByLabelText("Ngữ cảnh phiên mới");
+    expect(within(crumb).getAllByText("wiii-real-linux-session")).toHaveLength(1);
+  });
+
+  it("composer crumb keeps distinct root name", () => {
+    render(<ProjectHome project={project} resetToken={0} onManageHarness={manage} />);
+    const crumb = screen.getByLabelText("Ngữ cảnh phiên mới");
+    expect(within(crumb).getByText("Wiii")).toBeTruthy();
+    expect(within(crumb).getByText("workspace")).toBeTruthy();
+  });
+
+  it("overview counts separate Phiên Wiii from harness discovery", () => {
+    const providerCatalogs = [{
+      providerId: "neko",
+      scope: "user" as const,
+      complete: true,
+      detail: null,
+      sessions: Array.from({ length: 2 }, (_, index) => ({
+        providerId: "neko",
+        nativeSessionId: `ext-${index}`,
+        title: `Harness ${index}`,
+        workspacePath: "/tmp/x",
+        createdAt: null,
+        updatedAt: new Date(Date.UTC(2026, 8, 21, 15, 0, index)).toISOString(),
+        model: null,
+        state: "saved",
+        canResume: false,
+      })),
+    }];
+    render(
+      <NekoOverview
+        agents={[neko]}
+        sessions={[]}
+        providerCatalogs={providerCatalogs}
+        discoveryLoading={false}
+        projectCount={1}
+        onNewSession={vi.fn()}
+        onOpenSession={vi.fn()}
+        onRefreshDiscovery={vi.fn()}
+        onImportProviderSession={vi.fn(async () => {})}
+      />,
+    );
+    const stats = screen.getByLabelText("Tổng quan phiên");
+    expect(within(stats).getByText("Phiên Wiii")).toBeTruthy();
+    expect(within(stats).queryByText("Tổng phiên")).toBeNull();
+    // Three zero chips (Wiii / running / needs-you) — not a combined 2 from harness.
+    expect(within(stats).getAllByText("0")).toHaveLength(3);
+    expect(within(stats).queryByText("2")).toBeNull();
+    expect(screen.getByTestId("overview-harness-session-hint").textContent).toMatch(/2 phiên harness/);
+  });
+});

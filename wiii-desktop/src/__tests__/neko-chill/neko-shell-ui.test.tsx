@@ -532,7 +532,9 @@ describe("Neko Chill shell UI", () => {
     expect(within(overview).getAllByText("Codex").length).toBeGreaterThan(0);
     expect(within(overview).getAllByText("Neko Core").length).toBeGreaterThan(0);
     expect(within(overview).getAllByText("neko-video-cut").length).toBeGreaterThan(0);
-    expect(within(overview).getByText(/3 phiên · 3 do Wiii quản lý/i)).toBeTruthy();
+    expect(within(overview).getByText(/3 phiên Wiii · 0 từ harness/i)).toBeTruthy();
+    expect(within(screen.getByLabelText("Tổng quan phiên")).getByText("Phiên Wiii")).toBeTruthy();
+    expect(within(screen.getByLabelText("Tổng quan phiên")).queryByText("Tổng phiên")).toBeNull();
   });
 
   it("groups every persisted session and searches all local history from Ctrl+K", () => {

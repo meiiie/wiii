@@ -307,6 +307,15 @@ export function ProjectHome({
     nekoProfileBlocked: Boolean(selectedAgent?.id === "neko" && (profileLoading || profileError)),
     codexBlocked: Boolean(selectedAgent?.id === "codex" && codexAccountState !== "signed-in"),
   });
+  const showRootCrumb = project.roots.length > 1 || Boolean(
+    selectedRoot?.name
+    && selectedRoot.name.localeCompare(project.name, "vi", { sensitivity: "accent" }) !== 0
+  );
+  const rootMatchesProjectName = Boolean(
+    selectedRoot?.name
+    && selectedRoot.name.localeCompare(project.name, "vi", { sensitivity: "accent" }) === 0
+  );
+
   const harnessSelectTitle = (
     starting ? "Đang mở phiên…"
     : isLoading ? "Đang kiểm tra harness…"
@@ -498,8 +507,9 @@ export function ProjectHome({
           >
             <button
               type="button"
-              className="flex min-w-0 max-w-[30%] items-center gap-2 rounded-md px-1.5 py-1.5 text-left transition-colors hover:bg-[var(--nk-overlay)]"
+              className={`flex min-w-0 items-center gap-2 rounded-md px-1.5 py-1.5 text-left transition-colors hover:bg-[var(--nk-overlay)] ${showRootCrumb ? "max-w-[30%]" : "max-w-[70%]"}`}
               aria-label={`Chỉnh sửa Project ${project.name}`}
+              title={!showRootCrumb && rootMatchesProjectName ? selectedRoot?.path : undefined}
               onClick={onEditProject}
               disabled={!onEditProject}
             >
@@ -509,36 +519,42 @@ export function ProjectHome({
               </span>
             </button>
 
-            <span aria-hidden="true" className="h-4 w-px shrink-0 bg-[var(--nk-border-strong)]" />
+            {showRootCrumb ? (
+              <>
+                <span aria-hidden="true" className="h-4 w-px shrink-0 bg-[var(--nk-border-strong)]" />
 
-            <div className="relative flex min-w-0 flex-1 items-center gap-2 rounded-md px-1.5 py-1.5" title={selectedRoot?.path}>
-              <span className="min-w-0 flex-1">
-                <span className="sr-only">Thư mục nguồn</span>
-                {project.roots.length > 1 ? (
-                  <span className="relative block min-w-0">
-                    <select
-                      className="h-6 w-full appearance-none truncate rounded bg-transparent pr-5 text-[11.5px] font-medium text-[var(--nk-text-2)]"
-                      value={selectedRoot?.path ?? ""}
-                      aria-label="Chọn Workspace thực thi"
-                      onChange={(event) => {
-                        setSelectedRootPath(event.target.value);
-                        setError(null);
-                      }}
-                    >
-                      {project.roots.map((root) => <option key={root.path} value={root.path}>{root.name}</option>)}
-                    </select>
-                    <ChevronDown aria-hidden="true" className="pointer-events-none absolute right-0 top-1/2 h-3 w-3 -translate-y-1/2 text-[var(--nk-ghost)]" />
+                <div className="relative flex min-w-0 flex-1 items-center gap-2 rounded-md px-1.5 py-1.5" title={selectedRoot?.path}>
+                  <span className="min-w-0 flex-1">
+                    <span className="sr-only">Thư mục nguồn</span>
+                    {project.roots.length > 1 ? (
+                      <span className="relative block min-w-0">
+                        <select
+                          className="h-6 w-full appearance-none truncate rounded bg-transparent pr-5 text-[11.5px] font-medium text-[var(--nk-text-2)]"
+                          value={selectedRoot?.path ?? ""}
+                          aria-label="Chọn Workspace thực thi"
+                          onChange={(event) => {
+                            setSelectedRootPath(event.target.value);
+                            setError(null);
+                          }}
+                        >
+                          {project.roots.map((root) => <option key={root.path} value={root.path}>{root.name}</option>)}
+                        </select>
+                        <ChevronDown aria-hidden="true" className="pointer-events-none absolute right-0 top-1/2 h-3 w-3 -translate-y-1/2 text-[var(--nk-ghost)]" />
+                      </span>
+                    ) : (
+                      <strong className="block truncate text-[11.5px] font-normal text-[var(--nk-text-2)]">{selectedRoot?.name}</strong>
+                    )}
                   </span>
-                ) : (
-                  <strong className="block truncate text-[11.5px] font-normal text-[var(--nk-text-2)]">{selectedRoot?.name}</strong>
-                )}
-              </span>
-              <span className="sr-only">
-                {selectedRoot?.path}
-              </span>
-            </div>
+                  <span className="sr-only">
+                    {selectedRoot?.path}
+                  </span>
+                </div>
+              </>
+            ) : (
+              <span className="sr-only">{selectedRoot?.path}</span>
+            )}
 
-            <span className="nk-project-local-badge shrink-0 text-[11px] text-[var(--nk-text-3)]">
+            <span className="nk-project-local-badge ml-auto shrink-0 text-[11px] text-[var(--nk-text-3)]">
               Trên máy
             </span>
           </div>

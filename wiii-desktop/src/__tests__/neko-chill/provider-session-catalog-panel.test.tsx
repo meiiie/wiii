@@ -69,7 +69,7 @@ describe("unified session catalog panel", () => {
     expect(screen.getByText("Session 294")).toBeTruthy();
     expect(screen.queryByText("Session 293")).toBeNull();
     expect(screen.getByRole("button", { name: "Xem tất cả 300 phiên" })).toBeTruthy();
-    expect(screen.getByText("300 phiên · 0 do Wiii quản lý")).toBeTruthy();
+    expect(screen.getByText("0 phiên Wiii · 300 từ harness")).toBeTruthy();
   });
 
   it("flattens hierarchy while searching across provider and Wiii metadata", () => {
