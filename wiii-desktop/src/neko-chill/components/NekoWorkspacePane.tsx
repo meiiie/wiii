@@ -645,7 +645,7 @@ function NekoWorkspacePaneComponent({
     >
       <header className="nk-surface-toolbar flex h-12 shrink-0 items-center gap-1 border-b border-[var(--nk-border)] px-3">
         <div className="min-w-0 flex-1">
-          <h2 className="truncate text-[12.5px] font-semibold text-[var(--nk-text)]">
+          <h2 className="truncate text-[12.5px] font-semibold text-[var(--nk-text)]" title={workspace.path}>
             {workspace.name}
           </h2>
           <p className="truncate text-[10.5px] text-[var(--nk-text-3)]" title={workspace.path}>
@@ -711,7 +711,7 @@ function NekoWorkspacePaneComponent({
                 : item === "browser"
                   ? "Trình duyệt"
                 : item === "computer"
-                  ? "Computer"
+                  ? "Máy tính"
                 : "Tệp";
           return (
             <button

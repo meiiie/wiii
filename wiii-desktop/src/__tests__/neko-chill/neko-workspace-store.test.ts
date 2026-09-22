@@ -184,4 +184,16 @@ describe("neko workspace store", () => {
     expect(useNekoWorkspaceStore.getState().sessions["session-1"].entries[0].path)
       .toBe("src/New.ts");
   });
+
+
+  it("dedupes identical files/changes honesty errors", async () => {
+    const honesty = "Bản xem trước trong trình duyệt không đọc được workspace trên máy. Hãy dùng app desktop Wiii để mở tệp Project.";
+    listWorkspaceFiles.mockRejectedValue(new Error(honesty));
+    listWorkspaceChanges.mockRejectedValue(new Error(honesty));
+    await useNekoWorkspaceStore.getState().refresh("session-1", WORKSPACE);
+    const pane = useNekoWorkspaceStore.getState().sessions["session-1"];
+    expect(pane.error).toBe(honesty);
+    expect(pane.error?.includes(" · ")).toBe(false);
+  });
+
 });

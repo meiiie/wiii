@@ -259,6 +259,7 @@ export function ProviderSessionCatalogPanel({
         </button>
       </div>
 
+      {!(!discoveryLoading && items.length === 0 && !query.trim() && !state) ? (
       <div className="flex flex-wrap items-center gap-2 border-y border-[var(--nk-border)] bg-[var(--nk-raised)]/40 px-4 py-2.5">
         <label className="relative min-w-[220px] flex-1">
           <Search aria-hidden="true" className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-[var(--nk-ghost)]" />
@@ -275,6 +276,7 @@ export function ProviderSessionCatalogPanel({
           })}
         </div>
       </div>
+      ) : null}
 
       {importError ? <p role="alert" className="mx-4 mt-3 rounded-lg bg-[var(--nk-danger-soft)] px-3 py-2 text-[11px] text-[var(--nk-danger)]">{importError}</p> : null}
 

@@ -310,7 +310,7 @@ function NekoComposerComponent({
               Chọn thư mục
             </button>
           ) : (
-            <span className="max-w-[50%] truncate text-[10px] text-[var(--nk-ghost)]">
+            <span className="max-w-[50%] truncate text-[10px] text-[var(--nk-ghost)]" title={session.workspace.path}>
               {session.workspace.path}
             </span>
           )}

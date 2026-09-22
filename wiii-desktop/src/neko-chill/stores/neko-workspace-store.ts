@@ -253,7 +253,7 @@ export const useNekoWorkspaceStore = create<NekoWorkspaceState>((set, get) => ({
               changes:
                 changes.status === "fulfilled" ? changes.value.changes : current.changes,
               isGit: changes.status === "fulfilled" ? changes.value.isGit : current.isGit,
-              error: errors.length ? errors.join(" · ") : null,
+              error: errors.length ? [...new Set(errors)].join(" · ") : null,
             },
           },
         };
