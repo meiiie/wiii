@@ -9,6 +9,16 @@ always `wiii-v<version>` and requires a dated matching section below.
 
 ## [Unreleased]
 
+### Fixed
+
+- (none yet)
+
+## [1.2.0] - 2026-09-22
+
+First public **stable** desktop release. Supersedes pre-release
+`wiii-candidate-1.2.0-5ce57a2f`. Coordinated product version remains `1.2.0`.
+Public installer scope is **Windows x64**, explicitly unsigned.
+
 ### Added
 
 - A host-aware Workbench bootstrap shared by desktop and hosted web, with
@@ -32,43 +42,36 @@ always `wiii-v<version>` and requires a dated matching section below.
   browser profiles, explicit Project grants and a human/agent control handoff.
 - A Windows installation and recovery guide covering Neko Core setup, unsigned
   package checks, manual updates and privacy-safe feedback.
+- Linux local Neko via bubblewrap containment when building/running the desktop
+  on Linux (`#981`); stable spawn thread for PDEATHSIG (`#987`). No public
+  Linux/macOS installer in this release.
 
 ### Changed
 
-- The initial public stable desktop release is scoped to Windows x64 with an
-  explicitly unsigned installer. Linux/macOS are deferred; planned Windows
-  publication retains review, installer acceptance, integrity and provenance
-  gates without using the emergency publication route.
-
-- Desktop now opens local-first while existing managed-account intent migrates
-  additively; empty/stale auth metadata no longer opens Wiii Service, while
-  hosted web remains remote-authority-only.
-- Reframed the authentication surface as the optional Wiii Service gateway,
-  with explicit managed-capability benefits, a prominent return to local Wiii,
-  and custom endpoints moved into advanced connection setup.
-- Public release artifacts and manifests now use the product name `Wiii`.
-  Candidate identities include their source commit, and Windows filenames state
-  whether the installer is unsigned or Authenticode-signed; stable internal
-  executable and bundle identifiers remain unchanged for in-place upgrades.
-- Repositioned Wiii as an open AI workbench and runtime. Learning-management
-  systems are supported through Wiii Connect adapters rather than defining the
-  product itself.
-- Rebuilt the desktop information architecture around sessions, workspaces,
+- Public stable desktop release is scoped to Windows x64 with an explicitly
+  unsigned installer. Linux/macOS packages remain deferred; Windows publication
+  retains review, installer acceptance, integrity and provenance gates.
+- Desktop opens local-first; empty/stale auth metadata no longer opens Wiii
+  Service. Hosted web remains remote-authority-only.
+- Authentication surface reframed as the optional Wiii Service gateway, with
+  managed-capability benefits, a return to local Wiii, and custom endpoints in
+  advanced connection setup.
+- Public release artifacts and manifests use the product name `Wiii`. Windows
+  filenames state unsigned vs Authenticode-signed; stable internal executable
+  and bundle identifiers remain unchanged for in-place upgrades.
+- Repositioned Wiii as an open AI workbench and runtime. LMS support goes
+  through Wiii Connect adapters rather than defining the product.
+- Desktop information architecture rebuilt around sessions, workspaces,
   inspectable artifacts, and resilient local-first interaction.
-- Unified backend package/runtime and desktop metadata under the repository
-  `VERSION` source of truth.
-- Desktop release validation runs before packaging; stable publication attests
-  and verifies the exact artifact inventory for the declared release scope.
-- Stable publication now verifies exact filenames, sidecars, manifest
-  version/commit bindings and the declared Windows trust state (including the
-  signer thumbprint for Authenticode builds), with a protected
-  and publicly disclosed Windows-only break-glass path for hosted-runner
-  outages.
+- Backend package/runtime and desktop metadata unified under repository
+  `VERSION`. Stable publication verifies filenames, sidecars, manifest
+  version/commit bindings and declared Windows trust state.
 - Neko Core is the default harness without silently replacing an existing
-  explicit choice. Harness diagnosis belongs in Overview; a failed probe is
-  distinguished from a missing installation.
-- Refined desktop menus, resizable tool panes, Project dialogs and keyboard
-  focus recovery, with reduced-motion support.
+  explicit choice. Harness diagnosis belongs in Overview.
+- Soft polish: searchable model picker, Stop-while-dispatching, calm overview
+  hero, hydrate recovery skeleton, session composer IME/submitting parity,
+  keyboard footer honesty, Tools/Files honesty and breadcrumb titles
+  (`#967`–`#989`).
 
 ### Fixed
 
@@ -76,16 +79,21 @@ always `wiii-v<version>` and requires a dated matching section below.
   hosted-web surface blank.
 - Preserved fast Codex turn-completion notifications delivered before the UI
   installs its turn waiter.
-- Window controls now route through native Tauri commands with explicit
+- Window controls route through native Tauri commands with explicit
   minimize, maximize/restore, and close behavior.
 - ACP sessions survive process restarts and recover checkpoint metadata,
   provider continuation state, usage, tool calls, and cursor-based replay.
 - Tool calls are checkpointed before side effects; interrupted mutations are
   restored as `unknown_outcome` and are never silently replayed.
-- Prevented provider stdin backpressure from blocking its timeout, bounded
-  session-discovery frames while reading, and made event-pump shutdown wake
-  reliably.
+- Provider stdin backpressure, session-discovery frame bounds, and event-pump
+  shutdown wake reliability.
 - Preserved drafts and recoverable Project/dialog state after failed actions.
+- Honest gated UI when folder picker, connections, coworker computer, or tools
+  invoke are unavailable; honest provider exit banner (signal vs clean, empty
+  turn); bounded Neko stderr capture on exit; Coworker project cards no longer
+  auto-grant like Chill (`#968`–`#986`, `#983`, `#989`).
+- GTK folder start-path + Project Home starters; empty-workspace Project
+  onboarding clarity (`#982`, `#967`).
 
 ### Security
 
@@ -105,10 +113,14 @@ always `wiii-v<version>` and requires a dated matching section below.
 - Release policy explicitly discloses unsigned Windows packages and requires
   provenance plus checksums. An unsigned stable release does not establish
   Authenticode publisher identity.
+- Linux bwrap containment is a same-user local harness boundary for Neko, not a
+  malicious-guest sandbox.
 
 ### Known limitations
 
-- Windows x64 only; Linux/macOS local harness execution is not supported.
+- Public installer: Windows x64 only. Linux/macOS installers are not published
+  in this release. Linux desktop source builds may run local Neko via bubblewrap
+  when `bwrap` is available; that path is not a supported public package.
 - Neko Core requires separate installation and model/account configuration.
   Automatic Wiii and Neko installation/updates are not enabled together.
 - Computer is an optional experimental same-user workstation, not a sandbox
@@ -119,3 +131,4 @@ always `wiii-v<version>` and requires a dated matching section below.
   [#964](https://github.com/meiiie/wiii/issues/964).
 
 [Unreleased]: https://github.com/meiiie/wiii/commits/main
+[1.2.0]: https://github.com/meiiie/wiii/compare/wiii-candidate-1.2.0-5ce57a2f...wiii-v1.2.0
