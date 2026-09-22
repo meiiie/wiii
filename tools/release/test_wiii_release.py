@@ -34,16 +34,19 @@ class ReleaseToolTests(unittest.TestCase):
     def test_candidate_notes_come_from_unreleased(self) -> None:
         notes = wiii_release.candidate_changelog_section("1.2.0")
         self.assertTrue(notes.startswith("## Wiii 1.2.0 candidate\n"))
-        self.assertIn("host-aware Workbench bootstrap", notes)
+        # After dating [1.2.0], Unreleased holds only post-release stubs.
+        self.assertIn("(none yet)", notes)
+        self.assertNotIn("host-aware Workbench bootstrap", notes)
 
-    def test_stable_validation_rejects_candidate_only_metadata(self) -> None:
+    def test_stable_validation_accepts_dated_1_2_0_section(self) -> None:
         result = wiii_release.check_repository(tag="wiii-v1.2.0")
-        self.assertFalse(result["ok"])
+        self.assertTrue(result["ok"], result)
         self.assertEqual(result["release_state"], "stable")
-        self.assertIn(
-            "CHANGELOG.md has no valid [1.2.0] section",
-            result["errors"],
-        )
+        self.assertEqual(result["version"], "1.2.0")
+        notes = wiii_release.stable_changelog_section("1.2.0")
+        self.assertTrue(notes.startswith("## Wiii 1.2.0\n"))
+        self.assertIn("host-aware Workbench bootstrap", notes)
+        self.assertIn("bubblewrap", notes)
 
     def test_stable_notes_require_and_accept_a_dated_version_section(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
