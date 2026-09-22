@@ -699,8 +699,8 @@ describe("Neko Chill shell UI", () => {
     fireEvent.click(within(projectTools).getByRole("button", { name: "Trình duyệt" }));
     expect(within(projectTools).getByRole("button", { name: "Trình duyệt" }).getAttribute("aria-pressed")).toBe("true");
     expect(screen.queryByTestId("workspace-file-navigator")).toBeNull();
-    fireEvent.click(within(projectTools).getByRole("button", { name: "Computer" }));
-    expect(within(projectTools).getByRole("button", { name: "Computer" }).getAttribute("aria-pressed")).toBe("true");
+    fireEvent.click(within(projectTools).getByRole("button", { name: "Máy tính" }));
+    expect(within(projectTools).getByRole("button", { name: "Máy tính" }).getAttribute("aria-pressed")).toBe("true");
     expect(screen.queryByTestId("workspace-file-navigator")).toBeNull();
     fireEvent.click(within(projectTools).getByRole("button", { name: "Tệp" }));
     expect(screen.getByTestId("workspace-file-navigator")).toBeTruthy();

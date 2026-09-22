@@ -994,8 +994,21 @@ export default function NekoChillApp({
                 <div className="flex min-w-0 items-center gap-2.5">
                   {session && <span aria-hidden="true" className={`h-1.5 w-1.5 shrink-0 rounded-full ${sessionStatusDotClass(session)}`} />}
                   <div className="min-w-0">
-                    <h1 className="truncate text-[13px] font-medium text-[var(--nk-text)]">{session?.title ?? (coworkerHomeOpen ? "Neko · Đồng nghiệp AI" : projectHome?.name ?? "Tổng quan")}</h1>
-                    {session && <p className="truncate text-[10.5px] text-[var(--nk-text-3)]">{session.agentName} · {NEKO_SESSION_STATUS_LABELS[session.status]}</p>}
+                    <h1
+                      className="truncate text-[13px] font-medium text-[var(--nk-text)]"
+                      title={session?.workspace?.path ?? session?.title ?? (coworkerHomeOpen ? "Neko · Đồng nghiệp AI" : projectHome?.name ?? "Tổng quan")}
+                    >{session?.title ?? (coworkerHomeOpen ? "Neko · Đồng nghiệp AI" : projectHome?.name ?? "Tổng quan")}</h1>
+                    {session ? (
+                      <p
+                        className="truncate text-[10.5px] text-[var(--nk-text-3)]"
+                        title={session.workspace?.path
+                          ? (projectHome ? `${projectHome.name} › ${session.workspace.path}` : session.workspace.path)
+                          : undefined}
+                      >
+                        {projectHome && session.workspace ? `${projectHome.name} › ${session.workspace.name} · ` : ""}
+                        {session.agentName} · {NEKO_SESSION_STATUS_LABELS[session.status]}
+                      </p>
+                    ) : null}
                   </div>
                 </div>
                 <div className="flex shrink-0 items-center gap-1" data-testid="work-area-actions">
