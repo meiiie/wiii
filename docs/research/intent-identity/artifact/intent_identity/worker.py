@@ -210,19 +210,19 @@ class Worker:
                 raise ValueError(batch_class)
             receipts: dict[str, str] = {}
             fenced_keys: set[str] = set()
+            fenced_mask = 0
+            objective = "fence" if a.evidence_op == "fence" else "probes"
             while len(B) > 1:
-                best = None
-                for i in sorted(belief.unresolved(B)):
-                    b1 = belief.condition(B, i, True)
-                    b0 = belief.condition(B, i, False)
-                    c = 1.0 + (len(b1) / len(B)) * belief.optimal_probe_cost(b1) + (len(b0) / len(B)) * belief.optimal_probe_cost(b0)
-                    if best is None or c < best[0]:
-                        best = (c, i)
-                i = best[1]
+                # Per-key finality changes the objective: probing an absent
+                # member is the fence it needs anyway, so the probe-minimising
+                # policy is no longer optimal.
+                i = belief.best_probe(B, n, fenced_mask, objective)
                 m = held[i]
                 committed, receipt = self.probe(self.ledger.get(a.instance, m).effect_key)
                 probes += 1
-                fenced_keys.add(m) if a.evidence_op == "fence" else None
+                if a.evidence_op == "fence":
+                    fenced_keys.add(m)
+                    fenced_mask |= 1 << i
                 if committed:
                     receipts[m] = receipt
                 B = belief.condition(B, i, committed)
@@ -314,9 +314,13 @@ class Worker:
         except (PermissionError, ValueError) as e:
             # Stale lease or stale key binding: another worker took this
             # occurrence over (and possibly rekeyed it) while the request was
-            # in flight. The receipt is genuine sink evidence, so it is
-            # journaled as an event, but the state transition is refused.
+            # in flight. A binding-matched receipt (PermissionError) is kept as
+            # a pending late receipt so a later transition to unresolved can
+            # adopt it; a rekeyed binding (ValueError) is not evidence for the
+            # new key. The state transition itself is refused either way.
             self.ledger.log("stale-confirm-rejected", self.a.instance, occ.occurrence_id, receipt=resp["receipt"], status=resp["status"], reason=str(e))
+            if isinstance(e, PermissionError):
+                self.ledger.note_pending_receipt(self.a.instance, occ.occurrence_id, resp["receipt"], payload_hash, occ.effect_key)
             self.summary["stale_confirms_rejected"] = self.summary.get("stale_confirms_rejected", 0) + 1
             self.summary["actions"].append({"occurrence": occ.occurrence_id, "outcome": f"stale-confirm-rejected({resp['status']})"})
             return

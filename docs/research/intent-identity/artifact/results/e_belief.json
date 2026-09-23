@@ -437,7 +437,7 @@
       "ternary_journal_expected_probes": 1.0,
       "structured_journal_expected_probes": 1.0,
       "structured_journal_worst_probes": 1,
-      "bulk_list_query_breakeven_cost": 0.0,
+      "bulk_status_call_beats_structured_above": 1.0,
       "structured_perkey_fence_expected_calls": 1.0,
       "structured_perkey_fence_worst_calls": 1,
       "ternary_perkey_fence_calls": 1
@@ -453,7 +453,7 @@
       "closed_form_expected": 1.0,
       "closed_form_worst": 1,
       "closed_form_matches": true,
-      "bulk_list_query_breakeven_cost": 0.0,
+      "bulk_status_call_beats_structured_above": 1.0,
       "structured_perkey_fence_expected_calls": 1.0,
       "structured_perkey_fence_worst_calls": 1,
       "ternary_perkey_fence_calls": 1
@@ -466,7 +466,7 @@
       "ternary_journal_expected_probes": 1.0,
       "structured_journal_expected_probes": 1.0,
       "structured_journal_worst_probes": 1,
-      "bulk_list_query_breakeven_cost": 0.0,
+      "bulk_status_call_beats_structured_above": 1.0,
       "structured_perkey_fence_expected_calls": 1.0,
       "structured_perkey_fence_worst_calls": 1,
       "ternary_perkey_fence_calls": 1
@@ -479,7 +479,7 @@
       "ternary_journal_expected_probes": 2.0,
       "structured_journal_expected_probes": 1.0,
       "structured_journal_worst_probes": 1,
-      "bulk_list_query_breakeven_cost": 1.0,
+      "bulk_status_call_beats_structured_above": 1.0,
       "structured_perkey_fence_expected_calls": 1.5,
       "structured_perkey_fence_worst_calls": 2,
       "ternary_perkey_fence_calls": 2
@@ -495,8 +495,8 @@
       "closed_form_expected": 1.666667,
       "closed_form_worst": 2,
       "closed_form_matches": true,
-      "bulk_list_query_breakeven_cost": 0.333333,
-      "structured_perkey_fence_expected_calls": 2.0,
+      "bulk_status_call_beats_structured_above": 1.666667,
+      "structured_perkey_fence_expected_calls": 1.666667,
       "structured_perkey_fence_worst_calls": 2,
       "ternary_perkey_fence_calls": 2
     },
@@ -508,7 +508,7 @@
       "ternary_journal_expected_probes": 2.0,
       "structured_journal_expected_probes": 2.0,
       "structured_journal_worst_probes": 2,
-      "bulk_list_query_breakeven_cost": 0.0,
+      "bulk_status_call_beats_structured_above": 2.0,
       "structured_perkey_fence_expected_calls": 2.0,
       "structured_perkey_fence_worst_calls": 2,
       "ternary_perkey_fence_calls": 2
@@ -521,7 +521,7 @@
       "ternary_journal_expected_probes": 3.0,
       "structured_journal_expected_probes": 1.0,
       "structured_journal_worst_probes": 1,
-      "bulk_list_query_breakeven_cost": 2.0,
+      "bulk_status_call_beats_structured_above": 1.0,
       "structured_perkey_fence_expected_calls": 2.0,
       "structured_perkey_fence_worst_calls": 3,
       "ternary_perkey_fence_calls": 3
@@ -537,8 +537,8 @@
       "closed_form_expected": 2.0,
       "closed_form_worst": 2,
       "closed_form_matches": true,
-      "bulk_list_query_breakeven_cost": 1.0,
-      "structured_perkey_fence_expected_calls": 2.5,
+      "bulk_status_call_beats_structured_above": 2.0,
+      "structured_perkey_fence_expected_calls": 2.25,
       "structured_perkey_fence_worst_calls": 3,
       "ternary_perkey_fence_calls": 3
     },
@@ -550,7 +550,7 @@
       "ternary_journal_expected_probes": 3.0,
       "structured_journal_expected_probes": 3.0,
       "structured_journal_worst_probes": 3,
-      "bulk_list_query_breakeven_cost": 0.0,
+      "bulk_status_call_beats_structured_above": 3.0,
       "structured_perkey_fence_expected_calls": 3.0,
       "structured_perkey_fence_worst_calls": 3,
       "ternary_perkey_fence_calls": 3
@@ -563,7 +563,7 @@
       "ternary_journal_expected_probes": 4.0,
       "structured_journal_expected_probes": 1.0,
       "structured_journal_worst_probes": 1,
-      "bulk_list_query_breakeven_cost": 3.0,
+      "bulk_status_call_beats_structured_above": 1.0,
       "structured_perkey_fence_expected_calls": 2.5,
       "structured_perkey_fence_worst_calls": 4,
       "ternary_perkey_fence_calls": 4
@@ -579,8 +579,8 @@
       "closed_form_expected": 2.4,
       "closed_form_worst": 3,
       "closed_form_matches": true,
-      "bulk_list_query_breakeven_cost": 1.6,
-      "structured_perkey_fence_expected_calls": 3.4,
+      "bulk_status_call_beats_structured_above": 2.4,
+      "structured_perkey_fence_expected_calls": 2.8,
       "structured_perkey_fence_worst_calls": 4,
       "ternary_perkey_fence_calls": 4
     },
@@ -592,7 +592,7 @@
       "ternary_journal_expected_probes": 4.0,
       "structured_journal_expected_probes": 4.0,
       "structured_journal_worst_probes": 4,
-      "bulk_list_query_breakeven_cost": 0.0,
+      "bulk_status_call_beats_structured_above": 4.0,
       "structured_perkey_fence_expected_calls": 4.0,
       "structured_perkey_fence_worst_calls": 4,
       "ternary_perkey_fence_calls": 4
@@ -605,7 +605,7 @@
       "ternary_journal_expected_probes": 5.0,
       "structured_journal_expected_probes": 1.0,
       "structured_journal_worst_probes": 1,
-      "bulk_list_query_breakeven_cost": 4.0,
+      "bulk_status_call_beats_structured_above": 1.0,
       "structured_perkey_fence_expected_calls": 3.0,
       "structured_perkey_fence_worst_calls": 5,
       "ternary_perkey_fence_calls": 5
@@ -621,8 +621,8 @@
       "closed_form_expected": 2.666667,
       "closed_form_worst": 3,
       "closed_form_matches": true,
-      "bulk_list_query_breakeven_cost": 2.333333,
-      "structured_perkey_fence_expected_calls": 4.0,
+      "bulk_status_call_beats_structured_above": 2.666667,
+      "structured_perkey_fence_expected_calls": 3.333333,
       "structured_perkey_fence_worst_calls": 5,
       "ternary_perkey_fence_calls": 5
     },
@@ -634,7 +634,7 @@
       "ternary_journal_expected_probes": 5.0,
       "structured_journal_expected_probes": 5.0,
       "structured_journal_worst_probes": 5,
-      "bulk_list_query_breakeven_cost": 0.0,
+      "bulk_status_call_beats_structured_above": 5.0,
       "structured_perkey_fence_expected_calls": 5.0,
       "structured_perkey_fence_worst_calls": 5,
       "ternary_perkey_fence_calls": 5
@@ -647,7 +647,7 @@
       "ternary_journal_expected_probes": 6.0,
       "structured_journal_expected_probes": 1.0,
       "structured_journal_worst_probes": 1,
-      "bulk_list_query_breakeven_cost": 5.0,
+      "bulk_status_call_beats_structured_above": 1.0,
       "structured_perkey_fence_expected_calls": 3.5,
       "structured_perkey_fence_worst_calls": 6,
       "ternary_perkey_fence_calls": 6
@@ -663,8 +663,8 @@
       "closed_form_expected": 2.857143,
       "closed_form_worst": 3,
       "closed_form_matches": true,
-      "bulk_list_query_breakeven_cost": 3.142857,
-      "structured_perkey_fence_expected_calls": 4.571429,
+      "bulk_status_call_beats_structured_above": 2.857143,
+      "structured_perkey_fence_expected_calls": 3.857143,
       "structured_perkey_fence_worst_calls": 6,
       "ternary_perkey_fence_calls": 6
     },
@@ -676,7 +676,7 @@
       "ternary_journal_expected_probes": 6.0,
       "structured_journal_expected_probes": 6.0,
       "structured_journal_worst_probes": 6,
-      "bulk_list_query_breakeven_cost": 0.0,
+      "bulk_status_call_beats_structured_above": 6.0,
       "structured_perkey_fence_expected_calls": 6.0,
       "structured_perkey_fence_worst_calls": 6,
       "ternary_perkey_fence_calls": 6
@@ -689,7 +689,7 @@
       "ternary_journal_expected_probes": 7.0,
       "structured_journal_expected_probes": 1.0,
       "structured_journal_worst_probes": 1,
-      "bulk_list_query_breakeven_cost": 6.0,
+      "bulk_status_call_beats_structured_above": 1.0,
       "structured_perkey_fence_expected_calls": 4.0,
       "structured_perkey_fence_worst_calls": 7,
       "ternary_perkey_fence_calls": 7
@@ -705,8 +705,8 @@
       "closed_form_expected": 3.0,
       "closed_form_worst": 3,
       "closed_form_matches": true,
-      "bulk_list_query_breakeven_cost": 4.0,
-      "structured_perkey_fence_expected_calls": 5.0,
+      "bulk_status_call_beats_structured_above": 3.0,
+      "structured_perkey_fence_expected_calls": 4.375,
       "structured_perkey_fence_worst_calls": 7,
       "ternary_perkey_fence_calls": 7
     },
@@ -718,7 +718,7 @@
       "ternary_journal_expected_probes": 7.0,
       "structured_journal_expected_probes": 7.0,
       "structured_journal_worst_probes": 7,
-      "bulk_list_query_breakeven_cost": 0.0,
+      "bulk_status_call_beats_structured_above": 7.0,
       "structured_perkey_fence_expected_calls": 7.0,
       "structured_perkey_fence_worst_calls": 7,
       "ternary_perkey_fence_calls": 7
@@ -731,7 +731,7 @@
       "ternary_journal_expected_probes": 8.0,
       "structured_journal_expected_probes": 1.0,
       "structured_journal_worst_probes": 1,
-      "bulk_list_query_breakeven_cost": 7.0,
+      "bulk_status_call_beats_structured_above": 1.0,
       "structured_perkey_fence_expected_calls": 4.5,
       "structured_perkey_fence_worst_calls": 8,
       "ternary_perkey_fence_calls": 8
@@ -747,8 +747,8 @@
       "closed_form_expected": 3.222222,
       "closed_form_worst": 4,
       "closed_form_matches": true,
-      "bulk_list_query_breakeven_cost": 4.777778,
-      "structured_perkey_fence_expected_calls": 5.777778,
+      "bulk_status_call_beats_structured_above": 3.222222,
+      "structured_perkey_fence_expected_calls": 4.888889,
       "structured_perkey_fence_worst_calls": 8,
       "ternary_perkey_fence_calls": 8
     },
@@ -760,7 +760,7 @@
       "ternary_journal_expected_probes": 8.0,
       "structured_journal_expected_probes": 8.0,
       "structured_journal_worst_probes": 8,
-      "bulk_list_query_breakeven_cost": 0.0,
+      "bulk_status_call_beats_structured_above": 8.0,
       "structured_perkey_fence_expected_calls": 8.0,
       "structured_perkey_fence_worst_calls": 8,
       "ternary_perkey_fence_calls": 8
@@ -773,7 +773,7 @@
       "ternary_journal_expected_probes": 9.0,
       "structured_journal_expected_probes": 1.0,
       "structured_journal_worst_probes": 1,
-      "bulk_list_query_breakeven_cost": 8.0,
+      "bulk_status_call_beats_structured_above": 1.0,
       "structured_perkey_fence_expected_calls": 5.0,
       "structured_perkey_fence_worst_calls": 9,
       "ternary_perkey_fence_calls": 9
@@ -789,8 +789,8 @@
       "closed_form_expected": 3.4,
       "closed_form_worst": 4,
       "closed_form_matches": true,
-      "bulk_list_query_breakeven_cost": 5.6,
-      "structured_perkey_fence_expected_calls": 6.4,
+      "bulk_status_call_beats_structured_above": 3.4,
+      "structured_perkey_fence_expected_calls": 5.4,
       "structured_perkey_fence_worst_calls": 9,
       "ternary_perkey_fence_calls": 9
     },
@@ -802,7 +802,7 @@
       "ternary_journal_expected_probes": 10.0,
       "structured_journal_expected_probes": 1.0,
       "structured_journal_worst_probes": 1,
-      "bulk_list_query_breakeven_cost": 9.0,
+      "bulk_status_call_beats_structured_above": 1.0,
       "structured_perkey_fence_expected_calls": 5.5,
       "structured_perkey_fence_worst_calls": 10,
       "ternary_perkey_fence_calls": 10
@@ -818,8 +818,8 @@
       "closed_form_expected": 3.545455,
       "closed_form_worst": 4,
       "closed_form_matches": true,
-      "bulk_list_query_breakeven_cost": 6.454545,
-      "structured_perkey_fence_expected_calls": 7.0,
+      "bulk_status_call_beats_structured_above": 3.545455,
+      "structured_perkey_fence_expected_calls": 5.909091,
       "structured_perkey_fence_worst_calls": 10,
       "ternary_perkey_fence_calls": 10
     }

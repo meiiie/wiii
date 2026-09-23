@@ -99,27 +99,25 @@ def e3(max_n: int = 10, oracle_max_n: int = 10) -> list[dict]:
 
 
 def simulate_fence_accounting(B, n):
-    """Run the min-expected-probe policy in every world of B (uniform); each
-    probe is a per-key fence, and every absent member not yet fenced must be
-    fenced before its fresh dispatch. Returns mean and max total fences."""
-    from intent_identity.belief import condition, unresolved
+    """Per-key finality: each probe is a fence, and every absent member not yet
+    fenced is fenced before fresh dispatch. The policy minimises that total,
+    not the probe count (a probe of an absent member is free). Returns the
+    mean total over a uniform world and the worst world."""
+    from intent_identity.belief import best_probe, condition
 
     totals = []
     for world in B:
         cur = B
-        fenced = set()
+        fenced_mask = 0
+        calls = 0
         while len(cur) > 1:
-            best = None
-            for i in sorted(unresolved(cur)):
-                b1, b0 = condition(cur, i, True), condition(cur, i, False)
-                c = 1.0 + (len(b1) / len(cur)) * optimal_probe_cost(b1) + (len(b0) / len(cur)) * optimal_probe_cost(b0)
-                if best is None or c < best[0]:
-                    best = (c, i)
-            i = best[1]
-            fenced.add(i)
+            i = best_probe(cur, n, fenced_mask, "fence")
+            fenced_mask |= 1 << i
+            calls += 1
             cur = condition(cur, i, i in world)
-        absent = set(range(n)) - world
-        totals.append(len(fenced) + len(absent - fenced))
+        absent = set(range(n)) - set(world)
+        extra = sum(1 for i in absent if not (fenced_mask >> i) & 1)
+        totals.append(calls + extra)
     return sum(totals) / len(totals), max(totals)
 
 
@@ -143,7 +141,8 @@ def e4(max_n: int = 10) -> list[dict]:
                 row["closed_form_expected"] = round(prefix_expected_cost(n), 6)
                 row["closed_form_worst"] = prefix_worst_cost(n)
                 row["closed_form_matches"] = abs(row["closed_form_expected"] - row["structured_journal_expected_probes"]) < 1e-9
-            row["bulk_list_query_breakeven_cost"] = round(row["ternary_journal_expected_probes"] - row["structured_journal_expected_probes"], 6)
+            # A bulk status call at cost c_L beats per-item structured probing when c_L is below the structured cost, not when it exceeds the gap between journals.
+            row["bulk_status_call_beats_structured_above"] = row["structured_journal_expected_probes"]
             mean_f, max_f = simulate_fence_accounting(B, n)
             row["structured_perkey_fence_expected_calls"] = round(mean_f, 6)
             row["structured_perkey_fence_worst_calls"] = max_f

@@ -6,7 +6,7 @@
   "status": "executed development research; second implementation written from the v0.2 specification by the same research process (not an external replication); not submitted",
   "main_findings": [
     "v0.2 null result reproduced exactly by a second implementation; a ledger-consulting strong reference R+ dispatches the same set as the verifier V by a one-line lemma, so the tie is structural rather than empirical.",
-    "Under finite idempotency retention (documented: Stripe >= 24 h, SQS FIFO 5 min), every same-key-retry policy (R, R+, V) duplicates in all 149,217 lost-acknowledgement cases; the retention-aware controller duplicates in none. Safe same-key retry is characterized by t - h(omega) < T - Delta under an explicit adversarial timing model (Prop. 3).",
+    "Under finite idempotency retention (documented: Stripe >= 24 h, SQS FIFO 5 min), every same-key-retry policy (R, R+, V) duplicates in all 149,217 lost-acknowledgement cases; the retention-aware controller duplicates in none. Safe same-key retry is t - h(omega) < T - Delta when every attempt commits or dies within a lifetime L with L + Delta < T; if the attempt can outlive the window, no retry time is safe (Prop. 3).",
     "Completion after the window depends on an evidence contract: retention-aware recovery completes 10/10 lost-ack runtime trials per policy with a lookup endpoint and leaves 10/10 unresolved without one; a negative point-in-time lookup is never finality evidence (D1-TTL reserved variant, I4 after-reservation rows).",
     "Durable-execution-style lookup-then-fresh-key recovery without a fence duplicates in 15/15 in-flight takeover trials on every profile including P_D (the fresh key is a different key) and is correct in 15/15 trials once the old request has landed (I3).",
     "A suspended-then-resumed predecessor (SIGSTOP/SIGCONT) never duplicates (0/60): the sink dedup (P_D) or the successor's fence (P_F) governs its late request, and under P_O the successor never dispatched a fresh key. The ledger's lease-holder rule refuses every stale state write (30/30 receipts refused in strict mode) but does not affect the effect count. Under P_O the resumed worker carries the only finality evidence; a ledger that adopts a late receipt whose key/payload binding matches an unresolved occurrence completes 10/10 trials that the strict rule leaves unresolved.",
@@ -235,23 +235,29 @@
         "10": 5.5
       },
       "prefix": {
-        "2": 2.0,
-        "4": 3.4,
-        "6": 4.571,
-        "8": 5.778,
-        "10": 7.0
+        "2": 1.667,
+        "4": 2.8,
+        "6": 3.857,
+        "8": 4.889,
+        "10": 5.909
       },
       "independent": "n",
       "ternary": "n",
-      "worst_case_any_structured": "n"
+      "worst_case_any_structured": "n",
+      "closed_form": {
+        "atomic": "(n+1)/2",
+        "prefix": "n/2 + n/(n+1)",
+        "independent": "n"
+      }
     },
     "accountings": [
-      "per-request finality: probes only",
-      "per-key finality: probes + one fence per absent member before fresh dispatch"
+      "per-request finality: minimises probes; fresh dispatch needs no further call",
+      "per-key finality: a probe is a fence, and the optimum minimises probes plus fences of unprobed absent members"
     ],
-    "exact_k_note": "exact-k probe counts exclude the one aggregate call that learns k; Prop. 6 adds it"
+    "exact_k_note": "exact-k probe counts exclude the one aggregate call that learns k; Prop. 6 adds it",
+    "note": "The probe-minimising prefix policy is not optimal under per-key finality (5.778 vs 4.889 at n=8)."
   },
-  "unit_tests": 34,
+  "unit_tests": 37,
   "process_trials_recorded": 635,
   "live_llm_generations": 0,
   "commercial_provider_calls": 0,
@@ -276,13 +282,15 @@
           "mean_probes": 4.0,
           "max_probes": 4,
           "mean_evidence_calls": 4.0,
-          "oracle_probes": 4.0
+          "oracle_probes": 4.0,
+          "oracle_calls": 4.0
         },
         "structured": {
           "mean_probes": 4.0,
           "max_probes": 4,
           "mean_evidence_calls": 4.0,
-          "oracle_probes": 4.0
+          "oracle_probes": 4.0,
+          "oracle_calls": 4.0
         }
       },
       "lookup/atomic/n4": {
@@ -290,13 +298,15 @@
           "mean_probes": 4.0,
           "max_probes": 4,
           "mean_evidence_calls": 4.0,
-          "oracle_probes": 4.0
+          "oracle_probes": 4.0,
+          "oracle_calls": 4.0
         },
         "structured": {
           "mean_probes": 1.0,
           "max_probes": 1,
           "mean_evidence_calls": 1.0,
-          "oracle_probes": 1.0
+          "oracle_probes": 1.0,
+          "oracle_calls": 1.0
         }
       },
       "lookup/prefix/n4": {
@@ -304,13 +314,15 @@
           "mean_probes": 4.0,
           "max_probes": 4,
           "mean_evidence_calls": 4.0,
-          "oracle_probes": 4.0
+          "oracle_probes": 4.0,
+          "oracle_calls": 4.0
         },
         "structured": {
           "mean_probes": 2.4,
           "max_probes": 3,
           "mean_evidence_calls": 2.4,
-          "oracle_probes": 2.4
+          "oracle_probes": 2.4,
+          "oracle_calls": 2.4
         }
       },
       "lookup/prefix/n8": {
@@ -318,13 +330,15 @@
           "mean_probes": 8.0,
           "max_probes": 8,
           "mean_evidence_calls": 8.0,
-          "oracle_probes": 8.0
+          "oracle_probes": 8.0,
+          "oracle_calls": 8.0
         },
         "structured": {
           "mean_probes": 3.2222,
           "max_probes": 4,
           "mean_evidence_calls": 3.2222,
-          "oracle_probes": 3.2222
+          "oracle_probes": 3.2222,
+          "oracle_calls": 3.2222
         }
       },
       "lookup/atomic/n8": {
@@ -332,13 +346,15 @@
           "mean_probes": 8.0,
           "max_probes": 8,
           "mean_evidence_calls": 8.0,
-          "oracle_probes": 8.0
+          "oracle_probes": 8.0,
+          "oracle_calls": 8.0
         },
         "structured": {
           "mean_probes": 1.0,
           "max_probes": 1,
           "mean_evidence_calls": 1.0,
-          "oracle_probes": 1.0
+          "oracle_probes": 1.0,
+          "oracle_calls": 1.0
         }
       },
       "fence/independent/n4": {
@@ -346,13 +362,15 @@
           "mean_probes": 4.0,
           "max_probes": 4,
           "mean_evidence_calls": 4.0,
-          "oracle_probes": 4.0
+          "oracle_probes": 4.0,
+          "oracle_calls": 4.0
         },
         "structured": {
           "mean_probes": 4.0,
           "max_probes": 4,
           "mean_evidence_calls": 4.0,
-          "oracle_probes": 4.0
+          "oracle_probes": 4.0,
+          "oracle_calls": 4.0
         }
       },
       "fence/atomic/n4": {
@@ -360,13 +378,15 @@
           "mean_probes": 4.0,
           "max_probes": 4,
           "mean_evidence_calls": 4.0,
-          "oracle_probes": 4.0
+          "oracle_probes": 4.0,
+          "oracle_calls": 4.0
         },
         "structured": {
           "mean_probes": 1.0,
           "max_probes": 1,
           "mean_evidence_calls": 2.5,
-          "oracle_probes": 1.0
+          "oracle_probes": 1.0,
+          "oracle_calls": 2.5
         }
       },
       "fence/prefix/n4": {
@@ -374,13 +394,15 @@
           "mean_probes": 4.0,
           "max_probes": 4,
           "mean_evidence_calls": 4.0,
-          "oracle_probes": 4.0
+          "oracle_probes": 4.0,
+          "oracle_calls": 4.0
         },
         "structured": {
-          "mean_probes": 2.4,
-          "max_probes": 3,
-          "mean_evidence_calls": 3.4,
-          "oracle_probes": 2.4
+          "mean_probes": 2.8,
+          "max_probes": 4,
+          "mean_evidence_calls": 2.8,
+          "oracle_probes": 2.4,
+          "oracle_calls": 2.8
         }
       },
       "fence/prefix/n8": {
@@ -388,13 +410,15 @@
           "mean_probes": 8.0,
           "max_probes": 8,
           "mean_evidence_calls": 8.0,
-          "oracle_probes": 8.0
+          "oracle_probes": 8.0,
+          "oracle_calls": 8.0
         },
         "structured": {
-          "mean_probes": 3.2222,
-          "max_probes": 4,
-          "mean_evidence_calls": 5.7778,
-          "oracle_probes": 3.2222
+          "mean_probes": 4.8889,
+          "max_probes": 8,
+          "mean_evidence_calls": 4.8889,
+          "oracle_probes": 3.2222,
+          "oracle_calls": 4.8889
         }
       },
       "fence/atomic/n8": {
@@ -402,13 +426,15 @@
           "mean_probes": 8.0,
           "max_probes": 8,
           "mean_evidence_calls": 8.0,
-          "oracle_probes": 8.0
+          "oracle_probes": 8.0,
+          "oracle_calls": 8.0
         },
         "structured": {
           "mean_probes": 1.0,
           "max_probes": 1,
           "mean_evidence_calls": 4.5,
-          "oracle_probes": 1.0
+          "oracle_probes": 1.0,
+          "oracle_calls": 4.5
         }
       }
     },
@@ -420,7 +446,8 @@
       "controller_all_done": 5,
       "world_incomplete": 3,
       "false_success": 3
-    }
+    },
+    "fence_policy": "minimises total evidence calls, not probe count; prefix structured measured calls are 2.8 (n=4) and 4.8889 (n=8)"
   },
   "I6": {
     "trials": 60,

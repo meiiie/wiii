@@ -243,6 +243,34 @@ class LedgerTests(unittest.TestCase):
         kinds = [r[0] for r in A.conn.execute("SELECT kind FROM events WHERE occurrence_id='o1'").fetchall()]
         self.assertIn("late-receipt-adopted", kinds)
 
+    def test_pending_receipt_adopted_when_holder_stops(self):
+        c = contract()
+        A = Ledger(self.db, "A", late_evidence="adopt")
+        A.register_contract(c)
+        _, occ = A.reserve(c.instance_id, "o1", 100, None)
+        key = occ.effect_key
+        B = Ledger(self.db, "B", late_evidence="adopt")
+        self.assertTrue(B.reserve(c.instance_id, "o1", 100, None, predecessor="A")[0])
+        with self.assertRaises(PermissionError):
+            A.confirm(c.instance_id, "o1", "in-flight", SPECS[0].payload_hash(), key)
+        A.note_pending_receipt(c.instance_id, "o1", "in-flight", SPECS[0].payload_hash(), key)
+        B.mark_unresolved(c.instance_id, "o1", "opaque-provider")
+        done = B.get(c.instance_id, "o1")
+        self.assertEqual(done.state, "done")
+        self.assertEqual(done.receipt, "in-flight")
+
+    def test_pending_receipt_dropped_after_rekey(self):
+        c = contract()
+        A = Ledger(self.db, "A", late_evidence="adopt")
+        A.register_contract(c)
+        _, occ = A.reserve(c.instance_id, "o1", 100, None)
+        B = Ledger(self.db, "B", late_evidence="adopt")
+        B.reserve(c.instance_id, "o1", 100, None, predecessor="A")
+        A.note_pending_receipt(c.instance_id, "o1", "old", SPECS[0].payload_hash(), occ.effect_key)
+        B.rekey(c.instance_id, "o1", "fresh-key", 1, retention_seconds=10)
+        B.mark_unresolved(c.instance_id, "o1", "opaque-provider")
+        self.assertEqual(B.get(c.instance_id, "o1").state, "unresolved")
+
     def test_late_receipt_rejected_in_strict_mode(self):
         c = contract()
         A = Ledger(self.db, "A", late_evidence="reject")
@@ -386,6 +414,17 @@ class BeliefTests(unittest.TestCase):
             self.assertAlmostEqual(belief.optimal_probe_cost(belief.prefix_family(n)), belief.prefix_expected_cost(n))
             self.assertEqual(belief.optimal_probe_cost(belief.atomic_family(n)), 1.0)
             self.assertEqual(belief.optimal_probe_cost(belief.independent_family(n)), float(n))
+
+    def test_per_key_fence_cost_is_not_the_probe_policy(self):
+        for n in range(1, 9):
+            prefix = belief.prefix_family(n)
+            self.assertAlmostEqual(belief.optimal_fence_cost(prefix, n), belief.prefix_fence_expected_cost(n))
+            self.assertEqual(belief.worst_case_fence_cost(prefix, n), n)
+            self.assertAlmostEqual(belief.optimal_fence_cost(belief.atomic_family(n), n), belief.atomic_fence_expected_cost(n))
+            self.assertAlmostEqual(belief.optimal_fence_cost(belief.independent_family(n), n), float(n))
+        # n = 8 prefix: probe-minimising policy costs 5.777..., the fence-optimal scan costs 4.888...
+        self.assertAlmostEqual(belief.prefix_fence_expected_cost(8), 4.0 + 8 / 9)
+        self.assertGreater(5.777, belief.prefix_fence_expected_cost(8))
 
 
 if __name__ == "__main__":

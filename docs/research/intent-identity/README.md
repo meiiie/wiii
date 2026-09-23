@@ -51,8 +51,7 @@ encoding differs; the mutant witnesses have the same shape.
   policy duplicates after the window while the retention-aware controller does
   not (D1-TTL, M1 mutant, I4).
 - An in-flight takeover study across `P_D` / `P_F` / `P_O` with three recovery
-  policies (I3, 90 trials): naive same-key retry, durable-execution-style
-  lookup-then-fresh-key without a fence, and profile-aware recovery. The
+  policies (I3, 90 trials): naive same-key retry, lookup-then-fresh-key without a fence (a hand-written handler; durable-execution same-key retry is the naive policy), and profile-aware recovery. The
   middle policy is the realistic baseline and duplicates in 15/15 in-flight
   trials on every profile, including the deduplicating one, because the fresh
   key is a different key; it is correct in 15/15 trials once the old request
@@ -60,9 +59,10 @@ encoding differs; the mutant witnesses have the same shape.
 - Semantics-determined belief families (independent / atomic / prefix /
   exact-k) with closed forms verified by an exact oracle (E4), and a
   runtime reconciliation study (I5, 141 trials) in which a worker recovering
-  from a journaled batch request with a lost response reproduces the oracle's
-  probe counts exactly under two evidence-cost accountings (per-request
-  finality and per-key fence) while staying exactly-once, and a misdeclared
+  from a journaled batch request with a lost response reproduces the oracle
+  under both accountings. Per-key finality minimises total fences, not probe
+  count (prefix at n=8 costs 4.89 of 8, not the 5.78 of the probe-minimising
+  policy), while staying exactly-once, and a misdeclared
   processing class produces false completion in 3/5 worlds.
 - A model-checking configuration without a fence capability (safe, exhausts)
   and an explicit note that M1 checks safety only, not liveness.

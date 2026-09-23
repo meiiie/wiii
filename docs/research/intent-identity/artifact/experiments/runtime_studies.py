@@ -281,7 +281,7 @@ def study_i5(workdir: Path, out) -> dict:
     """
     from itertools import combinations
 
-    from intent_identity.belief import atomic_family, independent_family, optimal_probe_cost, prefix_family
+    from intent_identity.belief import atomic_family, independent_family, optimal_fence_cost, optimal_probe_cost, prefix_family
 
     def worlds(cls, n):
         occ = [f"o{i}" for i in range(1, n + 1)]
@@ -313,7 +313,8 @@ def study_i5(workdir: Path, out) -> dict:
         for evidence_op in ("lookup", "fence"):
             for cls, n in designs:
                 fam = {"independent": independent_family, "atomic": atomic_family, "prefix": prefix_family}[cls](n)
-                expected = {"structured": optimal_probe_cost(fam), "ternary": float(n)}
+                probe_cost = {"structured": optimal_probe_cost(fam), "ternary": float(n)}
+                fence_cost = {"structured": optimal_fence_cost(fam, n), "ternary": float(n)}
                 for journal in ("ternary", "structured"):
                     c = Counter()
                     probes, calls = [], []
@@ -333,7 +334,8 @@ def study_i5(workdir: Path, out) -> dict:
                     row["mean_probes"] = round(sum(valid) / len(valid), 4) if valid else None
                     row["max_probes"] = max(valid) if valid else None
                     row["mean_evidence_calls"] = round(sum(vcalls) / len(vcalls), 4) if vcalls else None
-                    row["expected_mean_probes"] = round(expected[journal], 4)
+                    row["expected_mean_probes"] = round(probe_cost[journal], 4)
+                    row["expected_mean_calls"] = round(fence_cost[journal] if evidence_op == "fence" else probe_cost[journal], 4)
                     rows[f"{evidence_op}/{cls}/n{n}/{journal}"] = row
                     print("I5", evidence_op, cls, n, journal, row, flush=True)
         # Trusted-class misdeclaration: provider processes as prefix, journal claims atomic.

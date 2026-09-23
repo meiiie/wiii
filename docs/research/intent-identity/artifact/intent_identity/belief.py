@@ -153,5 +153,79 @@ def prefix_worst_cost(n: int) -> int:
     return ceil(log2(n + 1))
 
 
+def prefix_fence_expected_cost(n: int) -> float:
+    """Per-key finality for the prefix class.
+
+    A probe is itself a fence, so probing an absent member is free relative to
+    the fence that member needs before a fresh dispatch, while probing a
+    committed member is pure overhead. Cost of a world is therefore
+    ``|absent| + (probes that hit committed members)``. Scanning from the end
+    of the request and stopping at the first committed member probes exactly
+    one committed member whenever anything committed, and costs
+    ``n/2 + n/(n+1)`` under a uniform prior. ``optimal_fence_cost`` confirms
+    this is optimal for every ``n <= 10``. The worst case is ``n`` (nothing
+    committed: every member must be fenced).
+    """
+    return n / 2 + n / (n + 1)
+
+
+def atomic_fence_expected_cost(n: int) -> float:
+    """One probe identifies the world. With probability 1/2 nothing committed
+    and the remaining ``n-1`` members still need a fence: expected ``(n+1)/2``."""
+    return (n + 1) / 2
+
+
+@lru_cache(maxsize=None)
+def optimal_fence_cost(B: Family, n: int, fenced: int = 0) -> float:
+    """Expected per-key-finality calls (probes plus fences of absent members
+    not already probed). ``fenced`` is a bitmask of items already probed."""
+    if len(B) == 1:
+        (world,) = B
+        return float(sum(1 for i in range(n) if i not in world and not (fenced >> i) & 1))
+    best = float("inf")
+    for i in unresolved(B):
+        bit = fenced | (1 << i)
+        b1 = condition(B, i, True)
+        b0 = condition(B, i, False)
+        c = 1.0 + (len(b1) / len(B)) * optimal_fence_cost(b1, n, bit) + (len(b0) / len(B)) * optimal_fence_cost(b0, n, bit)
+        if c < best:
+            best = c
+    return best
+
+
+@lru_cache(maxsize=None)
+def worst_case_fence_cost(B: Family, n: int, fenced: int = 0) -> int:
+    if len(B) == 1:
+        (world,) = B
+        return sum(1 for i in range(n) if i not in world and not (fenced >> i) & 1)
+    best = None
+    for i in unresolved(B):
+        bit = fenced | (1 << i)
+        c = 1 + max(worst_case_fence_cost(condition(B, i, True), n, bit), worst_case_fence_cost(condition(B, i, False), n, bit))
+        best = c if best is None else min(best, c)
+    return best
+
+
+def best_probe(B: Family, n: int, fenced: int, objective: str) -> int:
+    """Next item to probe. Ties break toward the smallest index so that the
+    atomic class, where every probe is equally good, stays deterministic."""
+    best = None
+    for i in sorted(unresolved(B)):
+        b1 = condition(B, i, True)
+        b0 = condition(B, i, False)
+        if objective == "fence":
+            bit = fenced | (1 << i)
+            c = 1.0 + (len(b1) / len(B)) * optimal_fence_cost(b1, n, bit) + (len(b0) / len(B)) * optimal_fence_cost(b0, n, bit)
+        elif objective == "probes":
+            c = 1.0 + (len(b1) / len(B)) * optimal_probe_cost(b1) + (len(b0) / len(B)) * optimal_probe_cost(b0)
+        else:
+            raise ValueError(objective)
+        if best is None or c < best[0] - 1e-12 or (abs(c - best[0]) <= 1e-12 and i < best[1]):
+            best = (c, i)
+    if best is None:
+        raise ValueError("empty belief")
+    return best[1]
+
+
 def exact_k_count(n: int, k: int) -> int:
     return comb(n, k)

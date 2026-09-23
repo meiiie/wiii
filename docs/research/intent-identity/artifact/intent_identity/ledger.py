@@ -4,9 +4,11 @@ Stores immutable contracts, per-occurrence key/payload bindings, occurrence
 states, receipts and an event log. Conversation state is never consulted to
 restore these facts.
 
-Occurrence states: ``ready -> held -> done``; ``unresolved`` is a terminal
-"held but no longer safely retryable" state used by the retention-aware and
-opaque-profile recovery paths (safe, not complete).
+Occurrence states: ``ready -> held -> done``. ``unresolved`` is quiescent for
+the controller's own actions: a held occurrence that can no longer be retried
+safely and for which the holder has no finality evidence. A binding-matched
+receipt presented by a non-holder can still move it to ``done`` (late evidence);
+the holder never dispatches a fresh key out of ``unresolved``.
 """
 
 from __future__ import annotations
@@ -233,8 +235,47 @@ class Ledger:
             )
             self.log("done", instance_id, occurrence_id, receipt=receipt)
 
+    def note_pending_receipt(self, instance_id: str, occurrence_id: str, receipt: str, payload_hash: str, effect_key: str) -> None:
+        """Remember a binding-matched receipt from a worker that does not hold
+        the lease. Adopt mode only. A later ``mark_unresolved`` on the same key
+        consumes it; a rekey makes the stored key stop matching, so the receipt
+        cannot complete a fresh-key attempt."""
+        if self.late_evidence != "adopt":
+            return
+        occ = self.get(instance_id, occurrence_id)
+        if occ.state != "held" or occ.effect_key != effect_key or occ.payload_hash != payload_hash:
+            return
+        self.log("pending-late-receipt", instance_id, occurrence_id, receipt=receipt, effect_key=effect_key, payload_hash=payload_hash)
+
+    def _pending_receipt(self, instance_id: str, occurrence_id: str, effect_key: str, payload_hash: str) -> Optional[str]:
+        rows = self.conn.execute(
+            "SELECT detail FROM events WHERE instance_id=? AND occurrence_id=? AND kind='pending-late-receipt' ORDER BY id DESC",
+            (instance_id, occurrence_id),
+        ).fetchall()
+        for (detail,) in rows:
+            saved = json.loads(detail)
+            if saved.get("effect_key") == effect_key and saved.get("payload_hash") == payload_hash:
+                return saved.get("receipt")
+        return None
+
     def mark_unresolved(self, instance_id: str, occurrence_id: str, reason: str) -> None:
+        """The holder gives up. If a non-holder already presented a receipt
+        bound to the current key, adopt it instead of stopping: giving up is
+        exactly the state in which that receipt is the only finality evidence,
+        and no fresh key has been dispatched."""
         with self.tx() as c:
+            occ = self.get(instance_id, occurrence_id)
+            if occ.state != "held" or occ.worker_id != self.worker_id:
+                return
+            if self.late_evidence == "adopt":
+                pending = self._pending_receipt(instance_id, occurrence_id, occ.effect_key, occ.payload_hash)
+                if pending:
+                    c.execute(
+                        "UPDATE occurrences SET state='done', receipt=? WHERE instance_id=? AND occurrence_id=? AND state='held' AND worker_id=?",
+                        (pending, instance_id, occurrence_id, self.worker_id),
+                    )
+                    self.log("late-receipt-adopted", instance_id, occurrence_id, receipt=pending, at="unresolved-transition")
+                    return
             c.execute(
                 "UPDATE occurrences SET state='unresolved' WHERE instance_id=? AND occurrence_id=? AND state='held' AND worker_id=?",
                 (instance_id, occurrence_id, self.worker_id),
