@@ -3,14 +3,25 @@
   "previous_title": "Intent Identity and Exactly-Once Effects for Non-Deterministic LLM Agents",
   "version": "0.3",
   "date": "2026-09-19",
-  "status": "executed development research; second implementation written from the v0.2 specification by the same research process (not an external replication); not submitted",
+  "status": "executed development research; second implementation written from the v0.2 specification by the same research process (not an external replication); two internal adversarial review rounds incorporated; not submitted",
+  "documents": {
+    "manuscript_tex": "paper/main.tex",
+    "manuscript_pdf": "paper/main.pdf",
+    "manuscript_class": "IEEEtran conference 10pt",
+    "manuscript_pages": 12,
+    "tables": 8,
+    "figures": 1,
+    "propositions": 6,
+    "bibliography_entries": 36,
+    "vietnamese_report": "REPORT_VI_v0.3.md"
+  },
   "main_findings": [
     "v0.2 null result reproduced exactly by a second implementation; a ledger-consulting strong reference R+ dispatches the same set as the verifier V by a one-line lemma, so the tie is structural rather than empirical.",
     "Under finite idempotency retention (documented: Stripe >= 24 h, SQS FIFO 5 min), every same-key-retry policy (R, R+, V) duplicates in all 149,217 lost-acknowledgement cases; the retention-aware controller duplicates in none. Safe same-key retry is t - h(omega) < T - Delta when every attempt commits or dies within a lifetime L with L + Delta < T; if the attempt can outlive the window, no retry time is safe (Prop. 3).",
     "Completion after the window depends on an evidence contract: retention-aware recovery completes 10/10 lost-ack runtime trials per policy with a lookup endpoint and leaves 10/10 unresolved without one; a negative point-in-time lookup is never finality evidence (D1-TTL reserved variant, I4 after-reservation rows).",
-    "Durable-execution-style lookup-then-fresh-key recovery without a fence duplicates in 15/15 in-flight takeover trials on every profile including P_D (the fresh key is a different key) and is correct in 15/15 trials once the old request has landed (I3).",
+    "A hand-written lookup-then-fresh-key recovery without a fence duplicates in 15/15 in-flight takeover trials on every profile including P_D (the fresh key is a different key) and is correct in 15/15 trials once the old request has landed (I3). Durable-execution same-key retry is the naive policy, not this handler.",
     "A suspended-then-resumed predecessor (SIGSTOP/SIGCONT) never duplicates (0/60): the sink dedup (P_D) or the successor's fence (P_F) governs its late request, and under P_O the successor never dispatched a fresh key. The ledger's lease-holder rule refuses every stale state write (30/30 receipts refused in strict mode) but does not affect the effect count. Under P_O the resumed worker carries the only finality evidence; a ledger that adopts a late receipt whose key/payload binding matches an unresolved occurrence completes 10/10 trials that the strict rule leaves unresolved.",
-    "Ternary per-obligation state is sufficient for the safe fresh-dispatch frontier but not for reconciliation cost; the batch processing class of a lost request changes exact optimal evidence cost from n to 1 (atomic) or ~log2(n+1) (prefix) under per-request finality, and to 4.5 / 5.78 of 8 under a per-key-fence accounting; a journal-driven recovery worker reproduces every count on the runtime (I5, 136 trials) and a misdeclared class yields false completion in 3/5 prefix worlds without duplication.",
+    "Ternary per-obligation state is sufficient for the safe fresh-dispatch frontier but not for reconciliation cost; the batch processing class of a lost request changes exact optimal evidence cost from n to 1 (atomic) or ~log2(n+1) (prefix) under per-request finality, and to 4.5 / 4.889 of 8 under a per-key-fence accounting that minimises fences (the probe-minimising prefix policy costs 5.778 at n=8 and is not that optimum); a journal-driven recovery worker reproduces every count on the runtime (I5, 136 correctly declared trials of 141) and a misdeclared class yields false completion in 3/5 prefix worlds without duplication.",
     "Reservation-resolved three-worker races never exercise sink deduplication (0 of 96 sink calls), so they are not evidence about the sink contract."
   ],
   "reproduction_of_v0_2": {

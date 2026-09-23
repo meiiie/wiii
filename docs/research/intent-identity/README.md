@@ -12,7 +12,7 @@ tool-execution contract; nothing here is wired into the runtime yet.
 
 | Path | Content |
 | --- | --- |
-| `paper/main.tex`, `paper/main.pdf` | Manuscript v0.3 (IEEEtran, 11 pages). |
+| `paper/main.tex`, `paper/main.pdf` | Manuscript v0.3 (IEEEtran, 12 pages, 8 tables). |
 | `REPORT_VI_v0.3.md` | Vietnamese research report for the project owner. |
 | `EVIDENCE_SUMMARY_v0.3.json` | Machine-readable summary of every number in the paper. |
 | `PROVIDER_CONTRACTS.md` | Quoted, dated facts from official provider documentation used as evidence. |
@@ -46,7 +46,8 @@ encoding differs; the mutant witnesses have the same shape.
   lemma shows it dispatches the same set as the verifier `V`, so the v0.2
   tie is structural, not empirical.
 - Retention-bounded provider profile `P_D(T)`, a necessary-and-sufficient
-  same-key-retry condition using only the controller's hold timestamp, and
+  same-key-retry condition on the controller's hold timestamp, provided every
+  attempt commits or dies within a lifetime shorter than the window, and
   exhaustive, model-checked and process-level evidence that every same-key
   policy duplicates after the window while the retention-aware controller does
   not (D1-TTL, M1 mutant, I4).

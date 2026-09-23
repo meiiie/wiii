@@ -3,7 +3,7 @@
 **Exactly-Once Effects for Regrouping Agent Tool Calls: A Reduction, a Retention Hazard, and an Evidence Contract**
 (tên cũ: *Intent Identity and Exactly-Once Effects for Non-Deterministic LLM Agents*)
 
-Ngày: 19 tháng 9 năm 2026. Trạng thái: kết quả phát triển đã chạy; cài đặt thứ hai viết từ đặc tả v0.2 bởi cùng quy trình nghiên cứu (không phải tái lập bên ngoài); đã qua một vòng phản biện đối kháng nội bộ và sửa; chưa nộp.
+Ngày: 19 tháng 9 năm 2026. Trạng thái: kết quả phát triển đã chạy; cài đặt thứ hai viết từ đặc tả v0.2 bởi cùng quy trình nghiên cứu (không phải tái lập bên ngoài); đã qua hai vòng phản biện đối kháng nội bộ và sửa; chưa nộp.
 
 ## 1. Quyết định điều hành sau đợt v0.3
 
@@ -114,8 +114,8 @@ Toàn bộ 136 lượt đúng lớp đều exactly-once và hoàn thành đủ (
 
 Không được viết: "Bộ xác minh của chúng tôi vượt idempotency." Câu đúng bây giờ:
 
-1. Khóa nghĩa vụ ổn định là đủ cho exactly-once của agent đổi kế hoạch **đúng chừng nào sink còn giữ khóa**; tái lập độc lập xác nhận bộ xác minh không thêm gì dưới giả thiết đó.
-2. Sink thương mại **giới hạn** thời gian giữ khóa. Ngoài giới hạn, cùng những chính sách ấy lặp trong mọi trường hợp mất xác nhận; quyết định an toàn chỉ phụ thuộc vào thời điểm giữ của chính controller và cửa sổ đã công bố.
+1. Khóa nghĩa vụ ổn định là đủ cho exactly-once của agent đổi kế hoạch **đúng chừng nào sink còn giữ khóa**; cài đặt thứ hai xác nhận bộ xác minh không thêm gì dưới giả thiết đó.
+2. Sink thương mại **giới hạn** thời gian giữ khóa. Ngoài giới hạn, cùng những chính sách ấy lặp trong mọi trường hợp mất xác nhận. Retry cùng khóa an toàn khi và chỉ khi `t − h(ω) < T − Δ` và mọi attempt commit hoặc chết trong thời gian sống `L` với `L + Δ < T`. Nếu attempt sống lâu hơn cửa sổ thì không có thời điểm retry nào an toàn.
 3. Hoàn thành sau cửa sổ phụ thuộc vào hợp đồng bằng chứng, và chi phí của nó được quyết định bởi thứ journal đã giữ về yêu cầu bị mất.
 
 Đây là đóng góp hệ thống hẹp nhưng thật: **ba trường hợp hợp đồng mà một adapter tool phải khai báo** (`T`, khả năng tra cứu/fence, lớp batch) và hành vi controller đúng cho từng trường hợp.
@@ -141,8 +141,8 @@ Không được viết: "Bộ xác minh của chúng tôi vượt idempotency." 
 
 ## 6. Gói bàn giao
 
-- `paper/main.tex`, `paper/main.pdf`: bản thảo v0.3, IEEEtran, 11 trang, 8 bảng, 1 hình TikZ, 25 tài liệu tham khảo (6 nguồn tài liệu nhà cung cấp có URL và ngày truy cập; bổ sung Helland, Sagas, RIFL, Flink, Kafka, Idempotency-Key draft, ReAct, Toolformer, POMDP, SPIN theo yêu cầu phản biện).
-- `artifact/`: mã (9 module), 37 kiểm thử kernel, 5 driver thí nghiệm, `run_all.py` tái lập toàn bộ (~17 phút), kết quả thô: 635 lượt tiến trình với mã trả về, marker crash, tóm tắt successor và số đếm phía provider; các phép liệt kê vét cạn; witness của bộ duyệt mô hình.
+- `paper/main.tex`, `paper/main.pdf`: bản thảo v0.3, IEEEtran, 12 trang, 8 bảng, 1 hình TikZ, 6 mệnh đề, 36 tài liệu tham khảo. Trong đó có 6 nguồn tài liệu nhà cung cấp (có URL và ngày truy cập) và dòng at-most-once / exactly-once mà vòng phản biện thứ hai yêu cầu: Liskov–Shrira–Wroclawski, Birrell–Nelson, Lampson, leases, Chubby, Olive, Beldi, Boki, Durable Functions.
+- `artifact/`: mã (9 module), 37 kiểm thử kernel, 5 driver thí nghiệm, `run_all.py` tái lập toàn bộ (~15 phút trên một lõi), kết quả thô: 635 lượt tiến trình với mã trả về, marker crash, tóm tắt successor và số đếm phía provider; các phép liệt kê vét cạn; witness của bộ duyệt mô hình.
 - `PROVIDER_CONTRACTS.md`: trích dẫn nguyên văn có ngày.
 - `EVIDENCE_SUMMARY_v0.3.json`: mọi con số trong bài dưới dạng máy đọc.
 
