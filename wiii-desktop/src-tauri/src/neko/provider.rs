@@ -826,6 +826,8 @@ pub struct AgentInfo {
     pub found: bool,
     pub availability: AgentAvailability,
     pub supports_profiles: bool,
+    #[serde(default)]
+    pub bundled: bool,
     /// Provider-scoped discovery failure. Never contains credentials or probe output.
     pub detail: Option<String>,
 }
@@ -835,6 +837,19 @@ pub struct ResolvedProvider {
     pub definition: ProviderDefinition,
     pub program: PathBuf,
     pub version: Option<String>,
+    pub bundled: bool,
+}
+
+impl ResolvedProvider {
+    /// A bundled runtime follows Wiii's release lifecycle. This overrides only
+    /// the child environment; the user's standalone Neko settings stay intact.
+    pub(crate) fn command(&self) -> Command {
+        let mut command = Command::new(&self.program);
+        if self.bundled {
+            command.env("NEKO_AUTO_UPDATE", "0");
+        }
+        command
+    }
 }
 
 /// Reject executable-name collisions such as the unrelated Linux `neko`
@@ -871,7 +886,7 @@ fn probe_definition(
     if provider.id == "neko" {
         if let Some(program) = super::bundled_provider::program()? {
             let mut command = Command::new(&program);
-            command.arg(provider.version_arg);
+            command.arg(provider.version_arg).env("NEKO_AUTO_UPDATE", "0");
             let output = run_probe_with_timeout(command, NEKO_STARTUP_TIMEOUT)?;
             if !output.status.success() {
                 return Err(io::Error::other(
@@ -885,6 +900,7 @@ fn probe_definition(
                 definition: provider,
                 program,
                 version,
+                bundled: true,
             }));
         }
     }
@@ -928,6 +944,7 @@ fn probe_installed_candidates(
                     definition: provider,
                     program,
                     version,
+                    bundled: false,
                 }));
             }
             Err(error) if error.cleanup_unproven() || error.post_spawn_cleanup_proven() => {
@@ -1035,6 +1052,7 @@ pub fn list_selected(provider_id: Option<&str>) -> Result<Vec<AgentInfo>, String
             found: resolved.is_some(),
             availability,
             supports_profiles: provider.supports_profiles(),
+            bundled: resolved.as_ref().is_some_and(|item| item.bundled),
             detail,
         });
     }
@@ -1116,7 +1134,7 @@ pub fn profiles(provider_id: &str, cwd: &str) -> Result<Vec<AgentProfile>, Strin
         return Err("workspace must be an existing absolute directory".to_string());
     }
     let resolved = resolve(provider_id).map_err(|error| error.to_string())?;
-    let mut command = Command::new(&resolved.program);
+    let mut command = resolved.command();
     command.arg("profiles").current_dir(cwd_path);
     let output = run_probe_with_timeout(command, NEKO_STARTUP_TIMEOUT)
         .map_err(|error| format!("profile probe failed: {error}"))?;
@@ -1131,6 +1149,23 @@ pub fn profiles(provider_id: &str, cwd: &str) -> Result<Vec<AgentProfile>, Strin
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn bundled_update_policy_does_not_modify_external_provider_environment() {
+        let mut resolved = ResolvedProvider {
+            definition: definition("neko").unwrap(),
+            program: PathBuf::from("neko"),
+            version: Some("neko-core 1.5.1".into()),
+            bundled: true,
+        };
+        let command = resolved.command();
+        let overrides: Vec<_> = command.get_envs().collect();
+        assert_eq!(overrides.len(), 1);
+        assert_eq!(overrides[0].0, "NEKO_AUTO_UPDATE");
+        assert_eq!(overrides[0].1.unwrap(), "0");
+        resolved.bundled = false;
+        assert_eq!(resolved.command().get_envs().count(), 0);
+    }
 
     #[test]
     fn neko_version_accepts_the_branded_cli_contract() {

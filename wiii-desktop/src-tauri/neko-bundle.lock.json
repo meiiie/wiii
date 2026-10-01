@@ -1,12 +1,32 @@
 {
-  "version": "1.5.1",
-  "commit": "c03012af31b81d04b13b8f65757f0f23d3cafe51",
+  "version": "1.7.0",
+  "commit": "16860b031197b0df5ecf3613b72df7e10de4981e",
   "repository": "https://github.com/meiiie/neko-core",
   "artifacts": {
-    "windows-x64": { "asset": "neko-windows-x64.exe", "size": 93856768, "sha256": "7dc7acae8bb103bd2c90cfda51a4ed130001c16e0771a218fde6537c8b12c163" },
-    "linux-x64": { "asset": "neko-linux-x64", "size": 87835848, "sha256": "0c5f54c708312b74717114c41323dc496c79d96dd14b61ca91e8583599fac764" },
-    "linux-arm64": { "asset": "neko-linux-arm64", "size": 87738360, "sha256": "92107661888f39991c0d17c95752e300dee6244f66c801965c5f8758a49bad65" },
-    "macos-x64": { "asset": "neko-macos-x64", "size": 75996576, "sha256": "2fc7091d8a579e8a0abe595a1b9fbfe1d14e74f9f2a583986c591cb444623615" },
-    "macos-arm64": { "asset": "neko-macos-arm64", "size": 69243890, "sha256": "2ef2f105ddb044340fd8cf6b4f816a9b439c3a12d17a4d37f4b7685a4172298b" }
+    "windows-x64": {
+      "asset": "neko-windows-x64.exe",
+      "size": 93967360,
+      "sha256": "c760a31fad34a27215353e77f39dc654d0c566b1d7ad47ea811fe76eeb2f4990"
+    },
+    "linux-x64": {
+      "asset": "neko-linux-x64",
+      "size": 87946440,
+      "sha256": "0508cc5bab5e09b8e2e1953808b5d94efaf7cea7ef11b8e6fee21ce924cc2d0e"
+    },
+    "linux-arm64": {
+      "asset": "neko-linux-arm64",
+      "size": 87869432,
+      "sha256": "085c162f8c8a69465ad6008bd5b3735f8859efdc2d4c37f27ee99ddc3ec5f95b"
+    },
+    "macos-x64": {
+      "asset": "neko-macos-x64",
+      "size": 76111264,
+      "sha256": "164d0a6e861402c99135fdfe8d372b9714eb886ac29618e142370bff262a106c"
+    },
+    "macos-arm64": {
+      "asset": "neko-macos-arm64",
+      "size": 69359474,
+      "sha256": "8fc8e1f6760b22c9e53ca35d71372de8d5aba3db77674d8fc7fc1dbb58203070"
+    }
   }
 }

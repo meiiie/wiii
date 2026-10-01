@@ -39,6 +39,8 @@ export interface NekoDetectedProvider {
   found: boolean;
   availability: NekoProviderAvailability;
   supportsProfiles: boolean;
+  /** Verified runtime supplied by this Wiii installation, not an external CLI. */
+  bundled?: boolean;
   /** Provider-scoped probe failure; safe metadata only, never command output. */
   detail?: string | null;
 }

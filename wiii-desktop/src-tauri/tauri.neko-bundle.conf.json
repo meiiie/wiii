@@ -1,8 +1,19 @@
 {
-  "build": { "features": ["bundled-neko"] },
+  "build": {
+    "features": [
+      "bundled-neko"
+    ]
+  },
   "bundle": {
     "resources": {
       "../.build/neko-bundle/": "runtime/neko/"
+    },
+    "linux": {
+      "deb": {
+        "depends": [
+          "bubblewrap"
+        ]
+      }
     }
   }
 }

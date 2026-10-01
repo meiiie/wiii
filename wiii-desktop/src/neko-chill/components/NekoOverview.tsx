@@ -18,6 +18,7 @@ interface HarnessSummary {
   availability: DetectedAgent["availability"] | null;
   detail: string | null;
   launchable: boolean;
+  bundled: boolean;
   managedSessionCount: number;
   discoveredSessionCount: number;
 }
@@ -36,6 +37,7 @@ function summarizeHarnesses(
       found: agent.found,
       availability: agent.availability,
       detail: agent.detail ?? null,
+      bundled: agent.bundled === true,
       launchable: findProviderDefinition(agent.id)?.launchable !== false,
       managedSessionCount: 0,
       discoveredSessionCount: catalogs.find((catalog) => catalog.providerId === agent.id)?.sessions.length ?? 0,
@@ -49,6 +51,7 @@ function summarizeHarnesses(
       found: null,
       availability: null,
       detail: null,
+      bundled: false,
       launchable: findProviderDefinition(session.agentId)?.launchable !== false,
       managedSessionCount: 0,
       discoveredSessionCount: 0,
@@ -68,6 +71,7 @@ function harnessDetail(summary: HarnessSummary): string {
   if (summary.found && !summary.launchable) {
     return summary.version ? `Đã phát hiện · ${summary.version} · chỉ mục read-only` : "Đã phát hiện · chỉ mục read-only";
   }
+  if (summary.found && summary.bundled) return `Đi kèm Wiii · ${summary.version ?? "đã xác minh"}`;
   if (summary.found) return summary.version ? `Đã phát hiện · ${summary.version}` : "Đã phát hiện";
   if (summary.found === null) return "Chưa kiểm tra trên máy này";
   if (summary.availability === "probe_failed") return "Chưa kiểm tra được · không có nghĩa là chưa cài";
@@ -190,7 +194,7 @@ export function NekoOverview({
           <div className="flex flex-wrap items-end justify-between gap-3 px-3 pb-2 pt-1.5">
             <div>
               <h2 ref={harnessHeading} tabIndex={-1} id="neko-harness-management" className="scroll-mt-6 rounded text-[13px] font-medium text-[var(--nk-text)]">Quản lý harness</h2>
-              <p className="mt-0.5 text-[11.5px] text-[var(--nk-text-3)]">Neko Core là agent mặc định. Wiii dùng bản đã có trên máy nếu tìm thấy.</p>
+              <p className="mt-0.5 text-[11.5px] text-[var(--nk-text-3)]">Neko Core là agent mặc định. Trạng thái dưới đây dựa trên kiểm tra runtime thực tế.</p>
             </div>
             <button type="button" disabled={agentLoading}
               className="rounded-md border border-[var(--nk-border)] px-3 py-1.5 text-[11.5px] text-[var(--nk-text-2)] hover:bg-[var(--nk-overlay)] disabled:opacity-50"
@@ -228,9 +232,13 @@ export function NekoOverview({
             <details>
               <summary className="cursor-pointer text-[var(--nk-text-2)]">Cài đặt, cập nhật và gỡ Neko Core</summary>
               <div className="mt-2 max-w-[720px] space-y-2 text-[11.5px] leading-5">
-                <p>Bản Wiii thử nghiệm này dùng Neko đã cài riêng; chưa tự tải, tự cập nhật hoặc tự gỡ Neko Core. Kiểm tra chỉ đọc phiên bản, không đăng nhập hay chạy công việc.</p>
+                {agents.some((agent) => agent.id === "neko" && agent.found && agent.bundled) ? (
+                  <p>Neko Core đi kèm bộ cài Wiii. Cập nhật hoặc cài lại Wiii để cập nhật hay sửa runtime này; không dùng lệnh tự cập nhật Neko cho bản đi kèm.</p>
+                ) : (
+                  <p>Bản Neko cài riêng do bạn quản lý. Wiii không tự tải, cập nhật hoặc gỡ bản cài riêng. Kiểm tra chỉ đọc phiên bản, không đăng nhập hay chạy công việc.</p>
+                )}
                 <p>Neko có bản Windows, macOS và Linux. Khả năng chạy trong Wiii còn phụ thuộc hỗ trợ của từng hệ điều hành; cài Neko không tự bổ sung hỗ trợ đó.</p>
-                <p>Để cập nhật bản cài riêng, dùng <code>neko update</code> sau khi kết thúc các phiên Neko. Để gỡ, dùng cách tương ứng với bản bạn đã cài; Wiii không xóa chương trình dùng chung hoặc dữ liệu tài khoản của bạn.</p>
+                <p>Với bản Neko cài riêng, hãy dùng công cụ cài đặt của bản đó sau khi kết thúc các phiên. Thư mục runtime đi kèm không chứa tài khoản hay lịch sử của bạn; giữ nguyên dữ liệu người dùng khi sửa bộ cài.</p>
               </div>
             </details>
           </div>
