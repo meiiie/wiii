@@ -16,6 +16,7 @@ on:
       - 'wiii-desktop/src-tauri/Cargo.toml'
       - 'wiii-desktop/src-tauri/Cargo.lock'
       - 'wiii-desktop/src-tauri/tauri.conf.json'
+      - 'wiii-desktop/src-tauri/tauri.*.conf.json'
       - 'wiii-desktop/src/lib/constants.ts'
   pull_request:
     branches: [main]
@@ -32,6 +33,7 @@ on:
       - 'wiii-desktop/src-tauri/Cargo.toml'
       - 'wiii-desktop/src-tauri/Cargo.lock'
       - 'wiii-desktop/src-tauri/tauri.conf.json'
+      - 'wiii-desktop/src-tauri/tauri.*.conf.json'
       - 'wiii-desktop/src/lib/constants.ts'
 
 permissions:
@@ -59,7 +61,7 @@ jobs:
 
       - name: Test release and harness tooling
         run: |
-          python -m unittest tools.release.test_wiii_release -v
+          python -m unittest tools.release.test_wiii_release tools.release.test_linux_desktop_config -v
           python -m unittest discover -s tools/wiii_self_harness -p 'test_*.py' -v
 
       - name: Run repository harness
