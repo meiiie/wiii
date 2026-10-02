@@ -850,6 +850,7 @@ function isDetectedProvider(value: unknown): value is NekoDetectedProvider {
     ["available", "not_installed", "host_unsupported", "probe_failed"].includes(availability as string) &&
     (provider.found === (availability === "available")) &&
     typeof provider.supportsProfiles === "boolean" &&
+    (provider.bundled === undefined || typeof provider.bundled === "boolean") &&
     (provider.detail === undefined || provider.detail === null || typeof provider.detail === "string")
   );
 }

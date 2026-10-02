@@ -73,6 +73,18 @@ describe("Neko driver factory resource ownership", () => {
     expect(JSON.stringify(tauri.invoke.mock.results)).not.toContain("binary");
   });
 
+  it("preserves typed bundled-runtime origin and rejects malformed origin metadata", async () => {
+    Object.defineProperty(window, "__TAURI_INTERNALS__", { value: {}, configurable: true });
+    try {
+      tauri.invoke.mockResolvedValueOnce([{ ...PROVIDER, bundled: true }]);
+      await expect(getNekoControlClient().listProviders("neko")).resolves.toEqual([{ ...PROVIDER, bundled: true }]);
+      tauri.invoke.mockResolvedValueOnce([{ ...PROVIDER, bundled: "true" }]);
+      await expect(getNekoControlClient().listProviders("neko")).rejects.toThrow("invalid provider registry");
+    } finally {
+      Reflect.deleteProperty(window, "__TAURI_INTERNALS__");
+    }
+  });
+
   it("preserves an explicit host-unsupported provider state", async () => {
     tauri.invoke.mockResolvedValueOnce([{
       ...PROVIDER,

@@ -9,6 +9,7 @@ on:
       - 'docs/releases/**'
       - 'wiii-desktop/src-tauri/tauri.conf.json'
       - 'wiii-desktop/src-tauri/tauri.*.conf.json'
+      - 'wiii-desktop/src-tauri/neko-bundle.lock.json'
       - 'VERSION'
       - 'CHANGELOG.md'
   workflow_dispatch:
@@ -203,6 +204,12 @@ jobs:
         working-directory: wiii-desktop
         run: npm ci
 
+      - name: Prepare pinned Neko Core runtime
+        env:
+          NEKO_TARGET: ${{ matrix.release_target }}
+        run: python tools/release/prepare_neko_bundle.py --target "$NEKO_TARGET"
+        shell: bash
+
       - name: Import stable Windows code-signing certificate
         if: matrix.release_target == 'windows-x64' && startsWith(github.ref, 'refs/tags/') && env.WIII_WINDOWS_SIGNING == 'authenticode'
         id: windows-signing
@@ -244,17 +251,17 @@ jobs:
       - name: Build unsigned Windows installer
         if: matrix.release_target == 'windows-x64' && (!startsWith(github.ref, 'refs/tags/') || env.WIII_WINDOWS_SIGNING == 'unsigned')
         working-directory: wiii-desktop
-        run: npm run tauri -- build --bundles nsis
+        run: npm run tauri -- build --config src-tauri/tauri.neko-bundle.conf.json --bundles nsis
 
       - name: Build signed Windows stable installer
         if: matrix.release_target == 'windows-x64' && startsWith(github.ref, 'refs/tags/') && env.WIII_WINDOWS_SIGNING == 'authenticode'
         working-directory: wiii-desktop
-        run: npm run tauri -- build --bundles nsis --config release-signing.json
+        run: npm run tauri -- build --config src-tauri/tauri.neko-bundle.conf.json --bundles nsis --config release-signing.json
 
       - name: Build Linux packages
         if: matrix.release_target == 'linux-x64'
         working-directory: wiii-desktop
-        run: npm run tauri -- build --bundles deb,appimage
+        run: npm run tauri -- build --config src-tauri/tauri.neko-bundle.conf.json --bundles deb,appimage
 
       - name: Create unnotarized macOS configuration
         if: startsWith(matrix.release_target, 'macos-')
@@ -276,7 +283,7 @@ jobs:
         working-directory: wiii-desktop
         env:
           RUST_TARGET_VALUE: ${{ matrix.rust_target }}
-        run: npm run tauri -- build --target "$RUST_TARGET_VALUE" --bundles dmg --config release-macos-unnotarized.json
+        run: npm run tauri -- build --config src-tauri/tauri.neko-bundle.conf.json --target "$RUST_TARGET_VALUE" --bundles dmg --config release-macos-unnotarized.json
 
       - name: Normalize release assets
         env:

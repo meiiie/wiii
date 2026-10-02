@@ -21,3 +21,6 @@ Thumbs.db
 
 # Logs
 *.log
+
+# Verified third-party runtime staging (never commit executable artifacts)
+.build/

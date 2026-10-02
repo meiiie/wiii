@@ -330,6 +330,18 @@ describe("Project Home readiness and missing Neko recovery", () => {
     expect(screen.queryByRole("button", { name: "Phiên mới", exact: true })).toBeNull();
   });
 
+  it("identifies bundled Neko and routes maintenance through Wiii", () => {
+    render(<NekoOverview agents={[{ ...neko, bundled: true, version: "neko-core 1.5.1" }]}
+      sessions={[]} providerCatalogs={[]} discoveryLoading={false}
+      onNewSession={vi.fn()} onOpenSession={vi.fn()} onRefreshDiscovery={vi.fn()}
+      onImportProviderSession={vi.fn(async () => {})} />);
+    expect(screen.getByText("Đi kèm Wiii · neko-core 1.5.1")).toBeTruthy();
+    fireEvent.click(screen.getByText("Cài đặt, cập nhật và gỡ Neko Core"));
+    expect(screen.getByText(/Cập nhật hoặc cài lại Wiii/)).toBeTruthy();
+    expect(screen.queryByText("neko update", { exact: true })).toBeNull();
+    expect(host.open).not.toHaveBeenCalled();
+  });
+
   it("offers missing-agent guidance before a first Project exists", async () => {
     const createProject = vi.fn();
     render(<NekoOverview agents={[missing]} sessions={[]} providerCatalogs={[]} discoveryLoading={false}

@@ -13,7 +13,7 @@ use std::collections::{HashMap, HashSet};
 use std::fs::{File, OpenOptions};
 use std::io::{self, BufRead, BufReader, Read, Write};
 use std::path::Path;
-use std::process::{Command, Stdio};
+use std::process::Stdio;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{channel, sync_channel, Receiver, SyncSender, TrySendError};
 use std::sync::{Arc, Condvar, Mutex, MutexGuard};
@@ -406,7 +406,7 @@ impl NekoRuntime {
             ));
         }
 
-        let mut command = Command::new(&resolved.program);
+        let mut command = resolved.command();
         command
             .args(&args)
             .current_dir(&request.workspace_path)
@@ -558,6 +558,7 @@ impl NekoRuntime {
                 found: true,
                 availability: AgentAvailability::Available,
                 supports_profiles: resolved.definition.supports_profiles(),
+                bundled: resolved.bundled,
                 detail: None,
             },
         };
