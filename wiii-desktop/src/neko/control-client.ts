@@ -63,6 +63,8 @@ interface NativeSessionStartResult {
   agentSessionId: string;
   runId: string;
   provider: NekoDetectedProvider;
+  /** Missing on historical native results; scoped admission then stays closed. */
+  canonicalWorkspacePath?: string | null;
 }
 
 interface NativeSessionCancelResult {
@@ -111,6 +113,8 @@ export interface NekoSpawnedProvider {
   agentSessionId: string;
   runId: string;
   transport: AcpTransport;
+  /** Native physical launch root, not a provider-reported filesystem grant. */
+  canonicalWorkspacePath?: string | null;
 }
 
 /** Replaceable bridge from Wiii clients to Neko's native authority. */
@@ -382,9 +386,7 @@ class TauriNekoControlClient implements NekoControlClient {
             "neko_control_session_start",
             { request: nativeStartRequest(identity) },
           );
-          if (!isNativeSessionStartResult(replayed)) {
-            throw new Error("Neko trả về phản hồi phát lại phiên khởi động đã giữ không hợp lệ.");
-          }
+          assertNativeStartResultMatchesIdentity(replayed, identity);
           native = {
             agentSessionId: replayed.agentSessionId,
             taskId: identity.execution.taskId,
@@ -587,9 +589,7 @@ class TauriNekoControlClient implements NekoControlClient {
       const result = await invokeIdempotently<unknown>(invoke, "neko_control_session_start", {
         request: nativeStartRequest(startIdentity),
       });
-      if (!isNativeSessionStartResult(result)) {
-        throw new Error("Neko trả về kết quả khởi động phiên không hợp lệ.");
-      }
+      assertNativeStartResultMatchesIdentity(result, startIdentity);
       started = result;
       if (transportState.terminalError) {
         const cancelled = await this.confirmOverflowCancellation(startIdentity);
@@ -700,6 +700,8 @@ class TauriNekoControlClient implements NekoControlClient {
       agentSessionId: started.agentSessionId,
       runId: started.runId,
       transport,
+      ...(started.canonicalWorkspacePath !== undefined
+        ? { canonicalWorkspacePath: started.canonicalWorkspacePath } : {}),
     };
   }
 }
@@ -942,8 +944,26 @@ function isNativeSessionStartResult(value: unknown): value is NativeSessionStart
   return (
     typeof result.agentSessionId === "string" &&
     typeof result.runId === "string" &&
-    isDetectedProvider(result.provider)
+    isDetectedProvider(result.provider) &&
+    (result.canonicalWorkspacePath === undefined || result.canonicalWorkspacePath === null
+      || (typeof result.canonicalWorkspacePath === "string" && result.canonicalWorkspacePath.length > 0
+        && result.canonicalWorkspacePath.length <= 4096
+        && !/[\u0000-\u001f\u007f]/.test(result.canonicalWorkspacePath)))
   );
+}
+
+function assertNativeStartResultMatchesIdentity(
+  value: unknown,
+  identity: UnresolvedStartIdentity,
+): asserts value is NativeSessionStartResult {
+  if (!isNativeSessionStartResult(value)
+    || value.agentSessionId !== identity.agentSessionId
+    || value.runId !== identity.execution.runId
+    || value.provider.id !== identity.providerId) {
+    // The native side effect may already exist. Retain its original logical
+    // operation and listeners; never route writes or cleanup to foreign IDs.
+    throw new Error("unknown_outcome: Kết quả khởi động native không khớp identity đã giữ. Phiên chưa được phép gửi dữ liệu.");
+  }
 }
 
 function isNativeSessionCancelResult(value: unknown): value is NativeSessionCancelResult {

@@ -16,6 +16,7 @@ describe("projectHomeSendTitle", () => {
     selectedAgent: false,
     draftReady: true,
     nekoProfileBlocked: false,
+    nekoProfileLoading: false,
     codexBlocked: false,
   };
 
@@ -23,6 +24,13 @@ describe("projectHomeSendTitle", () => {
     expect(projectHomeSendTitle(base)).toBe(
       "Harness đã chọn chưa sẵn sàng. Bản nháp vẫn được giữ.",
     );
+  });
+
+  it("distinguishes a pending profile read from a failed read", () => {
+    expect(projectHomeSendTitle({ ...base, selectedAgent: true, nekoProfileLoading: true }))
+      .toBe("Đang đọc cấu hình Neko Core… Bản nháp vẫn được giữ.");
+    expect(projectHomeSendTitle({ ...base, selectedAgent: true, nekoProfileBlocked: true }))
+      .toBe("Chưa đọc được cấu hình Neko Core. Bản nháp vẫn được giữ.");
   });
 
   it("asks for draft when everything else is ready", () => {
@@ -97,6 +105,6 @@ describe("nekoComposerStopTitle", () => {
     expect(nekoComposerStopTitle({ cancelPending: false, resolvingPermission: true }))
       .toBe("Đang lưu quyết định…");
     expect(nekoComposerStopTitle({ cancelPending: false, resolvingPermission: false }))
-      .toBe("Dừng");
+      .toBe("Dừng lượt đang chạy");
   });
 });

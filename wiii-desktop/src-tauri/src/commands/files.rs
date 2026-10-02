@@ -114,7 +114,7 @@ fn canonical_workspace(workspace: &str) -> Result<PathBuf, String> {
     Ok(root)
 }
 
-fn display_workspace_path(path: &Path) -> String {
+pub(super) fn display_workspace_path(path: &Path) -> String {
     let value = path.to_string_lossy();
     #[cfg(windows)]
     {
@@ -429,11 +429,20 @@ pub fn neko_read_workspace_file(workspace: String, path: String) -> Result<Works
     })
 }
 
+fn configure_background_git(_command: &mut Command) {
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        use windows_sys::Win32::System::Threading::CREATE_NO_WINDOW;
+        _command.creation_flags(CREATE_NO_WINDOW);
+    }
+}
+
 fn git(root: &Path, args: &[&str]) -> Result<std::process::Output, String> {
-    Command::new("git")
-        .arg("-C")
-        .arg(root)
-        .args(args)
+    let mut command = Command::new("git");
+    command.arg("-C").arg(root).args(args);
+    configure_background_git(&mut command);
+    command
         .output()
         .map_err(|error| format!("Không thể chạy git: {error}"))
 }
@@ -569,11 +578,11 @@ pub fn neko_workspace_diff(workspace: String, path: String) -> Result<WorkspaceD
 #[cfg(test)]
 mod tests {
     use super::{
-        neko_list_workspace_files, neko_resolve_workspace, parse_porcelain_changes, safe_relative,
+        git, neko_list_workspace_files, neko_resolve_workspace, neko_workspace_changes,
+        neko_workspace_diff, parse_porcelain_changes, safe_relative,
     };
     use std::{
         fs,
-        process::Command,
         time::{SystemTime, UNIX_EPOCH},
     };
 
@@ -641,13 +650,8 @@ mod tests {
         fs::write(workspace.join("src/main.ts"), "export {};\n").expect("write source file");
         fs::write(workspace.join("node_modules/package/index.js"), "ignored\n")
             .expect("write ignored file");
-        let initialized = Command::new("git")
-            .arg("-C")
-            .arg(&workspace)
-            .args(["init", "--quiet"])
-            .status()
-            .expect("start git");
-        assert!(initialized.success());
+        let initialized = git(&workspace, &["init", "--quiet"]).expect("start git");
+        assert!(initialized.status.success());
 
         let listing = neko_list_workspace_files(workspace.to_string_lossy().into_owned())
             .expect("list workspace");
@@ -660,5 +664,106 @@ mod tests {
         assert!(!paths.iter().any(|path| path.starts_with("node_modules/")));
 
         fs::remove_dir_all(&workspace).expect("remove temporary workspace");
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn background_git_configuration_has_no_console() {
+        const CHILD: &str = "WIII_GIT_NO_CONSOLE_TEST_CHILD";
+        const TOKEN: &str = "wiii-git-no-console-child-v1";
+        if std::env::var(CHILD).ok().as_deref() == Some(TOKEN) {
+            #[link(name = "kernel32")]
+            unsafe extern "system" {
+                fn GetConsoleWindow() -> *mut std::ffi::c_void;
+            }
+            assert!(
+                unsafe { GetConsoleWindow() }.is_null(),
+                "background child has a console"
+            );
+            println!("{TOKEN}");
+            return;
+        }
+        let mut command = std::process::Command::new(std::env::current_exe().expect("test binary"));
+        command.args([
+            "--exact",
+            "commands::files::tests::background_git_configuration_has_no_console",
+            "--nocapture",
+        ]);
+        command.env(CHILD, TOKEN);
+        super::configure_background_git(&mut command);
+        let output = command.output().expect("start isolated console test child");
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        assert!(
+            String::from_utf8_lossy(&output.stdout).contains(TOKEN),
+            "child test did not execute"
+        );
+    }
+
+    #[test]
+    fn background_git_keeps_status_and_diff_output() {
+        let nonce = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("clock")
+            .as_nanos();
+        let workspace = std::env::temp_dir().join(format!(
+            "wiii-git-background-{}-{nonce}",
+            std::process::id()
+        ));
+        fs::create_dir_all(workspace.join("empty-hooks")).expect("create owned fixture");
+        assert!(git(&workspace, &["init", "--quiet"])
+            .expect("init")
+            .status
+            .success());
+        assert!(
+            git(&workspace, &["config", "core.hooksPath", "empty-hooks"])
+                .expect("fixture hooks")
+                .status
+                .success()
+        );
+        let before = "export const bound = 4;\n";
+        let after = "export const bound = 5;\n";
+        fs::write(workspace.join("sample.ts"), before).expect("write baseline");
+        assert!(git(&workspace, &["add", "--", "sample.ts"])
+            .expect("add fixture")
+            .status
+            .success());
+        assert!(git(
+            &workspace,
+            &[
+                "-c",
+                "user.name=Wiii QA",
+                "-c",
+                "user.email=qa@example.invalid",
+                "-c",
+                "commit.gpgsign=false",
+                "commit",
+                "--quiet",
+                "-m",
+                "synthetic baseline"
+            ]
+        )
+        .expect("commit fixture")
+        .status
+        .success());
+        fs::write(workspace.join("sample.ts"), after).expect("write fixture change");
+        let root = workspace.to_string_lossy().into_owned();
+        let changes = neko_workspace_changes(root.clone()).expect("captured status");
+        assert!(changes.is_git);
+        assert_eq!(changes.changes.len(), 1);
+        assert_eq!(changes.changes[0].path, "sample.ts");
+        assert_eq!(changes.changes[0].status, "modified");
+        let diff =
+            neko_workspace_diff(root, "sample.ts".into()).expect("captured HEAD and current file");
+        assert!(!diff.binary);
+        assert_eq!(diff.original, before);
+        assert_eq!(diff.modified, after);
+        assert!(fs::canonicalize(&workspace)
+            .expect("fixture path")
+            .starts_with(fs::canonicalize(std::env::temp_dir()).expect("temporary root")));
+        fs::remove_dir_all(&workspace).expect("remove exact owned fixture");
     }
 }

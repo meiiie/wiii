@@ -15,6 +15,11 @@ vi.mock("@/neko-computer/NekoComputerSurface", () => ({
   NekoComputerSurface: ({ mode }: { mode: string }) => <div data-testid="computer-surface">{mode}</div>,
 }));
 
+vi.mock("@/neko-chill/workspace-monaco", () => ({
+  Editor: ({ value }: { value: string }) => <pre data-testid="workspace-editor-value">{value}</pre>,
+  DiffEditor: ({ modified }: { modified: string }) => <pre data-testid="workspace-diff-value">{modified}</pre>,
+}));
+
 const workspace = { name: "workspace", path: "C:/ux-fixtures/project" };
 const project = {
   id: "calm-ui", name: "Wiii", roots: [workspace], preferredHarnessId: "gemini",
@@ -31,10 +36,10 @@ describe("calm workbench interaction contracts", () => {
       isLoading: false, error: null, detect: vi.fn(async () => {}),
     });
     useNekoSessionStore.setState({
-      createSession: vi.fn(async () => "created"), sendPrompt: vi.fn(async () => {}),
+      createSession: vi.fn(async () => "created"), sendPromptToSession: vi.fn(async () => {}),
     });
     useNekoWorkspaceStore.setState({ sessions: {}, refresh: vi.fn(async () => {}) });
-    useNekoWorkspaceStore.getState().ensureSession(project.id);
+    useNekoWorkspaceStore.getState().ensureSession(project.id, workspace);
     useNekoWorkspaceStore.getState().toggle(project.id);
   });
 
@@ -164,7 +169,7 @@ describe("calm workbench interaction contracts", () => {
     fireEvent.change(input, { target: { value: "Kiểm tra dự án" } });
     await vi.waitFor(() => expect((screen.getByRole("button", { name: "Gửi và mở phiên" }) as HTMLButtonElement).disabled).toBe(false));
     await act(async () => { fireEvent.keyDown(input, { key: "Enter" }); });
-    await vi.waitFor(() => expect(useNekoSessionStore.getState().sendPrompt).toHaveBeenCalledWith("Kiểm tra dự án", expect.any(Function)));
+    await vi.waitFor(() => expect(useNekoSessionStore.getState().sendPromptToSession).toHaveBeenCalledWith("created", "Kiểm tra dự án", expect.any(Function)));
     expect(useNekoSessionStore.getState().createSession).toHaveBeenCalledTimes(1);
   });
 
@@ -214,5 +219,32 @@ describe("calm workbench interaction contracts", () => {
     act(() => setWorkspaceFailure());
     expect(screen.getByText("Chưa kiểm tra được thay đổi.")).toBeTruthy();
     expect(screen.queryByText("Workspace đang sạch.")).toBeNull();
+  });
+
+  it("never renders a payload whose file identity disagrees with its title", async () => {
+    const file = {
+      path: "clamp.test.mjs", name: "clamp.test.mjs", kind: "text" as const,
+      language: "javascript", mimeType: "text/plain", size: 16, modifiedAt: 1,
+      content: "WRONG-FILE-SENTINEL", dataUrl: null,
+    };
+    const select = (selectedPath: string) => {
+      const store = useNekoWorkspaceStore.getState();
+      useNekoWorkspaceStore.setState({ sessions: { ...store.sessions, [project.id]: {
+        ...store.sessions[project.id], tab: "files", selectedPath, selectedFile: file,
+      } } });
+    };
+    select(file.path);
+    render(<NekoWorkspacePane target={{ id: project.id, projectId: project.id, workspace }} />);
+    // Positive control settles Suspense and proves the mock exposes editor content.
+    expect((await screen.findByTestId("workspace-editor-value")).textContent).toBe(file.content);
+    act(() => select("clamp.mjs"));
+    expect(document.body.textContent).toContain("clamp.mjs");
+    expect(screen.queryByTestId("workspace-editor-value")).toBeNull();
+    expect(document.body.textContent).not.toContain(file.content);
+  });
+
+  it("does not render a previous workspace before its new binding is established", () => {
+    render(<NekoWorkspacePane target={{id:project.id,projectId:project.id,workspace:{path:"C:/different/project",name:"new"}}} />);
+    expect(screen.queryByTestId("neko-workspace-pane")).toBeNull();
   });
 });

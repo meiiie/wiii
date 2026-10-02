@@ -33,10 +33,12 @@ vi.mock("@/lib/storage", () => ({
 import {
   useNekoSessionStore,
   _setDriverFactoryForTests,
+  _setNativeControlReaderForTests,
 } from "@/neko-chill/stores/neko-session-store";
 import { useNekoAgentStore } from "@/neko-chill/stores/neko-agent-store";
 import { useCompletionNoticeStore } from "@/neko-chill/stores/completion-notice-store";
 import { saveStoreStrict } from "@/lib/storage";
+import { getSessionControlNotices } from "@/neko-chill/session-control-status";
 
 const AGENT: DetectedAgent = {
   id: "neko",
@@ -70,7 +72,7 @@ class FakeDriver implements Driver {
     this.backendSessionId = `backend-${sessionId}`;
   }
   async start(): Promise<void> {}
-  async prompt(text: string): Promise<void> {
+  async prompt(text: string, _context?: { promptEventId: string }): Promise<void> {
     this.prompts.push(text);
   }
   async cancel(): Promise<void> {
@@ -247,9 +249,17 @@ describe("neko-session-store", () => {
 
   it.each(["idle", "error"] as const)("blocks a second worker while the first still owns a %s runtime", async (status) => {
     let starts = 0;
-    _setDriverFactoryForTests(async (_agent, sessionId, _launch, onEvent) => {
+    _setDriverFactoryForTests(async (_agent, sessionId, launch, onEvent) => {
       starts += 1;
-      return new FakeDriver(sessionId, onEvent);
+      const worker = new FakeDriver(sessionId, onEvent);
+      // A worker owns a live runtime only after the same durable scope gate
+      // used by the real adapter. This ownership test supplies its receipt.
+      if (launch.taskScope) await launch.onTaskAdmitted!(worker.backendSessionId, {
+        version: 1, mode: "fixed-active-task", id: `task-${sessionId}`,
+        label: launch.taskScope.label, root: WORKSPACE.path,
+        activationEpoch: 1, activationId: `activation-${sessionId}`,
+      }, WORKSPACE.path);
+      return worker;
     });
     const first = await useNekoSessionStore.getState().createSession(
       AGENT,
@@ -592,6 +602,30 @@ describe("neko-session-store", () => {
     expect(session(id).statusDetail).toContain("neko: fatal: unexpected SIGTERM");
   });
 
+  it("does not dispatch queued intent when its post-admission binding guard fails", async () => {
+    const id = await setup(); const accepted = vi.fn();
+    await useNekoSessionStore.getState().sendPromptToSession(id, "queued intent", accepted, () => false);
+    expect(driver.prompts).toEqual([]);
+    expect(accepted).not.toHaveBeenCalled();
+    expect(session(id).statusDetail).toContain("chưa được gửi");
+  });
+
+  it.each(["close", "delete"])("%s gracefully disposes an owned ACP runtime before cancelling orphan native starts", async action => {
+    const id = await setup(); const order: string[] = [];
+    driver.dispose = async () => { order.push("graceful close"); driver.disposed++; };
+    _setNativeControlReaderForTests(() => ({
+      listSessions: async () => [], readEvents: async (streamId, afterSeq = 0) => ({ streamId, events: [], nextAfterSeq: afterSeq, hasMore: false }),
+      unresolvedStartSessionIds: () => [], reconcilableStartSessionIds: async () => [],
+      cancelUnresolvedStarts: async () => { order.push("orphan cleanup"); return 0; },
+    }));
+    try {
+      if (action === "close") await useNekoSessionStore.getState().closeSession(id);
+      else await useNekoSessionStore.getState().deleteSession(id);
+      expect(order[0]).toBe("graceful close");
+      expect(order).toContain("orphan cleanup");
+    } finally { _setNativeControlReaderForTests(undefined); }
+  });
+
   it("closeSession disposes the driver but keeps the transcript (exited)", async () => {
     const id = await setup();
     await useNekoSessionStore.getState().closeSession(id);
@@ -672,5 +706,58 @@ describe("neko-session-store", () => {
     expect(session(id).status).toBe("error");
     expect(session(id).statusDetail).toContain("spawn thất bại");
     vi.restoreAllMocks();
+  });
+});
+
+describe("provider-terminal presentation correlation", () => {
+  beforeEach(() => {
+    storage.clear();vi.mocked(saveStoreStrict).mockReset();
+    vi.mocked(saveStoreStrict).mockImplementation(async (store,key,value)=>{storage.set(`${store}:${key}`,value);});
+    useNekoSessionStore.setState({sessions:{},activeSessionId:null});_setDriverFactoryForTests(undefined);
+  });
+  const inputId=(id:string)=>[...session(id).events].reverse().find(e=>e.data.type==="model-input")!.eventId!;
+  const terminal=(id:string,promptEventId:string,stopReason:"cancelled"|"end_turn"="cancelled")=>({type:"turn-finished" as const,sessionId:id,promptEventId,stopReason});
+  it("latches repeated Stop through notify resolution and stores a single correlated terminal", async () => {
+    const id=await setup();const promptSpy=vi.spyOn(driver,"prompt");await useNekoSessionStore.getState().sendPrompt("Task");
+    const promptEventId=inputId(id);expect(promptSpy.mock.calls[0][1]).toEqual({promptEventId});
+    driver.emit({type:"turn-started",sessionId:id,promptEventId});
+    await useNekoSessionStore.getState().cancelTurn();await useNekoSessionStore.getState().cancelTurn();
+    expect(driver.cancelled).toBe(1);
+    expect(session(id).events.filter(e=>e.data.type==="runtime-command")).toHaveLength(1);
+    expect(getSessionControlNotices(session(id)).find(n=>n.kind==="cancel")?.stage).toBe("requested");
+    driver.emit(terminal(id,promptEventId));driver.emit(terminal(id,promptEventId));
+    expect(session(id).events.filter(e=>e.data.type==="turn-terminal")).toHaveLength(1);
+    expect(getSessionControlNotices(session(id)).find(n=>n.kind==="cancel")?.stage).toBe("cancelled");
+  });
+  it("accepts authoritative terminal arriving before the cancel dispatch marker", async () => {
+    const id=await setup();await useNekoSessionStore.getState().sendPrompt("Task");const pid=inputId(id);
+    driver.emit({type:"turn-started",sessionId:id,promptEventId:pid});
+    vi.spyOn(driver,"cancel").mockImplementation(async()=>{driver.cancelled++;driver.emit(terminal(id,pid));});
+    await useNekoSessionStore.getState().cancelTurn();
+    const ended=session(id).events.find(e=>e.data.type==="turn-terminal")!;
+    const dispatched=session(id).events.find(e=>e.data.type==="dispatch-invoked"&&e.data.action==="cancel")!;
+    expect(ended.seq).toBeLessThan(dispatched.seq);expect(getSessionControlNotices(session(id))[0].stage).toBe("cancelled");
+  });
+  it("ignores a late terminal of the earlier prompt in the same runtime generation", async () => {
+    const id=await setup();await useNekoSessionStore.getState().sendPrompt("First");const old=inputId(id);
+    driver.emit({type:"turn-started",sessionId:id,promptEventId:old});driver.emit(terminal(id,old,"end_turn"));
+    await useNekoSessionStore.getState().sendPrompt("New explicit task");const current=inputId(id);
+    driver.emit({type:"turn-started",sessionId:id,promptEventId:current});driver.emit(terminal(id,old));
+    expect(session(id).status).toBe("streaming");expect(session(id).events.filter(e=>e.data.type==="turn-terminal")).toHaveLength(1);
+    await useNekoSessionStore.getState().cancelTurn();expect(driver.cancelled).toBe(1);
+    driver.emit(terminal(id,current));expect(getSessionControlNotices(session(id))[0].stage).toBe("cancelled");
+  });
+  it("allows a new explicit Stop after an undispatched journal failure", async () => {
+    const id=await setup();await useNekoSessionStore.getState().sendPrompt("Task");driver.emit({type:"turn-started",sessionId:id,promptEventId:inputId(id)});
+    vi.mocked(saveStoreStrict).mockRejectedValueOnce(new Error("write blocked"));await useNekoSessionStore.getState().cancelTurn();
+    expect(driver.cancelled).toBe(0);expect(session(id).events.filter(e=>e.data.type==="runtime-command")).toHaveLength(0);
+    await useNekoSessionStore.getState().cancelTurn();expect(driver.cancelled).toBe(1);
+  });
+  it("rejects a callback naming a different session even if it knows that prompt id", async () => {
+    const one=await setup();const driverOne=driver;await useNekoSessionStore.getState().sendPrompt("One");
+    const two=await setup();await useNekoSessionStore.getState().sendPrompt("Two");const pid=inputId(two);
+    driver.emit({type:"turn-started",sessionId:two,promptEventId:pid});driverOne.emit(terminal(two,pid));
+    expect(session(two).status).toBe("streaming");expect(session(two).events.filter(e=>e.data.type==="turn-terminal")).toHaveLength(0);
+    expect(session(one).id).not.toBe(two);
   });
 });

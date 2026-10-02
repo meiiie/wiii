@@ -2,7 +2,7 @@
  * Root App component — initializes stores, mounts layout.
  * Sprint 106: Loading screen during init.
  */
-import { lazy, Suspense, useEffect } from "react";
+import { lazy, Suspense, useEffect, useState, type ComponentProps } from "react";
 import { ErrorBoundary } from "@/components/common/ErrorBoundary";
 import { useUIStore } from "@/stores/ui-store";
 import { WorkbenchApp } from "@/workbench/WorkbenchApp";
@@ -26,6 +26,11 @@ const NekoMotionLab = lazy(async () => import("@/neko-motion-lab/NekoMotionLab")
 
 const NekoChillApp = lazy(async () => import("@/neko-chill/NekoChillApp"));
 
+const NekoRuntimeScope = lazy(async () => {
+  const module = await import("@/neko-chill/NekoRuntimeScope");
+  return { default: module.NekoRuntimeScope };
+});
+
 const WiiiAdeApp = lazy(async () => import("@/ade/WiiiAdeApp"));
 
 const WiiiConnectPage = lazy(async () => {
@@ -38,6 +43,57 @@ function WiiiConnectPreview() {
     useUIStore.getState().openWiiiConnect("gmail");
   }, []);
   return <WiiiConnectPage />;
+}
+
+/** Local navigation only; WorkbenchApp still owns the host capability gate. */
+export function LocalWorkbenchSurface(props: ComponentProps<typeof LocalWorkbenchScreens>) {
+  return <NekoRuntimeScope><LocalWorkbenchScreens {...props} /></NekoRuntimeScope>;
+}
+
+function LocalWorkbenchScreens({ onOpenManaged, onOpenConnections }: {
+  onOpenManaged: () => void;
+  onOpenConnections: () => void;
+}) {
+  const [surface, setSurface] = useState<"neko" | "work">("neko");
+  const [navigationError, setNavigationError] = useState<string | null>(null);
+  const openWork = async () => {
+    try {
+      // Read fresh state at the action boundary, without mounting/initializing
+      // the local session store for managed-only hosts.
+      const { useNekoSessionStore } = await import("@/neko-chill/stores/neko-session-store");
+      const busy = Object.values(useNekoSessionStore.getState().sessions).some(session =>
+        ["connecting", "dispatching", "streaming", "stopping"].includes(session.status)
+        || session.cancelPending || session.closePending
+        || session.pendingPermission !== null || session.resolvingPermissionId !== null);
+      if (busy) {
+        setNavigationError("Chưa thể mở Công việc khi agent đang xử lý hoặc chờ duyệt. Hãy chờ lượt hiện tại kết thúc rồi mở lại.");
+        return;
+      }
+      setNavigationError(null);
+      setSurface("work");
+    } catch {
+      setNavigationError("Chưa kiểm tra được trạng thái agent. Giữ phiên hiện tại và thử mở Công việc lại.");
+    }
+  };
+  if (surface === "work") {
+    return <WiiiAdeApp onOpenManaged={onOpenManaged} onOpenConnections={onOpenConnections} />;
+  }
+  return (
+    <>
+      <NekoChillApp
+        onOpenManaged={onOpenManaged}
+        onOpenConnections={onOpenConnections}
+        showWorkNavigation
+        onOpenWork={() => void openWork()}
+      />
+      {navigationError ? (
+        <p role="status" data-testid="work-navigation-status"
+          className="fixed bottom-4 left-1/2 z-50 w-[calc(100%-2rem)] max-w-lg -translate-x-1/2 rounded-xl border border-[var(--nk-border)] bg-[var(--nk-composer)] px-4 py-3 text-[12px] leading-5 text-[var(--nk-text-2)] shadow-lg">
+          {navigationError}
+        </p>
+      ) : null}
+    </>
+  );
 }
 /**
  * Host-aware Workbench boundary (#923).
@@ -53,7 +109,7 @@ export function WorkbenchGate({ host = detectWorkbenchHost() }: { host?: Workben
       renderLocal={({ openManaged }) => (
         <ErrorBoundary>
           <Suspense fallback={<BootSplash label="Wiii đang mở không gian cục bộ..." />}>
-            <NekoChillApp
+            <LocalWorkbenchSurface
               onOpenManaged={() => {
                 useUIStore.getState().navigateToChat();
                 openManaged();

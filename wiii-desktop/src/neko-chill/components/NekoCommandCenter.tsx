@@ -154,7 +154,10 @@ function NekoCommandCenterComponent({
     if (!item) return;
     if (item.kind === "action" && item.disabled) return;
     if (item.kind === "action") onAction(item.action);
-    else if (item.kind === "command") onInsertCommand(item.commandText);
+    else if (item.kind === "command") {
+      returnFocusRef.current = null;
+      onInsertCommand(item.commandText);
+    }
     else onSelectSession(item.sessionId);
     onClose();
   };

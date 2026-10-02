@@ -29,9 +29,10 @@
   --nk-inverse: #202227;
   --nk-on-inverse: #f8f8f9;
 
-  --nk-success: #2f8f52;
-  --nk-warning: #a66b20;
-  --nk-danger: #c64a42;
+  /* Status ink also serves 11–13px text on the normal Neko surfaces. */
+  --nk-success: #24723f;
+  --nk-warning: #865617;
+  --nk-danger: #b03d36;
   --nk-danger-soft: rgba(198, 74, 66, 0.1);
 
   --nk-item-active: rgba(20, 20, 20, 0.06);
@@ -300,4 +301,20 @@
 @keyframes nk-skeleton-pulse {
   0%, 100% { opacity: 0.55; }
   50% { opacity: 1; }
+}
+
+/* Brief state feedback; no motion for users who request reduced animation. */
+@media (prefers-reduced-motion: no-preference) {
+  .nk-catalog-popover { animation: nk-catalog-enter 120ms ease-out; }
+}
+@keyframes nk-catalog-enter {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+@media (hover: none), (pointer: coarse) {
+  .nk-session-row .nk-row-action { opacity: 1; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .nk-root .animate-spin { animation: none; }
+  .nk-session-row .nk-row-action { transition: none; }
 }

@@ -19,6 +19,7 @@ import type {
   DriverCommand,
   DriverConfigOption,
   DriverEvent,
+  NekoExecutionProjection,
   PermissionRequest,
 } from "../drivers/types";
 import type { AgentLaunchProfile, DetectedAgent } from "./neko-agent-store";
@@ -60,6 +61,14 @@ import {
   type NekoSessionOwnershipFact,
   type NekoTopLevelSessionKind,
 } from "@/neko/session-ownership";
+import type { DriverLaunchConfig } from "../drivers/factory";
+import { canonicalRootsEqual, type NekoTaskReceipt } from "../drivers/acp/task-protocol";
+import { AcpRpcError } from "../drivers/acp/errors";
+import {
+  createPendingNekoTaskMapping, restoreNekoTaskMapping, bindNekoTaskMapping,
+  beginNekoTaskLoad, markNekoTaskRecovery, isNekoTaskScopeMapping,
+  type NekoTaskScopeState, type NekoTaskScopeMapping,
+} from "../task-scope-mapping";
 import type { NekoProviderSessionRecord } from "@/neko/contracts";
 
 export interface NekoMessage {
@@ -92,6 +101,10 @@ export interface NekoSession {
   execution?: NekoExecutionBinding | null;
   /** Provider-owned durable ACP id; independent from Wiii's local session id. */
   backendSessionId: string | null;
+  /** Durable task correlation; never live authority or a second memory layer. */
+  taskScope?: NekoTaskScopeState;
+  /** Ephemeral current-generation display only; deliberately omitted from persistence. */
+  executionProjection?: { providerInstanceId: string; value: NekoExecutionProjection };
   /** Last complete capability snapshot reported by the live driver. */
   controls: DriverConfigOption[];
   commands: DriverCommand[];
@@ -264,14 +277,7 @@ async function waitForHolds(registry: Map<string, Set<Promise<void>>>, sessionId
 type DriverFactory = (
   agent: DetectedAgent,
   sessionId: string,
-  launch: {
-    workspace: WorkspaceRef;
-    projectId?: string | null;
-    execution?: NekoExecutionBinding;
-    executionId?: string;
-    profileId?: string;
-    backendSessionId?: string | null;
-  },
+  launch: DriverLaunchConfig,
   onEvent: (event: DriverEvent) => void,
   ownDriver: (driver: Driver) => void,
 ) => Promise<Driver>;
@@ -633,16 +639,112 @@ async function reconcileNativeRuntime(
   return { changed, native: refreshedNative };
 }
 
+function taskAdmissionLaunch(sessionId: string, instanceId: string): Partial<DriverLaunchConfig> {
+  const initial = useNekoSessionStore.getState().sessions[sessionId];
+  if (!initial?.taskScope) return {};
+  if (initial.closePending || initial.deletePending
+    || !runtimes.isCurrentOrPreparing(sessionId, instanceId)) throw new Error("Phiên tác vụ đang đóng; chưa khởi động lại agent.");
+  const scope = initial.taskScope;
+  if (!isNekoTaskScopeMapping(scope) || (scope.state !== "pending-new" && scope.state !== "pending-load")) {
+    throw new Error("Liên kết tác vụ Neko chưa sẵn sàng để admission.");
+  }
+  let admitted: NekoTaskReceipt | null = null;
+  let admittedBackendId: string | null = null;
+  const stillPreparing = () => {
+    const current = useNekoSessionStore.getState().sessions[sessionId];
+    if (!current || current.closePending || current.deletePending
+      || !runtimes.isCurrentOrPreparing(sessionId, instanceId)
+      || !current.taskScope || !isNekoTaskScopeMapping(current.taskScope)
+      || current.taskScope.threadId !== scope.threadId
+      || current.taskScope.execution.taskId !== scope.execution.taskId
+      || current.taskScope.execution.runId !== scope.execution.runId
+      || current.taskScope.execution.environmentId !== scope.execution.environmentId
+      || current.taskScope.projectId !== scope.projectId
+      || current.taskScope.workspacePath !== scope.workspacePath
+      || current.workspace?.path !== scope.workspacePath
+      || (current.projectId ?? null) !== scope.projectId
+      || current.execution?.taskId !== scope.execution.taskId
+      || current.execution.runId !== scope.execution.runId
+      || current.execution.environmentId !== scope.execution.environmentId) {
+      throw new Error("Admission tác vụ Neko đã hết hiệu lực theo phiên/process hiện tại.");
+    }
+    return current;
+  };
+  return {
+    taskScope: { label: scope.label, ...(scope.receipt ? { receipt: scope.receipt } : {}) },
+    onTaskAdmitted: async (backendSessionId, receipt, authorizedCanonicalRoot) => {
+      const current = stillPreparing();
+      const bound = bindNekoTaskMapping(current.taskScope as NekoTaskScopeMapping, receipt, backendSessionId, authorizedCanonicalRoot);
+      admitted = receipt; admittedBackendId = backendSessionId;
+      useNekoSessionStore.setState((state) => {
+        const s = state.sessions[sessionId]; s.taskScope = bound; s.backendSessionId = backendSessionId;
+      });
+      try {
+        await persistSessionStrict(useNekoSessionStore.getState().sessions[sessionId]);
+        const after = stillPreparing();
+        if (!isNekoTaskScopeMapping(after.taskScope) || after.taskScope.state !== "bound"
+          || after.taskScope.receipt.activationId !== receipt.activationId) throw new Error("Receipt tác vụ Neko đã thay đổi trong khi lưu.");
+      } catch (error) {
+        useNekoSessionStore.setState((state) => {
+          const s = state.sessions[sessionId];
+          if (s?.taskScope && isNekoTaskScopeMapping(s.taskScope)
+            && s.taskScope.receipt?.activationId === receipt.activationId) {
+            s.taskScope = markNekoTaskRecovery(s.taskScope, "receipt-persistence-failed");
+          }
+        });
+        throw error;
+      }
+    },
+    onTaskCloseOutcome: async (outcome) => {
+      if (outcome !== "uncertain" || !admitted || !admittedBackendId) return;
+      const s = useNekoSessionStore.getState().sessions[sessionId];
+      if (!s?.taskScope || !isNekoTaskScopeMapping(s.taskScope)
+        || s.taskScope.backendSessionId !== admittedBackendId
+        || s.taskScope.receipt?.activationId !== admitted.activationId) return;
+      useNekoSessionStore.setState((state) => {
+        const current = state.sessions[sessionId];
+        current.taskScope = markNekoTaskRecovery(s.taskScope as NekoTaskScopeMapping, "close-unconfirmed");
+        current.statusDetail = "Chưa xác nhận Neko đã đóng tác vụ. Giữ receipt; không tự chạy lại hoặc xóa writer lock.";
+      });
+      await persistSessionStrict(useNekoSessionStore.getState().sessions[sessionId]);
+    },
+  };
+}
+
+async function assertScopedRuntimeAdmitted(sessionId: string, provider: RuntimeProviderSnapshot): Promise<void> {
+  const session = useNekoSessionStore.getState().sessions[sessionId];
+  if (!session?.taskScope) return;
+  if (isNekoTaskScopeMapping(session.taskScope) && session.taskScope.state === "bound"
+    && session.backendSessionId === provider.backendSessionId
+    && session.taskScope.backendSessionId === provider.backendSessionId) return;
+  await runtimes.detachInstance(sessionId, provider.instanceId);
+  throw new Error("Agent chưa trả receipt đã lưu bền. Tác vụ chưa được admission.");
+}
+
+function taskRecoveryKind(error: unknown): "writer-unavailable" | "recovery-required" | undefined {
+  if (error instanceof AcpRpcError && error.taskRecovery) return error.taskRecovery.kind === "writer_unavailable" ? "writer-unavailable" : "recovery-required";
+  if (error instanceof AggregateError) {
+    for (const child of error.errors) { const kind = taskRecoveryKind(child); if (kind) return kind; }
+  }
+  return undefined;
+}
+
+async function retainTaskAdmissionFailure(sessionId: string, error: unknown): Promise<void> {
+  const s = useNekoSessionStore.getState().sessions[sessionId];
+  if (!s?.taskScope || !isNekoTaskScopeMapping(s.taskScope)) return;
+  const reason = taskRecoveryKind(error) ?? (s.taskScope.state === "pending-load" ? "load-response-uncertain" : "new-response-uncertain");
+  useNekoSessionStore.setState((state) => {
+    const current = state.sessions[sessionId];
+    if (current?.taskScope && isNekoTaskScopeMapping(current.taskScope) && current.taskScope.state !== "recovery-required") {
+      current.taskScope = markNekoTaskRecovery(current.taskScope, reason);
+    }
+  });
+}
+
 async function defaultDriverFactory(
   agent: DetectedAgent,
   sessionId: string,
-  launch: {
-    workspace: WorkspaceRef;
-    projectId?: string | null;
-    executionId?: string;
-    profileId?: string;
-    backendSessionId?: string | null;
-  },
+  launch: DriverLaunchConfig,
   onEvent: (event: DriverEvent) => void,
   ownDriver: (driver: Driver) => void,
 ): Promise<Driver> {
@@ -677,6 +779,7 @@ interface NekoSessionState {
   /** One-time migration path for a legacy transcript with no workspace. */
   attachWorkspace: (sessionId: string, workspace: WorkspaceRef) => Promise<void>;
   sendPrompt: (text: string, onAccepted?: () => void) => Promise<void>;
+  sendPromptToSession: (sessionId: string, text: string, onAccepted?: () => void, stillAuthorized?: () => boolean) => Promise<void>;
   cancelTurn: () => Promise<void>;
   resolvePermission: (optionId: string | null) => Promise<void>;
   setConfigOption: (optionId: string, value: string | boolean) => Promise<void>;
@@ -899,6 +1002,10 @@ export const useNekoSessionStore = create<NekoSessionState>()(
                     active: true,
                   }
             : (entry.launchProfile ?? null);
+          const taskDecision = restoreNekoTaskMapping(entry.taskScope, {
+            threadId: entry.id, providerId: entry.agentId, projectId: entry.projectId ?? null,
+            execution: entry.execution ?? null, workspacePath: workspace?.path ?? "",
+          });
           restored[entry.id] = {
             id: entry.id,
             agentId: entry.agentId,
@@ -914,6 +1021,7 @@ export const useNekoSessionStore = create<NekoSessionState>()(
             projectId: entry.projectId ?? null,
             execution: entry.execution ?? null,
             backendSessionId: entry.backendSessionId ?? null,
+            ...(taskDecision.kind !== "legacy" ? { taskScope: taskDecision.mapping } : {}),
             controls: projectControls(entry.controls ?? [], events),
             commands: entry.commands ?? [],
             pendingControlId: null,
@@ -948,6 +1056,11 @@ export const useNekoSessionStore = create<NekoSessionState>()(
               reconciled.push(result.native);
             }
             reconcileNativeStatus(session, nativeSessionsForTask(reconciled, session));
+            if (session.taskScope && (!isNekoTaskScopeMapping(session.taskScope)
+              || session.taskScope.state === "recovery-required")) {
+              session.status = "error";
+              session.statusDetail = "Liên kết tác vụ Neko cần đối soát. Chưa gửi prompt hoặc chạy lại thao tác.";
+            }
             // The renderer must not become usable from a reconciled read model
             // that exists only in memory. Native truth remains authoritative,
             // and this strict snapshot records the consumed replay cursor.
@@ -1002,6 +1115,10 @@ export const useNekoSessionStore = create<NekoSessionState>()(
       const sessionId = uuidv4();
       const now = Date.now();
       const kind: NekoTopLevelSessionKind = options.execution ? "worker" : "scratch";
+      const taskScope = createPendingNekoTaskMapping({
+        threadId: sessionId, providerId: agent.id, projectId: options.projectId ?? null,
+        execution: options.execution ?? null, workspacePath: workspace.path,
+      }, options.title?.trim() || `Công việc ${options.execution?.taskId ?? sessionId}`);
       const ownershipDiagnostics = validateNekoSessionOwnership([
         ...Object.values(get().sessions).map(ownershipFact),
         {
@@ -1050,6 +1167,7 @@ export const useNekoSessionStore = create<NekoSessionState>()(
           projectId: options.projectId ?? null,
           execution: options.execution ?? null,
           backendSessionId: null,
+          ...(taskScope ? { taskScope } : {}),
           controls: [],
           commands: [],
           pendingControlId: null,
@@ -1087,15 +1205,17 @@ export const useNekoSessionStore = create<NekoSessionState>()(
               executionId: instanceId,
               ...(launchProfile?.id ? { profileId: launchProfile.id } : {}),
               backendSessionId: null,
+              ...taskAdmissionLaunch(sessionId, instanceId),
             },
             (event) => {
-              if (runtimes.isCurrent(sessionId, instanceId)) get().handleEvent(event);
-              else if (preparingRuntime) pendingEvents.push(event);
+              if (event.sessionId !== sessionId) return;
+              if (preparingRuntime) pendingEvents.push(event);
+              else if (runtimes.isCurrent(sessionId, instanceId)) get().handleEvent(event);
             },
             ownDriver,
           ),
         );
-        preparingRuntime = false;
+        await assertScopedRuntimeAdmitted(sessionId, replacement.current);
         set((state) => {
           const session = state.sessions[sessionId];
           if (!session) return;
@@ -1108,6 +1228,7 @@ export const useNekoSessionStore = create<NekoSessionState>()(
             );
           }
           session.runtime = replacement.current;
+          session.executionProjection = undefined;
           session.backendSessionId = replacement.current.backendSessionId;
           appendOwnedSessionEvent(session, "runtime", {
             type: "runtime-attached",
@@ -1125,12 +1246,14 @@ export const useNekoSessionStore = create<NekoSessionState>()(
             session.statusDetail = "Runtime mới đã chạy nhưng runtime cũ không đóng sạch.";
           }
         });
+        preparingRuntime = false;
         for (const event of pendingEvents) {
-          if (runtimes.isCurrent(sessionId, replacement.current.instanceId)) {
+          if (event.sessionId === sessionId && runtimes.isCurrent(sessionId, replacement.current.instanceId)) {
             get().handleEvent(event);
           }
         }
       } catch (err) {
+        await retainTaskAdmissionFailure(sessionId, err);
         const reason = err instanceof Error ? err.message : String(err);
         set((state) => {
           const session = state.sessions[sessionId];
@@ -1241,6 +1364,7 @@ export const useNekoSessionStore = create<NekoSessionState>()(
       if (activeModeExit) await activeModeExit;
       const current = get().sessions[sessionId];
       if (!current || current.workspace || current.closePending || current.deletePending) return;
+      if (current.taskScope) throw new Error("Không đổi thư mục của tác vụ Neko đã liên kết. Hãy tạo một công việc rõ ràng khác.");
       const releaseOperation = acquireHold(runtimeOperations, sessionId);
       let contextEventId: string | null = null;
       try {
@@ -1256,6 +1380,7 @@ export const useNekoSessionStore = create<NekoSessionState>()(
           session.workspace = workspace;
           session.backendSessionId = null;
           session.runtime = null;
+          session.executionProjection = undefined;
           if (provider) {
             appendRuntimeCleanupFact(
               session,
@@ -1306,10 +1431,15 @@ export const useNekoSessionStore = create<NekoSessionState>()(
     },
 
     sendPrompt: async (text, onAccepted) => {
+      const sessionId = get().activeSessionId;
+      if (sessionId) await get().sendPromptToSession(sessionId, text, onAccepted);
+    },
+
+    sendPromptToSession: async (sessionId, text, onAccepted, stillAuthorized) => {
+      // Capture the intended session before any asynchronous launch/binding work.
+      // Navigation must never redirect an already explicit user submission.
       const activeModeExit = modeExitOperation;
       if (activeModeExit) await activeModeExit;
-      const sessionId = get().activeSessionId;
-      if (!sessionId) return;
       const session = get().sessions[sessionId];
       // "exited" accepts a new prompt: a restored (or crashed) session
       // respawns a FRESH agent process (spec US3-2 / edge case restart).
@@ -1324,8 +1454,17 @@ export const useNekoSessionStore = create<NekoSessionState>()(
       ) {
         return;
       }
+      if (session.taskScope && (!isNekoTaskScopeMapping(session.taskScope)
+        || session.taskScope.state === "recovery-required" || session.taskScope.state === "pending-new"
+        || (runtimes.get(sessionId) && session.taskScope.state !== "bound"))) {
+        set((state) => {
+          const current = state.sessions[sessionId];
+          if (current) { current.status = "error"; current.statusDetail = "Tác vụ Neko chưa có admission an toàn. Không gửi lại prompt; cần đối soát liên kết đã lưu."; }
+        });
+        return;
+      }
       if (
-        !runtimes.get(sessionId) &&
++        !runtimes.get(sessionId) &&
         !runtimes.hasRetainedCleanup(sessionId) &&
         nativeRunBlocksRespawn(session)
       ) {
@@ -1352,6 +1491,24 @@ export const useNekoSessionStore = create<NekoSessionState>()(
       try {
         let provider = runtimes.get(sessionId);
         if (!provider) {
+          const savedScope = get().sessions[sessionId]?.taskScope;
+          if (savedScope && isNekoTaskScopeMapping(savedScope)) {
+            set((state) => {
+              const current = state.sessions[sessionId];
+              current.taskScope = beginNekoTaskLoad(savedScope);
+              // Acquire the one-request lock before the durable load intent.
+              current.status = "connecting";
+            });
+            try { await persistSessionStrict(get().sessions[sessionId]); }
+            catch (error) {
+              await retainTaskAdmissionFailure(sessionId, error);
+              set((state) => { const s = state.sessions[sessionId]; if (s) { s.status = "error"; s.statusDetail = "Không thể lưu ý định tiếp tục tác vụ Neko. Chưa khởi động agent."; } });
+              return;
+            }
+          }
+          const beforeStart = get().sessions[sessionId];
+          if (!beforeStart || beforeStart.closePending || beforeStart.deletePending
+            || (savedScope && beforeStart.status !== "connecting")) return;
           set((state) => {
             const current = state.sessions[sessionId];
             if (current) current.status = "connecting";
@@ -1388,15 +1545,17 @@ export const useNekoSessionStore = create<NekoSessionState>()(
                   executionId: instanceId,
                   ...(session.launchProfile?.id ? { profileId: session.launchProfile.id } : {}),
                   backendSessionId: session.backendSessionId,
+                  ...taskAdmissionLaunch(sessionId, instanceId),
                 },
                 (event) => {
-                  if (runtimes.isCurrent(sessionId, instanceId)) get().handleEvent(event);
-                  else if (preparingRuntime) pendingEvents.push(event);
+                  if (event.sessionId !== sessionId) return;
+                  if (preparingRuntime) pendingEvents.push(event);
+                  else if (runtimes.isCurrent(sessionId, instanceId)) get().handleEvent(event);
                 },
                 ownDriver,
               ),
             );
-            preparingRuntime = false;
+            await assertScopedRuntimeAdmitted(sessionId, replacement.current);
             provider = replacement.current;
             set((state) => {
               const s = state.sessions[sessionId];
@@ -1410,6 +1569,7 @@ export const useNekoSessionStore = create<NekoSessionState>()(
                   );
                 }
                 s.runtime = replacement.current;
+                s.executionProjection = undefined;
                 s.backendSessionId = replacement.current.backendSessionId;
                 appendOwnedSessionEvent(s, "runtime", {
                   type: "runtime-attached",
@@ -1419,12 +1579,14 @@ export const useNekoSessionStore = create<NekoSessionState>()(
                 s.statusDetail = undefined;
               }
             });
+            preparingRuntime = false;
             for (const event of pendingEvents) {
-              if (runtimes.isCurrent(sessionId, replacement.current.instanceId)) {
+              if (event.sessionId === sessionId && runtimes.isCurrent(sessionId, replacement.current.instanceId)) {
                 get().handleEvent(event);
               }
             }
           } catch (err) {
+            await retainTaskAdmissionFailure(sessionId, err);
             const reason = err instanceof Error ? err.message : String(err);
             set((state) => {
               const s = state.sessions[sessionId];
@@ -1453,7 +1615,9 @@ export const useNekoSessionStore = create<NekoSessionState>()(
         });
         let knowledgeContext: KnowledgeContext | null = null;
         let modelPrompt = text;
-        if (useKnowledgeConnectionStore.getState().status === "ready") {
+        // Fixed task context is owned by Neko. Shared Wiii Knowledge is not
+        // silently admitted across this boundary; other/legacy lanes keep it.
+        if (!get().sessions[sessionId]?.taskScope && useKnowledgeConnectionStore.getState().status === "ready") {
           try {
             knowledgeContext = await useKnowledgeConnectionStore.getState().retrieve(text);
             modelPrompt = buildKnowledgeAugmentedPrompt(text, knowledgeContext);
@@ -1467,6 +1631,12 @@ export const useNekoSessionStore = create<NekoSessionState>()(
               }
             });
           }
+        }
+        // Runtime admission and Knowledge retrieval can await. Recheck queued
+        // intent against the now-live model/root before making it dispatchable.
+        if (stillAuthorized && !stillAuthorized()) {
+          set(state => { const current = state.sessions[sessionId]; if (current) current.statusDetail = "Ngữ cảnh hoặc model đã thay đổi. Tin chờ chưa được gửi."; });
+          return;
         }
         const messageId = uuidv4();
         const previousTitle = get().sessions[sessionId]?.title;
@@ -1507,7 +1677,8 @@ export const useNekoSessionStore = create<NekoSessionState>()(
           s.status = "dispatching";
           s.lastActivityAt = Date.now();
           s.updatedAt = s.lastActivityAt;
-          if (s.messages.length === 1) {
+          // Work owns its title; a full prompt may also contain criteria.
+          if (!s.execution && s.messages.length === 1) {
             s.title = text.length > 48 ? `${text.slice(0, 48)}…` : text;
           }
         });
@@ -1541,7 +1712,7 @@ export const useNekoSessionStore = create<NekoSessionState>()(
         let promptStarted = false;
         try {
           const driver = runtimes.requireInstance(sessionId, providerInstanceId, "prompt");
-          const invocation = driver.prompt(modelPrompt);
+          const invocation = driver.prompt(modelPrompt, { promptEventId: inputEventId! });
           promptStarted = true;
           onAccepted?.();
           set((state) => {
@@ -1626,6 +1797,12 @@ export const useNekoSessionStore = create<NekoSessionState>()(
         session.deletePending
       )
         return;
+      const promptEventId = [...session.events].reverse().find(({ data }) => data.type === "dispatch-invoked"
+        && data.action === "prompt" && data.providerInstanceId === provider.instanceId)?.data;
+      const boundPromptId = promptEventId?.type === "dispatch-invoked" ? promptEventId.targetEventId : undefined;
+      // A notify resolving is not terminal. Keep a once-only Stop latch per prompt.
+      if (session.events.some(({ data }) => data.type === "runtime-command" && data.action === "cancel"
+        && data.providerInstanceId === provider.instanceId && data.promptEventId === boundPromptId)) return;
       const releaseOperation = acquireHold(runtimeOperations, sessionId);
       try {
         let commandEventId: string | null = null;
@@ -1637,6 +1814,7 @@ export const useNekoSessionStore = create<NekoSessionState>()(
               type: "runtime-command",
               action: "cancel",
               providerInstanceId: provider.instanceId,
+              ...(boundPromptId ? { promptEventId: boundPromptId } : {}),
               delivery: "staged",
             }).eventId!;
           }
@@ -1918,6 +2096,7 @@ export const useNekoSessionStore = create<NekoSessionState>()(
               if (revocation) {
                 if (current.runtime?.instanceId === revocation.provider.instanceId) {
                   current.runtime = null;
+                  current.executionProjection = undefined;
                 }
                 appendRuntimeCleanupFact(
                   current,
@@ -2007,6 +2186,7 @@ export const useNekoSessionStore = create<NekoSessionState>()(
             if (revocation) {
               if (current.runtime?.instanceId === revocation.provider.instanceId) {
                 current.runtime = null;
+                current.executionProjection = undefined;
               }
               appendRuntimeCleanupFact(
                 current,
@@ -2085,43 +2265,39 @@ export const useNekoSessionStore = create<NekoSessionState>()(
         }
       });
       const operation = (async () => {
-        try {
-          await nativeControlReaderFactory().cancelUnresolvedStarts(sessionId);
-        } catch (error) {
-          set((state) => {
-            const session = state.sessions[sessionId];
-            if (!session) return;
-            session.status = "error";
-            session.statusDetail =
-              `Không thể đóng phiên vì một runtime native chưa được đối soát: ${error instanceof Error ? error.message : String(error)}`;
-          });
-          return;
-        }
         await waitForHolds(dispatchBarriers, sessionId);
         const expectedProvider = runtimes.get(sessionId) ?? get().sessions[sessionId]?.runtime ?? null;
         const cleanup = await observeRuntimeDetach(runtimes.detach(sessionId));
+        // The durable legacy scan also finds live bound sessions. Give their
+        // ACP session/close handshake a chance to release writer leases BEFORE
+        // invoking the native orphan-kill fallback.
+        let orphanFailure: unknown;
+        try { await nativeControlReaderFactory().cancelUnresolvedStarts(sessionId); }
+        catch (error) { orphanFailure = error; }
+        const closeFailed = cleanup.failed || orphanFailure !== undefined;
         const provider = cleanup.failed ? expectedProvider : cleanup.provider ?? expectedProvider;
         await waitForHolds(runtimeOperations, sessionId);
         set((state) => {
           const session = state.sessions[sessionId];
           if (session) {
             session.runtime = null;
+            session.executionProjection = undefined;
             if (provider) {
               appendRuntimeCleanupFact(session, provider, "close", cleanup);
             }
-            session.status = cleanup.failed ? "error" : "exited";
+            session.status = closeFailed ? "error" : "exited";
             session.pendingPermission = null;
             session.resolvingPermissionId = null;
             session.cancelPending = false;
-            session.statusDetail = cleanup.failed
-              ? `Neko chưa thể xác nhận runtime đã dừng; không thể khởi động lại an toàn: ${cleanupFailureReason(cleanup.error)}`
+            session.statusDetail = closeFailed
+              ? `Neko chưa thể xác nhận runtime đã dừng; không thể khởi động lại an toàn: ${cleanupFailureReason(orphanFailure ?? (cleanup.failed ? cleanup.error : undefined))}`
               : "Đã kết thúc phiên — nhắn tiếp để khởi động lại agent.";
             session.updatedAt = Date.now();
           }
         });
         await persistSessionNowOrReport(sessionId, "trạng thái đóng phiên", {
-          fatal: cleanup.failed,
-          strict: cleanup.failed,
+          fatal: closeFailed,
+          strict: closeFailed,
         });
       })();
       let tracked!: Promise<void>;
@@ -2151,7 +2327,9 @@ export const useNekoSessionStore = create<NekoSessionState>()(
         }
       });
       try {
-        await nativeControlReaderFactory().cancelUnresolvedStarts(sessionId);
+        if (!runtimes.get(sessionId) && !runtimes.hasRetainedCleanup(sessionId)) {
+          await nativeControlReaderFactory().cancelUnresolvedStarts(sessionId);
+        }
       } catch (error) {
         set((state) => {
           const session = state.sessions[sessionId];
@@ -2185,13 +2363,30 @@ export const useNekoSessionStore = create<NekoSessionState>()(
       await closeOperations.get(sessionId)?.catch(() => {});
       await waitForHolds(dispatchBarriers, sessionId);
       const cleanup = await observeRuntimeDetach(runtimes.detach(sessionId));
+      let orphanFailure: unknown;
+      try { await nativeControlReaderFactory().cancelUnresolvedStarts(sessionId); }
+      catch (error) { orphanFailure = error; }
       const provider = cleanup.failed ? expectedProvider : cleanup.provider ?? expectedProvider;
       await waitForHolds(runtimeOperations, sessionId);
+      if (orphanFailure !== undefined && !cleanup.failed) {
+        set(state => {
+          const session = state.sessions[sessionId];
+          if (!session) return;
+          session.runtime = null;
+          session.deletePending = false;
+          session.status = "error";
+          session.statusDetail = `Không thể xóa phiên vì một runtime native chưa được đối soát: ${cleanupFailureReason(orphanFailure)}`;
+          if (provider) appendRuntimeCleanupFact(session, provider, "delete", cleanup);
+        });
+        await persistSessionNowOrReport(sessionId, "lỗi đối soát trước khi xóa", { strict: true });
+        return;
+      }
       if (cleanup.failed) {
         set((state) => {
           const session = state.sessions[sessionId];
           if (!session) return;
           session.runtime = null;
+          session.executionProjection = undefined;
           session.deletePending = false;
           session.status = "error";
           session.statusDetail = `Không thể xóa phiên vì runtime chưa đóng sạch: ${cleanupFailureReason(cleanup.error)}`;
@@ -2218,6 +2413,7 @@ export const useNekoSessionStore = create<NekoSessionState>()(
           const session = state.sessions[sessionId];
           if (!session) return;
           session.runtime = null;
+          session.executionProjection = undefined;
           session.deletePending = false;
           session.status = "error";
           session.statusDetail = `Không thể xóa phiên khỏi bộ nhớ bền: ${error instanceof Error ? error.message : String(error)}`;
@@ -2241,6 +2437,17 @@ export const useNekoSessionStore = create<NekoSessionState>()(
     },
 
     handleEvent: (event) => {
+      // A terminal from an older prompt must never finish a newer turn, even
+      // when both share the same long-lived ACP process. Runtime callbacks
+      // additionally retain their existing isCurrent(instance) guard.
+      if ((event.type === "turn-started" || event.type === "turn-finished") && event.promptEventId) {
+        const session = get().sessions[event.sessionId];
+        const input = session && [...session.events].reverse().find(({ data }) => data.type === "model-input"
+          && data.source === "live" && data.providerInstanceId === session.runtime?.instanceId);
+        if (!input || input.eventId !== event.promptEventId) return;
+        if (event.type === "turn-finished" && session.events.some(({ data }) => data.type === "turn-terminal"
+          && data.promptEventId === event.promptEventId && data.providerInstanceId === session.runtime?.instanceId)) return;
+      }
       if (event.type === "reasoning-delta" || event.type === "answer-delta") {
         enqueuePresentationDelta(
           event.sessionId,
@@ -2275,6 +2482,22 @@ export const useNekoSessionStore = create<NekoSessionState>()(
         session.updatedAt = session.lastActivityAt;
 
         switch (event.type) {
+          case "neko-execution-info": {
+            const mapping = session.taskScope;
+            if (!session.runtime || session.runtime.providerId !== "neko"
+              || session.closePending || session.deletePending || !mapping
+              || !isNekoTaskScopeMapping(mapping) || mapping.state !== "bound"
+              || event.backendSessionId !== session.runtime.backendSessionId
+              || event.backendSessionId !== mapping.backendSessionId) return;
+            const value = event.projection;
+            const matches = value.status !== "reported" || (value.taskId === mapping.receipt.id
+              && canonicalRootsEqual(value.root, mapping.receipt.root)
+              && value.activationEpoch === mapping.receipt.activationEpoch
+              && value.activationId === mapping.receipt.activationId);
+            session.executionProjection = { providerInstanceId: session.runtime.instanceId,
+              value: matches ? value : { status: "unverified" } };
+            return;
+          }
           case "session-controls": {
             session.controls = event.controls.map((option) => ({
               ...option,
@@ -2289,7 +2512,7 @@ export const useNekoSessionStore = create<NekoSessionState>()(
             return;
           }
           case "session-info": {
-            if (typeof event.title === "string" && event.title.trim()) {
+            if (!session.execution && typeof event.title === "string" && event.title.trim()) {
               session.title = event.title.trim().slice(0, 120);
             }
             if (typeof event.updatedAt === "string") {
@@ -2349,6 +2572,10 @@ export const useNekoSessionStore = create<NekoSessionState>()(
             return;
           }
           case "turn-finished": {
+            if (event.promptEventId && session.runtime) {
+              appendOwnedSessionEvent(session, "runtime", { type: "turn-terminal",
+                providerInstanceId: session.runtime.instanceId, promptEventId: event.promptEventId, stopReason: event.stopReason });
+            }
             session.status = "idle";
             session.pendingPermission = null;
             session.resolvingPermissionId = null;
@@ -2372,13 +2599,21 @@ export const useNekoSessionStore = create<NekoSessionState>()(
               session.statusDetail = event.message;
             }
             if (event.fatal) {
+              session.executionProjection = undefined;
               session.status = "error";
               session.statusDetail = event.message;
+              if (session.taskScope) {
+                // The adapter revoked the failed scoped admission. A stale
+                // card/queued click must not retain a permission projection.
+                session.pendingPermission = null;
+                session.resolvingPermissionId = null;
+              }
             }
             return;
           }
           case "process-exited": {
             session.runtime = null;
+            session.executionProjection = undefined;
             if (exitingProvider) {
               appendOwnedSessionEvent(session, "runtime", {
                 type: "runtime-detached",
@@ -2446,6 +2681,7 @@ async function revokeRuntimeAfterDurabilityFailure(
       if (!current) return;
       if (current.runtime?.instanceId === revocation.provider.instanceId) {
         current.runtime = null;
+        current.executionProjection = undefined;
       }
       appendRuntimeCleanupFact(
         current,
@@ -2528,6 +2764,18 @@ async function persistSessionNowOrReport(
   context: string,
   options: { fatal?: boolean; strict?: boolean } = {},
 ): Promise<boolean> {
+  const prior = useNekoSessionStore.getState().sessions[sessionId];
+  if (prior?.taskScope && (!isNekoTaskScopeMapping(prior.taskScope) || prior.taskScope.state === "recovery-required")) {
+    useNekoSessionStore.setState((state) => {
+      const current = state.sessions[sessionId];
+      if (!current) return;
+      const prefix = "Liên kết tác vụ Neko cần đối soát; giữ receipt, không tự khởi động lại hoặc gửi lại prompt.";
+      const diagnostic = current.status === "error" && current.statusDetail && !current.statusDetail.startsWith(prefix)
+        ? ` ${current.statusDetail}` : "";
+      current.status = "error";
+      current.statusDetail = prefix + diagnostic;
+    });
+  }
   const session = useNekoSessionStore.getState().sessions[sessionId];
   if (!session) return false;
   try {
@@ -2578,6 +2826,7 @@ export async function sweepIdleSessions(now: number = Date.now()): Promise<void>
       const s = state.sessions[session.id];
       if (s && s.status === "connecting") {
         s.runtime = null;
+        s.executionProjection = undefined;
         appendRuntimeCleanupFact(s, provider, "idle", cleanup, now);
         s.status = cleanup.failed ? "error" : "exited";
         s.statusDetail = "Agent tạm nghỉ sau 30 phút yên lặng — nhắn tiếp để khởi động lại.";
@@ -2690,6 +2939,7 @@ export async function disposeAllNekoRuntimes(): Promise<void> {
           ? runtimeCleanup
           : { failed: true, error: unresolvedStartFailure };
         session.runtime = null;
+        session.executionProjection = undefined;
         session.status = cleanup.failed ? "error" : "exited";
         session.pendingPermission = null;
         session.resolvingPermissionId = null;

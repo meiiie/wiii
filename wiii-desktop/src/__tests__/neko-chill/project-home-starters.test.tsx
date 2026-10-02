@@ -28,7 +28,7 @@ beforeEach(() => {
   clearNekoComposerDraft(`project:${project.id}`);
   useNekoAgentStore.setState({ agents: [], isLoading: false, error: null });
   useNekoProjectStore.setState({ projects: [project], setPreferredHarness: vi.fn(async () => {}) });
-  useNekoSessionStore.setState({ createSession: vi.fn(async () => "created"), sendPrompt: vi.fn(async () => {}) });
+  useNekoSessionStore.setState({ createSession: vi.fn(async () => "created"), sendPromptToSession: vi.fn(async () => {}) });
 });
 
 describe("Project Home empty-state starters", () => {

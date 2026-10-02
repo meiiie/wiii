@@ -4,7 +4,7 @@ export function BootSplash({ label }: { label: string }) {
   return (
     <div className="flex h-screen flex-col items-center justify-center bg-surface">
       <div className="flex flex-col items-center gap-4">
-        <WiiiMark size={48} alt="Wiii" className="animate-pulse" />
+        <WiiiMark size={48} alt="Wiii" />
         <span className="text-sm text-text-tertiary">{label}</span>
       </div>
     </div>

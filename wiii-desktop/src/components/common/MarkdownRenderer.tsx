@@ -17,6 +17,7 @@ const MathMarkdownSegment = lazy(async () => {
 interface MarkdownRendererProps {
   content: string;
   className?: string;
+  streaming?: boolean;
 }
 
 function PendingWidgetSegment() {
@@ -41,6 +42,7 @@ function shouldUseRichMarkdown(content: string): boolean {
 
   return (
     /```|~~~/.test(trimmed) ||
+    /(^|\n)(?: {4}| {0,3}\t)/.test(content) ||
     /(^|\n)\s{0,3}(#{1,6}\s|[-*+]\s|>\s|\d+[.)]\s)/m.test(trimmed) ||
     /!\[[^\]]*\]\([^)]+\)|\[[^\]]+\]\([^)]+\)/.test(trimmed) ||
     /(^|\n)\|.+\|/m.test(trimmed) ||
@@ -109,6 +111,7 @@ function PlainTextSegment({ content }: { content: string }) {
 export function MarkdownRenderer({
   content,
   className = "",
+  streaming = false,
 }: MarkdownRendererProps) {
   // Phase 35 — defer expensive markdown parsing during fast streaming.
   // React 18 `useDeferredValue` lets us yield to high-priority updates
@@ -163,7 +166,7 @@ export function MarkdownRenderer({
             key={`md-${i}`}
             fallback={<PlainTextSegment content={seg.content} />}
           >
-            <SegmentComponent content={seg.content} />
+            <SegmentComponent content={seg.content} streaming={streaming} />
           </Suspense>
         );
       })}

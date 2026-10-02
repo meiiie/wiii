@@ -2,6 +2,7 @@ fn main() {
     const COMMANDS: &[&str] = &[
         "check_server_reachable",
         "pick_document",
+        "neko_create_quick_chat_workspace",
         "neko_resolve_workspace",
         "neko_list_workspace_files",
         "neko_read_workspace_file",

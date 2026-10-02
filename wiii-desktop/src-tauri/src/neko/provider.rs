@@ -808,6 +808,10 @@ pub fn definition(provider_id: &str) -> Option<ProviderDefinition> {
         .find(|provider| provider.id == provider_id)
 }
 
+fn is_false(value: &bool) -> bool {
+    !*value
+}
+
 #[derive(Deserialize, Serialize, Clone, Debug, Eq, PartialEq)]
 #[serde(rename_all = "snake_case")]
 pub enum AgentAvailability {
@@ -826,7 +830,7 @@ pub struct AgentInfo {
     pub found: bool,
     pub availability: AgentAvailability,
     pub supports_profiles: bool,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "is_false")]
     pub bundled: bool,
     /// Provider-scoped discovery failure. Never contains credentials or probe output.
     pub detail: Option<String>,
@@ -1149,6 +1153,27 @@ pub fn profiles(provider_id: &str, cwd: &str) -> Result<Vec<AgentProfile>, Strin
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn bundled_metadata_preserves_legacy_shape_and_serializes_true() {
+        let legacy = serde_json::json!({
+            "id": "neko", "name": "Neko", "version": null, "found": true,
+            "availability": "available", "supportsProfiles": true, "detail": null
+        });
+        let mut info: super::AgentInfo = serde_json::from_value(legacy.clone()).unwrap();
+        assert!(!info.bundled);
+        assert_eq!(serde_json::to_value(&info).unwrap(), legacy);
+        info.bundled = true;
+        let bundled = serde_json::to_value(&info).unwrap();
+        assert_eq!(bundled["bundled"], true);
+        assert!(
+            serde_json::from_value::<super::AgentInfo>(bundled)
+                .unwrap()
+                .bundled
+        );
+    }
+
+
 
     #[test]
     fn bundled_update_policy_does_not_modify_external_provider_environment() {

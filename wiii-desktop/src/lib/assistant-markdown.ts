@@ -1,14 +1,93 @@
-const FENCED_BLOCK_RE = /(```[\s\S]*?```|~~~[\s\S]*?~~~)/g;
 const TABLE_SEPARATOR_ROW_RE =
   /\|\s*:?-{3,}:?\s*(?:\|\s*:?-{3,}:?\s*)+\|?/;
 const TABLE_SEPARATOR_CELL_RE = /^:?-{3,}:?$/;
 
-function splitCodeSafe(content: string): string[] {
-  return content.split(FENCED_BLOCK_RE);
+interface MarkdownSegment {
+  text: string;
+  fenced: boolean;
 }
 
-function isFencedBlock(segment: string): boolean {
-  return /^(```|~~~)/.test(segment.trimStart());
+function splitCodeSafe(content: string): MarkdownSegment[] {
+  const segments: MarkdownSegment[] = [];
+  let fence: { marker: string; length: number; start: number } | null = null;
+  let proseStart = 0;
+
+  for (const match of content.matchAll(/[^\r\n]*(?:\r\n|\n|\r|$)/g)) {
+    if (!match[0]) break;
+    const lineStart = match.index!;
+    const line = match[0].replace(/(?:\r\n|\n|\r)$/, "");
+
+    if (fence) {
+      const closing = /^ {0,3}(`+|~+)[ \t]*$/.exec(line);
+      if (closing && closing[1][0] === fence.marker && closing[1].length >= fence.length) {
+        const fenceEnd = lineStart + line.length;
+        segments.push({ text: content.slice(fence.start, fenceEnd), fenced: true });
+        proseStart = fenceEnd;
+        fence = null;
+      }
+      continue;
+    }
+
+    const opening = /^ {0,3}(`{3,}|~{3,})(.*)$/.exec(line);
+    if (!opening || (opening[1][0] === "`" && opening[2].includes("`"))) continue;
+    if (lineStart > proseStart) {
+      segments.push({ text: content.slice(proseStart, lineStart), fenced: false });
+    }
+    fence = { marker: opening[1][0], length: opening[1].length, start: lineStart };
+  }
+
+  if (fence) {
+    segments.push({ text: content.slice(fence.start), fenced: true });
+  } else if (proseStart < content.length) {
+    segments.push({ text: content.slice(proseStart), fenced: false });
+  }
+  return segments;
+}
+
+function hasContainerOrIndentedCode(segments: MarkdownSegment[]): boolean {
+  let precedingProse = "";
+
+  for (const segment of segments) {
+    if (segment.fenced) {
+      if (
+        /^ {1,3}(`{3,}|~{3,})/.test(segment.text)
+        && /^ {0,3}(?:[-+*]|\d{1,9}[.)])[ \t]+\S/m.test(precedingProse)
+      ) {
+        return true;
+      }
+      precedingProse = "";
+      continue;
+    }
+
+    if (
+      /^(?: {4}| {0,3}\t)[ \t]*\S/m.test(segment.text)
+      || /^ {0,3}(?:>[ \t]*)+(?:(?:[-+*]|\d{1,9}[.)])[ \t]+)?(`{3,}|~{3,})/m.test(segment.text)
+      || /^ {0,3}(?:[-+*]|\d{1,9}[.)])[ \t]+(`{3,}|~{3,})/m.test(segment.text)
+    ) {
+      return true;
+    }
+    precedingProse = segment.text;
+  }
+
+  return false;
+}
+
+function hasMultilinePipeTable(segments: MarkdownSegment[]): boolean {
+  for (const segment of segments) {
+    if (segment.fenced) continue;
+    const lines = segment.text.split(/\r\n|\n|\r/);
+
+    for (let index = 1; index < lines.length; index += 1) {
+      const header = lines[index - 1];
+      const separator = lines[index];
+      if (!header.trim() || (!header.includes("|") && !separator.includes("|"))) continue;
+
+      const cells = separator.trim().replace(/^\|/, "").replace(/\|$/, "").split("|");
+      if (cells.every((cell) => /^[ \t]*:?-+:?[ \t]*$/.test(cell))) return true;
+    }
+  }
+
+  return false;
 }
 
 function normalizeInlineSeparators(segment: string): string {
@@ -150,9 +229,15 @@ function normalizeMarkdownSegment(segment: string): string {
 export function normalizeAssistantMarkdown(content: string): string {
   if (!content) return content;
 
-  return splitCodeSafe(content)
+  const segments = splitCodeSafe(content);
+  // Container and indented code need a full block parser; preserve their source.
+  if (hasContainerOrIndentedCode(segments)) return content;
+  // Existing multiline tables already have their structure and need no repair.
+  if (hasMultilinePipeTable(segments)) return content;
+
+  return segments
     .map((segment) =>
-      isFencedBlock(segment) ? segment : normalizeMarkdownSegment(segment),
+      segment.fenced ? segment.text : normalizeMarkdownSegment(segment.text),
     )
     .join("");
 }

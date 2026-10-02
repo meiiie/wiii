@@ -4,11 +4,12 @@ import { WiiiMark } from "@/components/common/WiiiMark";
 import { WiiiMascot } from "@/components/common/WiiiMascot";
 
 describe("Wiii Neko Peek identity", () => {
-  it("uses the generated app icon for compact product marks", () => {
+  it("uses the approved inline Neko Peek vector for compact product marks", () => {
     render(<WiiiMark title="Wiii Workbench" size={24} />);
 
-    const mark = screen.getByTitle("Wiii Workbench");
-    expect(mark.getAttribute("src")).toBe("/icon-192.png");
+    const mark = screen.getByRole("img", { name: "Wiii Workbench" });
+    expect(mark.tagName.toLowerCase()).toBe("svg");
+    expect(mark.getAttribute("viewBox")).toBe("0 0 1024 1024");
     expect(mark.getAttribute("width")).toBe("24");
     expect(mark.getAttribute("draggable")).toBe("false");
   });

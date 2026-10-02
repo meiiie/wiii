@@ -11,6 +11,7 @@ import { MarkdownRenderer } from "@/components/common/MarkdownRenderer";
 import { NekoActivityIcon, resolveNekoToolIconKind } from "@/components/icons/neko";
 import type { ContentBlock, ThinkingBlockData, ToolExecutionBlockData } from "@/api/types";
 import type { NekoSession } from "../stores/neko-session-store";
+import { getSessionControlNotices, workspaceIsolationLabel, type SessionControlNotice } from "../session-control-status";
 import { PermissionCard } from "./PermissionCard";
 import { NekoPromptRail, type NekoPromptLandmark } from "./NekoPromptRail";
 
@@ -163,7 +164,7 @@ export function ThinkingDisclosure({
         />
       </summary>
       <div className="ml-[7px] max-h-56 overflow-y-auto border-l border-[var(--nk-border)] py-1 pl-4 pr-2 text-[12px] leading-[18px] text-[var(--nk-text-3)]">
-        <MarkdownRenderer content={block.content} />
+        <MarkdownRenderer content={block.content} streaming={active} />
       </div>
     </details>
   );
@@ -283,7 +284,7 @@ function Block({ block, active = false }: { block: ContentBlock; active?: boolea
     case "tool_execution":
       return <ToolDisclosure block={block} />;
     case "answer":
-      return <MarkdownRenderer content={block.content} className="my-2 text-[13.5px]" />;
+      return <MarkdownRenderer content={block.content} streaming={active} className="my-2 min-w-0 text-[13.5px] [overflow-wrap:anywhere]" />;
     default:
       // Cloud-only block kinds never arrive from local drivers in v0.
       return null;
@@ -325,7 +326,7 @@ const MessageRow = memo(function MessageRow({
           activeBlock={streaming ? lastBlock : undefined}
         />
       ) : (
-        <Block key={group.block.id} block={group.block} />
+        <Block key={group.block.id} block={group.block} active={streaming && group.block === lastBlock} />
       ))}
     </div>
   );
@@ -347,6 +348,26 @@ export function streamingActivityLabel(session: NekoSession): string {
   return `${session.agentName} đang viết…`;
 }
 
+export function SessionControlStatus({
+  session,
+  notices = getSessionControlNotices(session),
+}: { session: NekoSession; notices?: SessionControlNotice[] }) {
+  return notices.map((notice) => (
+    <div
+      key={notice.kind}
+      role={notice.tone === "danger" ? "alert" : session.pendingPermission ? "note" : "status"}
+      aria-live={notice.tone === "danger" ? "assertive" : "polite"}
+      aria-atomic="true"
+      data-testid={`session-control-${notice.kind}`}
+      data-stage={notice.stage}
+      className={`my-2 min-w-0 max-w-full rounded-xl border border-[var(--nk-border)] bg-[var(--nk-composer)] px-3 py-2 text-[12px] leading-5 [overflow-wrap:anywhere] ${notice.tone === "danger" ? "text-[var(--nk-danger)]" : notice.tone === "warning" ? "text-[var(--nk-warning)]" : "text-[var(--nk-text-3)]"}`}
+    >
+      <p className="whitespace-pre-wrap">{notice.text}</p>
+      {notice.guidance ? <p className="mt-1 text-[var(--nk-text-3)]">{notice.guidance}</p> : null}
+    </div>
+  ));
+}
+
 interface NekoTranscriptProps {
   session: NekoSession;
   onResolvePermission: (optionId: string | null) => void;
@@ -360,6 +381,8 @@ export function NekoTranscript({
 }: NekoTranscriptProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
+  const contentRef = useRef<HTMLDivElement>(null);
+  const followFrameRef = useRef<number | null>(null);
   const messagesRef = useRef(session.messages);
   messagesRef.current = session.messages;
   const [followingTail, setFollowingTail] = useState(true);
@@ -375,6 +398,10 @@ export function NekoTranscript({
   const knowledgeContexts = useMemo(
     () => dispatchedKnowledgeContexts(session),
     [session.events],
+  );
+  const controlNotices = useMemo(
+    () => getSessionControlNotices(session),
+    [session.cancelPending, session.events, session.runtime, session.status, session.statusDetail],
   );
   const virtualizer = useVirtualizer({
     count: messageCount,
@@ -446,17 +473,39 @@ export function NekoTranscript({
     if (lastMessage?.role === "user") updateFollowingTail(true);
   }, [lastMessage?.id, lastMessage?.role, updateFollowingTail]);
 
+  const scheduleFollow = useCallback(() => {
+    if (!followingTailRef.current || followFrameRef.current !== null) return;
+    followFrameRef.current = requestAnimationFrame(() => {
+      followFrameRef.current = null;
+      // A scroll or prompt-rail action since scheduling owns the reading position.
+      if (followingTailRef.current) scrollToLatest();
+    });
+  }, [scrollToLatest]);
+
   useEffect(() => {
-    if (!followingTail) return;
-    const frame = requestAnimationFrame(() => scrollToLatest());
-    return () => cancelAnimationFrame(frame);
-  }, [followingTail, lastBlockCount, messageCount, scrollToLatest, session.pendingPermission]);
+    const viewport = scrollRef.current;
+    const content = contentRef.current;
+    const observer = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(scheduleFollow);
+    if (viewport) observer?.observe(viewport);
+    if (content) observer?.observe(content);
+    scheduleFollow();
+    return () => {
+      observer?.disconnect();
+      if (followFrameRef.current !== null) cancelAnimationFrame(followFrameRef.current);
+      followFrameRef.current = null;
+    };
+  }, [session.id, scheduleFollow]);
+
+  // Message updates also cover environments without ResizeObserver. The observer
+  // covers delayed Markdown/image layout and composer-induced viewport changes.
+  useEffect(scheduleFollow, [lastMessage, lastBlockCount, session.pendingPermission, scheduleFollow]);
 
   return (
     <div className="relative min-h-0 flex-1">
       <div
         ref={scrollRef}
-        className="nk-scroll-surface h-full min-w-0 overflow-x-hidden overflow-y-auto"
+        className="nk-scroll-surface h-full min-w-0 overflow-x-hidden overflow-y-auto focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[var(--nk-focus-soft)]"
+        tabIndex={0}
         data-testid="neko-transcript"
         role="log"
         aria-label="Lịch sử phiên Neko Chill"
@@ -468,7 +517,7 @@ export function NekoTranscript({
           updateFollowingTail(distanceFromTail < 96);
         }}
       >
-      <div className="mx-auto min-w-0 w-full max-w-[780px] overflow-hidden py-4 pl-[58px] pr-5 min-[900px]:px-6">
+      <div ref={contentRef} className="mx-auto min-w-0 w-full max-w-[780px] overflow-hidden py-4 pl-[58px] pr-5 min-[900px]:px-6">
         {session.messages.length === 0 && session.status === "idle" ? (
           <section className="mx-auto flex max-w-[560px] flex-col items-center px-4 py-[10vh] text-center" aria-label="Bắt đầu phiên">
             <span className="grid h-10 w-10 place-items-center rounded-xl bg-[var(--nk-inset)] text-[var(--nk-text-2)]">
@@ -478,8 +527,11 @@ export function NekoTranscript({
               Sẵn sàng trong {session.workspace?.name ?? "dự án này"}
             </h2>
             <p className="mt-1.5 max-w-[460px] text-[12.5px] leading-5 text-[var(--nk-text-3)]">
-              Agent chỉ làm việc trong thư mục đã chọn. Hãy mô tả kết quả bạn muốn;
+              Thư mục đã chọn là ngữ cảnh của phiên. Hãy mô tả kết quả bạn muốn;
               các gợi ý dưới đây chỉ được chèn vào ô soạn để bạn xem lại.
+            </p>
+            <p className="mt-2 max-w-[460px] text-[11px] leading-4 text-[var(--nk-ghost)] [overflow-wrap:anywhere]" data-testid="workspace-isolation-notice">
+              {workspaceIsolationLabel(session)}
             </p>
             <div className="mt-5 flex flex-wrap justify-center gap-2">
               {NEKO_STARTER_PROMPTS.map((starter) => (
@@ -557,13 +609,14 @@ export function NekoTranscript({
         ))}
         {session.pendingPermission ? (
           <PermissionCard
+            session={session}
             request={session.pendingPermission}
             resolving={session.resolvingPermissionId === session.pendingPermission.requestId}
             blockedByCancel={session.cancelPending}
             onResolve={onResolvePermission}
           />
         ) : null}
-        {session.status === "streaming" && !session.pendingPermission ? (
+        {session.status === "streaming" && !session.pendingPermission && !controlNotices.some((notice) => notice.kind === "cancel" || notice.kind === "unknown") ? (
           <p
             className="my-2 flex items-center gap-2 text-[12.5px] text-[var(--nk-text-3)]"
             data-testid="neko-working-state"
@@ -572,15 +625,7 @@ export function NekoTranscript({
             {streamingActivityLabel(session)}
           </p>
         ) : null}
-        {session.status === "error" ? (
-          <p className="my-2 text-[12.5px] text-[var(--nk-danger)]">{session.statusDetail}</p>
-        ) : null}
-        {session.status === "exited" && session.statusDetail ? (
-          <p className="my-2 text-[12.5px] text-[var(--nk-text-3)]">{session.statusDetail}</p>
-        ) : null}
-        {session.status === "idle" && session.statusDetail ? (
-          <p className="my-2 text-[12.5px] text-[var(--nk-warning)]">{session.statusDetail}</p>
-        ) : null}
+        <SessionControlStatus session={session} notices={controlNotices} />
         <div ref={bottomRef} />
       </div>
       </div>
@@ -595,8 +640,12 @@ export function NekoTranscript({
           type="button"
           className="absolute bottom-3 left-1/2 z-10 flex h-8 -translate-x-1/2 items-center gap-1.5 rounded-full border border-[var(--nk-border-strong)] bg-[var(--nk-composer)] px-3 text-[11px] font-medium text-[var(--nk-text-2)] shadow-sm transition-colors hover:bg-[var(--nk-raised)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--nk-focus-soft)]"
           onClick={() => {
-            setFollowingTail(true);
-            scrollToLatest("smooth");
+            updateFollowingTail(true);
+            const reducedMotion = typeof window.matchMedia === "function"
+              && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+            scrollToLatest(reducedMotion ? "auto" : "smooth");
+            // The button disappears; keep focus on a stable, scrollable target.
+            scrollRef.current?.focus({ preventScroll: true });
           }}
           aria-label="Đi tới tin nhắn mới nhất"
         >

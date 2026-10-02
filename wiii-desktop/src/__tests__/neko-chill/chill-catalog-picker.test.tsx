@@ -44,9 +44,9 @@ describe("ChillCatalogPicker", () => {
       />,
     );
     fireEvent.click(screen.getByRole("button", { name: "Chọn Harness" }));
-    fireEvent.change(screen.getByRole("textbox"), { target: { value: "zzz-nope" } });
+    fireEvent.change(screen.getByRole("combobox"), { target: { value: "zzz-nope" } });
     expect(screen.getByText("Không tìm thấy harness phù hợp.")).toBeTruthy();
-    fireEvent.change(screen.getByRole("textbox"), { target: { value: "" } });
+    fireEvent.change(screen.getByRole("combobox"), { target: { value: "" } });
     expect(screen.getByRole("option", { name: /Missing/i }).getAttribute("title")).toBe("Chưa sẵn sàng");
   });
 });

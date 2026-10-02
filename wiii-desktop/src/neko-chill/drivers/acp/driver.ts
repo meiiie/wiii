@@ -18,6 +18,20 @@ import type {
   TurnStopReason,
 } from "../types";
 import { APP_VERSION } from "../../../lib/constants";
+import { projectAcpFailure } from "./errors";
+import { executionCapability, projectNekoExecutionReceipt } from "./execution-projection";
+import {
+  assertNekoTaskCapability,
+  assertNekoTaskCurrentReceipt,
+  assertNekoTaskEventBinding,
+  buildNekoTaskEchoMeta,
+  buildNekoTaskLoadMeta,
+  buildNekoTaskNewMeta,
+  classifyFixedTaskCommand,
+  validateNekoTaskLoadReceipt,
+  validateNekoTaskNewReceipt,
+  type NekoTaskReceipt,
+} from "./task-protocol";
 import {
   AcpJsonRpcClient,
   UnsupportedMethodError,
@@ -39,6 +53,9 @@ import {
 
 export const ACP_PROTOCOL_VERSION = 1;
 
+// Client policy: silent scoped admission responses remain uncertain, never retried.
+export const ACP_SCOPED_ADMISSION_TIMEOUT_MS = 30_000;
+
 const STOP_REASONS: readonly TurnStopReason[] = [
   "end_turn",
   "max_tokens",
@@ -46,6 +63,16 @@ const STOP_REASONS: readonly TurnStopReason[] = [
   "refusal",
   "cancelled",
 ];
+
+export interface AcpTaskScopeOptions {
+  /** Already canonicalized and authorized by the native host, never by a receipt. */
+  readonly authorizedRoot: string;
+  readonly label: string;
+  readonly expectedReceipt?: NekoTaskReceipt;
+  /** Commit the work-item mapping durably before any event, prompt or approval admission. */
+  readonly onAdmitted: (sessionId: string, receipt: NekoTaskReceipt) => Promise<void>;
+  readonly onCloseOutcome?: (outcome: "acknowledged" | "uncertain") => Promise<void> | void;
+}
 
 interface AcpDriverOptions {
   /** Neko Chill session id — scopes every emitted event. */
@@ -58,6 +85,8 @@ interface AcpDriverOptions {
   onEvent: DriverEventHandler;
   /** Optional host-owned Computer capability; never provider launch authority. */
   computerBridge?: AgentComputerBridge;
+  /** Explicit Neko fixed-task lane; absent keeps the existing provider contract. */
+  taskScope?: AcpTaskScopeOptions;
 }
 
 /** Extract text from ACP content shapes: `"str"` or `{ type:"text", text }`. */
@@ -296,6 +325,14 @@ function normalizeCommands(value: unknown): DriverCommand[] {
   });
 }
 
+// Explicit bootstrap budgets: overflow fails admission instead of truncating history.
+export const ACP_ADMISSION_MAX_UPDATES = 256;
+export const ACP_ADMISSION_MAX_BYTES = 8 * 1024 * 1024;
+
+function inboundRecord(value: unknown): AcpRecord | null {
+  return value && typeof value === "object" && !Array.isArray(value) ? value as AcpRecord : null;
+}
+
 interface PendingPermission {
   resolve: (result: unknown) => void;
   /** Option ids the agent offered — decisions outside this set fail closed. */
@@ -327,8 +364,25 @@ export class AcpDriver implements Driver {
   private readonly emit: DriverEventHandler;
   private readonly client: AcpJsonRpcClient;
   private readonly computerBridge: AgentComputerBridge | null;
+  private readonly taskScope: AcpTaskScopeOptions | null;
+  private taskReceipt: NekoTaskReceipt | null = null;
+  private executionAdvertised: unknown;
+  private lastExecutionProjectionKey = "";
+  // Private cleanup correlation survives a failed mapping commit; it is not admission.
+  private cleanupSessionId: string | null = null;
+  private cleanupTaskReceipt: NekoTaskReceipt | null = null;
+  private scopeSessionRequested = false;
+  private admissionCommit: Promise<void> | null = null;
+  private scopedCloseWire: Promise<"acknowledged" | "uncertain"> | null = null;
+  private scopedCloseCommit: Promise<void> | null = null;
+  private scopedCloseUncertainProjected = false;
   private acpSessionId: string | null = null;
   private supportsClose = false;
+  private admission: "unstarted" | "starting" | "admitted" | "failed" = "unstarted";
+  private admissionUpdates: AcpRecord[] = [];
+  private admissionBytes = 0;
+  private admissionFailure: Error | null = null;
+  private rejectAdmission: ((error: Error) => void) | null = null;
   get backendSessionId(): string | null {
     return this.acpSessionId;
   }
@@ -353,14 +407,24 @@ export class AcpDriver implements Driver {
     this.resumeSessionId = options.resumeSessionId ?? null;
     this.emit = options.onEvent;
     this.computerBridge = options.computerBridge ?? null;
+    this.taskScope = options.taskScope ? Object.freeze({
+      ...options.taskScope,
+      ...(options.taskScope.expectedReceipt
+        ? { expectedReceipt: Object.freeze({ ...options.taskScope.expectedReceipt }) }
+        : {}),
+    }) : null;
+    if (this.taskScope) this.runtime.capabilities = this.runtime.capabilities.filter(capability => capability !== "session-config");
     this.client = new AcpJsonRpcClient(options.transport, {
       onAgentRequest: (method, params) => this.handleAgentRequest(method, params),
       onNotification: (method, params) => this.handleNotification(method, params),
-      onProtocolError: (message) =>
-        this.emitEvent({ type: "error", sessionId: this.sessionId, message, fatal: true }),
+      onProtocolError: (message) => {
+        if (!this.disposed) this.emitEvent({ type: "error", sessionId: this.sessionId, message, fatal: true });
+      },
     });
     options.transport.onExit((code, detail) => {
       this.disposed = true;
+      this.abortAdmission("agent process exited before session admission");
+      this.clearAdmissionUpdates();
       void this.revokeComputer().catch(() => {});
       this.emitEvent({
         type: "process-exited",
@@ -372,6 +436,54 @@ export class AcpDriver implements Driver {
   }
 
   async start(): Promise<void> {
+    if (this.disposed || this.admission !== "unstarted") throw new Error("driver start is not available");
+    this.admission = "starting";
+    const failed = new Promise<never>((_resolve, reject) => { this.rejectAdmission = reject; });
+    try {
+      await Promise.race([this.startSession(), failed]);
+      this.assertAdmitted();
+    } catch (error) {
+      this.admission = "failed";
+      this.acpSessionId = null;
+      this.clearAdmissionUpdates();
+      throw this.admissionFailure ?? error;
+    } finally {
+      this.rejectAdmission = null;
+    }
+  }
+
+  private assertAdmitted(): void {
+    if (this.disposed || this.admission !== "admitted") throw new Error("driver admission ended");
+  }
+
+  private assertStarting(): void {
+    if (this.admissionFailure) throw this.admissionFailure;
+    if (this.disposed || this.admission !== "starting") throw new Error("driver admission ended");
+  }
+
+  private clearAdmissionUpdates(): void {
+    this.admissionUpdates = [];
+    this.admissionBytes = 0;
+  }
+
+  private abortAdmission(message: string): void {
+    if (this.admission !== "starting") return;
+    this.admissionFailure = new Error(message);
+    this.admission = "failed";
+    this.clearAdmissionUpdates();
+    this.rejectAdmission?.(this.admissionFailure);
+  }
+
+  private async startSession(): Promise<void> {
+    const scope = this.taskScope;
+    if (scope && (typeof scope.onAdmitted !== "function"
+      || Boolean(this.resumeSessionId) !== Boolean(scope.expectedReceipt))) {
+      throw new Error("Phạm vi tác vụ Neko thiếu mapping hoặc receipt đã lưu; Wiii không tạo phiên thay thế.");
+    }
+    // Metadata construction validates the explicit label/saved receipt before a session request.
+    const taskMeta = scope
+      ? scope.expectedReceipt ? buildNekoTaskLoadMeta(scope.expectedReceipt) : buildNekoTaskNewMeta(scope.label)
+      : null;
     const signalInboxPreflight = this.computerBridge?.handles(WIII_SIGNAL_INBOX_AGENT_METHODS.consult)
       ? await this.computerBridge
           .handle(WIII_SIGNAL_INBOX_AGENT_METHODS.consult, { maxRefs: 8 })
@@ -386,6 +498,7 @@ export class AcpDriver implements Driver {
             unavailable: true,
           }))
       : null;
+    this.assertStarting();
     const init = (await this.client.request("initialize", {
       protocolVersion: ACP_PROTOCOL_VERSION,
       // v0 policy (PROTOCOL-NOTES): no client fs/terminal — every side effect
@@ -431,7 +544,8 @@ export class AcpDriver implements Driver {
         title: "Wiii · Neko Chill",
         version: APP_VERSION,
       },
-    })) as { protocolVersion?: unknown; agentCapabilities?: unknown };
+    }, scope ? ACP_SCOPED_ADMISSION_TIMEOUT_MS : undefined)) as { protocolVersion?: unknown; agentCapabilities?: unknown; _meta?: unknown };
+    this.assertStarting();
     // T602: version drift between agents (neko acp vs Gemini CLI) must be an
     // actionable error, not a stream of confusing protocol failures.
     if (
@@ -442,34 +556,63 @@ export class AcpDriver implements Driver {
         `Agent nói ACP v${init.protocolVersion}, Wiii cần v${ACP_PROTOCOL_VERSION} — hãy cập nhật agent hoặc Wiii.`,
       );
     }
+    if (scope) assertNekoTaskCapability(init);
+    this.executionAdvertised = scope ? executionCapability(init) : undefined;
     const capabilities = record(init?.agentCapabilities);
     const sessionCapabilities = record(capabilities?.sessionCapabilities);
     const canResume = capabilities?.loadSession === true && record(sessionCapabilities?.resume) !== null;
     this.supportsClose = record(sessionCapabilities?.close) !== null;
+    if (scope && !this.supportsClose) {
+      throw new Error("Agent Neko chưa công bố hỗ trợ đóng phiên task-scope; Wiii chưa cho phép gửi tác vụ.");
+    }
     if (this.resumeSessionId && !canResume) {
       throw new Error(
         "Phiên này có checkpoint ACP bền vững nhưng agent hiện tại không hỗ trợ session/resume; Wiii sẽ không âm thầm tạo phiên mới và làm mất ngữ cảnh.",
       );
     }
     const method = this.resumeSessionId ? "session/resume" : "session/new";
+    if (scope) this.scopeSessionRequested = true;
     const session = (await this.client.request(method, {
       ...(this.resumeSessionId ? { sessionId: this.resumeSessionId } : {}),
       cwd: this.cwd,
       // Neko refuses client-supplied MCP servers; Wiii never expands authority here.
       mcpServers: [],
-    })) as {
+      ...(taskMeta ? { _meta: taskMeta } : {}),
+    }, scope ? ACP_SCOPED_ADMISSION_TIMEOUT_MS : undefined)) as {
       sessionId?: unknown;
       configOptions?: unknown;
       modes?: unknown;
       models?: unknown;
+      _meta?: unknown;
     };
+    this.assertStarting();
+    if (!inboundRecord(session)) throw new Error(`${method} returned an invalid session result`);
+    if (this.resumeSessionId && session.sessionId !== undefined && session.sessionId !== this.resumeSessionId) {
+      throw new Error("session/resume returned a conflicting sessionId");
+    }
     const backendSessionId = method === "session/resume"
       ? this.resumeSessionId
       : session?.sessionId;
     if (typeof backendSessionId !== "string" || !backendSessionId) {
       throw new Error(`${method} returned no sessionId`);
     }
+    if (scope) {
+      const admitted = scope.expectedReceipt
+        ? validateNekoTaskLoadReceipt(session, { sessionId: backendSessionId,
+            authorizedRoot: scope.authorizedRoot, expected: scope.expectedReceipt })
+        : validateNekoTaskNewReceipt(session, { authorizedRoot: scope.authorizedRoot, label: scope.label });
+      this.cleanupSessionId = admitted.sessionId;
+      this.cleanupTaskReceipt = admitted.receipt;
+      this.admissionCommit = Promise.resolve().then(() => scope.onAdmitted(admitted.sessionId, admitted.receipt));
+      await this.admissionCommit;
+      // Dispose/overflow may win while durable mapping is being committed.
+      this.assertStarting();
+      this.taskReceipt = admitted.receipt;
+    }
+    this.cleanupSessionId = backendSessionId;
     this.acpSessionId = backendSessionId;
+    this.admission = "admitted";
+    this.projectExecution(session);
     this.runtime.contextContinuity = canResume ? "resumable" : "process";
     this.stableControls = normalizeConfigOptions(session.configOptions);
     this.legacyMode = normalizeLegacyMode(session.modes);
@@ -479,24 +622,56 @@ export class AcpDriver implements Driver {
       ...this.runtime.observedProviderCapabilities,
       resume: canResume,
     };
+    const buffered = this.admissionUpdates;
+    this.clearAdmissionUpdates();
+    for (const params of buffered) this.handleNotification("session/update", params);
   }
 
-  async prompt(text: string): Promise<void> {
+  async prompt(text: string, context?: { promptEventId: string }): Promise<void> {
+    this.assertAdmitted();
     if (!this.acpSessionId || this.disposed) throw new Error("driver not available");
+    if (classifyFixedTaskCommand(text, this.taskScope !== null)) {
+      throw new Error("Phiên Neko này gắn với một tác vụ cố định. Hãy chọn hoặc tạo luồng Wiii khác để đổi tác vụ.");
+    }
+    if (this.taskScope && !this.taskReceipt) throw new Error("Task receipt chưa được nhận; Wiii chưa gửi prompt.");
+    const promptReceipt = this.taskReceipt;
     if (this.turnRunning) throw new Error("a turn is already running");
     this.turnRunning = true;
+    // UI correlation only: never sent to ACP or used as agent authority.
+    const presentation = context ? { promptEventId: context.promptEventId } : {};
     const authority = new AbortController();
     this.turnAuthority = authority;
     let stopReason: TurnStopReason = "error";
     try {
       await this.computerCleanup;
       authority.signal.throwIfAborted();
+      this.assertAdmitted();
       if (this.disposed) throw new Error("driver not available");
-      this.emitEvent({ type: "turn-started", sessionId: this.sessionId });
+      this.emitEvent({ type: "turn-started", sessionId: this.sessionId, ...presentation });
       const result = (await this.client.request("session/prompt", {
         sessionId: this.acpSessionId,
         prompt: [{ type: "text", text }],
-      })) as { stopReason?: unknown };
+        ...(promptReceipt ? { _meta: buildNekoTaskEchoMeta(promptReceipt) } : {}),
+      })) as { stopReason?: unknown; _meta?: unknown };
+      if (promptReceipt) {
+        try {
+          this.assertAdmitted();
+          assertNekoTaskCurrentReceipt(result, promptReceipt);
+        } catch (error) {
+          // A correlated prompt response with an unverified task cannot be
+          // treated as a canonical terminal or admit another prompt.
+          this.admission = "failed";
+          this.acpSessionId = null;
+          // Revoke any still-pending scoped approval with the failed binding;
+          // a late UI decision must not authorize work in an unverified task.
+          for (const pending of this.pendingPermissions.values()) {
+            pending.resolve({ outcome: { outcome: "cancelled" } });
+          }
+          this.pendingPermissions.clear();
+          throw error;
+        }
+      }
+      this.projectExecution(result);
       stopReason = STOP_REASONS.includes(result?.stopReason as TurnStopReason)
         ? (result.stopReason as TurnStopReason)
         : "error";
@@ -504,8 +679,8 @@ export class AcpDriver implements Driver {
       this.emitEvent({
         type: "error",
         sessionId: this.sessionId,
-        message: err instanceof Error ? err.message : String(err),
-        fatal: false,
+        ...projectAcpFailure(err),
+        fatal: this.taskScope !== null && this.admission === "failed",
       });
     } finally {
       let cleanupSucceeded = false;
@@ -518,8 +693,11 @@ export class AcpDriver implements Driver {
           message: error instanceof Error ? error.message : String(error) });
       } finally {
         this.turnRunning = false;
-        if (cleanupSucceeded) {
-          this.emitEvent({ type: "turn-finished", sessionId: this.sessionId, stopReason });
+        // A local authority cleanup does not certify a terminal for an
+        // unverified task response. Preserve the fatal fault until explicit
+        // close/recovery; legacy/provider error semantics remain unchanged.
+        if (cleanupSucceeded && !(this.taskScope && this.admission === "failed")) {
+          this.emitEvent({ type: "turn-finished", sessionId: this.sessionId, stopReason, ...presentation });
         }
       }
     }
@@ -530,7 +708,9 @@ export class AcpDriver implements Driver {
     const cleanup = this.revokeComputer();
     await Promise.all([
       cleanup,
-      this.client.notify("session/cancel", { sessionId: this.acpSessionId }),
+      this.client.notify("session/cancel", { sessionId: this.acpSessionId,
+        ...(this.taskReceipt ? { _meta: buildNekoTaskEchoMeta(this.taskReceipt) } : {}),
+      }),
     ]);
   }
 
@@ -547,8 +727,12 @@ export class AcpDriver implements Driver {
 
   async resolvePermission(decision: PermissionDecision): Promise<void> {
     const pending = this.pendingPermissions.get(decision.requestId);
-    if (!pending) return; // already resolved or unknown — nothing to approve
+    if (!pending) return; // already resolved or unknown - nothing to approve
     this.pendingPermissions.delete(decision.requestId);
+    if (this.taskScope && (this.disposed || this.admission !== "admitted")) {
+      pending.resolve({ outcome: { outcome: "cancelled" } });
+      return;
+    }
     // Fail closed (FR-006): null or an option the agent never offered → cancelled.
     if (decision.optionId !== null && pending.offered.has(decision.optionId)) {
       pending.resolve({ outcome: { outcome: "selected", optionId: decision.optionId } });
@@ -558,6 +742,7 @@ export class AcpDriver implements Driver {
   }
 
   async setConfigOption(optionId: string, value: string | boolean): Promise<void> {
+    if (this.taskScope) throw new Error("Cấu hình của tác vụ Neko đã được cố định khi mở phiên; hãy dùng một luồng mới để đổi cấu hình.");
     if (!this.acpSessionId) throw new Error("driver not started");
     if (this.turnRunning) throw new Error("cannot change session controls while a turn is running");
     const route = this.controlRoutes.get(optionId);
@@ -607,7 +792,12 @@ export class AcpDriver implements Driver {
   }
 
   async dispose(): Promise<void> {
+    // Keep close correlation even if a concurrent failed start clears admission.
+    const closingSessionId = this.cleanupSessionId ?? this.acpSessionId;
+    const closingReceipt = this.cleanupTaskReceipt;
     this.disposed = true;
+    this.abortAdmission("driver disposed before session admission");
+    this.clearAdmissionUpdates();
     // Unanswered permission requests fail closed before the process dies.
     for (const [, pending] of this.pendingPermissions) {
       pending.resolve({ outcome: { outcome: "cancelled" } });
@@ -616,14 +806,55 @@ export class AcpDriver implements Driver {
     await this.revokeComputer().catch(() => {
       /* Native runtime cleanup still wins if the display lease is already gone. */
     });
-    if (this.acpSessionId && this.supportsClose) {
-      await this.client
-        .request("session/close", { sessionId: this.acpSessionId }, 1_000)
-        .catch(() => {
-          /* A crashed or legacy agent may not answer; transport cleanup still wins. */
-        });
+    let closeOutcome: "acknowledged" | "uncertain" = "uncertain";
+    if (this.taskScope) {
+      // RuntimeScope may retry process cleanup or a failed mapping write.
+      // Reuse the first close transaction; never replay a close RPC or turn a
+      // receipt-validated ACK into uncertainty through an already disposed client.
+      this.scopedCloseWire ??= (async () => {
+        if (!closingSessionId || !closingReceipt || !this.supportsClose) return "uncertain" as const;
+        try {
+          const result = await this.client.request("session/close", { sessionId: closingSessionId,
+            _meta: buildNekoTaskEchoMeta(closingReceipt),
+          }, 1_000);
+          assertNekoTaskCurrentReceipt(result, closingReceipt);
+          return "acknowledged" as const;
+        } catch { return "uncertain" as const; }
+      })();
+      closeOutcome = await this.scopedCloseWire;
+    } else if (closingSessionId && this.supportsClose) {
+      try {
+        await this.client.request("session/close", { sessionId: closingSessionId }, 1_000);
+        closeOutcome = "acknowledged";
+      } catch {
+        // A timeout/lost/mismatched task response is not an ACK. Never unlink a
+        // writer lock, replace a mapping, or replay from this transport cleanup.
+      }
     }
-    await this.client.dispose();
+    if (this.taskScope && this.scopeSessionRequested && closeOutcome === "uncertain" && !this.scopedCloseUncertainProjected) {
+      this.scopedCloseUncertainProjected = true;
+      this.emitEvent({ type: "error", sessionId: this.sessionId,
+        message: "Chưa xác nhận runtime đã đóng tác vụ Neko. Wiii giữ mapping và cần phục hồi rõ ràng trước khi tiếp tục.", fatal: false });
+    }
+    // Stop the owned process before waiting for a possibly delayed mapping write.
+    // A close ACK only confirms Neko's task close, not external-effect rollback.
+    let transportFailure: unknown;
+    try { await this.client.dispose(); } catch (error) { transportFailure = error; }
+    await this.admissionCommit?.catch(() => {});
+    let outcomeFailure: unknown;
+    if (this.taskScope && this.scopeSessionRequested) {
+      const scope = this.taskScope;
+      const commit = this.scopedCloseCommit ??= Promise.resolve().then(() => scope.onCloseOutcome?.(closeOutcome));
+      try { await commit; }
+      catch (error) {
+        // Only a subsequent explicit cleanup retry may retry this durable write;
+        // it retains the original wire outcome and does not send another close.
+        if (this.scopedCloseCommit === commit) this.scopedCloseCommit = null;
+        outcomeFailure = error;
+      }
+    }
+    if (transportFailure) throw transportFailure;
+    if (outcomeFailure) throw outcomeFailure;
   }
 
   // -------------------------------------------------------------------- //
@@ -640,7 +871,7 @@ export class AcpDriver implements Driver {
 
   private rebuildControls(): void {
     const categories = new Set(this.stableControls.map((option) => option.category));
-    this.controls = [
+    this.controls = this.taskScope ? [] : [
       ...this.stableControls,
       ...(this.legacyMode && !categories.has("mode") ? [this.legacyMode] : []),
       ...(this.legacyModel && !categories.has("model") ? [this.legacyModel] : []),
@@ -653,7 +884,7 @@ export class AcpDriver implements Driver {
       reasoning: this.controls.some((control) => control.category === "thought_level"),
     };
     this.controlRoutes.clear();
-    for (const option of this.stableControls) {
+    for (const option of this.taskScope ? [] : this.stableControls) {
       this.controlRoutes.set(option.id, { kind: "config", wireId: option.id.slice(7) });
     }
     if (this.controls.some((option) => option.id === "mode")) {
@@ -672,11 +903,47 @@ export class AcpDriver implements Driver {
     });
   }
 
-  private handleNotification(method: string, params: unknown): void {
-    if (method !== "session/update") return;
-    const update = (params as { update?: Record<string, unknown> })?.update;
-    if (!update || typeof update !== "object") return;
+  private projectExecution(envelope: unknown): void {
+    if (!this.taskScope || !this.taskReceipt || !this.acpSessionId || this.disposed || this.admission !== "admitted") return;
+    const projection = projectNekoExecutionReceipt(envelope, this.taskReceipt, this.executionAdvertised);
+    const key = JSON.stringify(projection);
+    if (key === this.lastExecutionProjectionKey) return;
+    this.lastExecutionProjectionKey = key;
+    this.emitEvent({ type: "neko-execution-info", sessionId: this.sessionId,
+      backendSessionId: this.acpSessionId, projection });
+  }
 
+  private handleNotification(method: string, params: unknown): void {
+    if (method !== "session/update" || this.disposed) return;
+    const envelope = inboundRecord(params);
+    const sessionId = envelope?.sessionId;
+    const update = inboundRecord(envelope?.update);
+    if (typeof sessionId !== "string" || !sessionId || !update || typeof update.sessionUpdate !== "string") return;
+    if (this.admission === "starting") {
+      if (this.resumeSessionId && sessionId !== this.resumeSessionId) return;
+      // Retain the outer receipt too; update._meta is a different ACP namespace.
+      const buffered = { sessionId, update, ...(envelope?._meta !== undefined ? { _meta: envelope._meta } : {}) };
+      const bytes = new TextEncoder().encode(JSON.stringify(buffered)).byteLength;
+      if (this.admissionUpdates.length >= ACP_ADMISSION_MAX_UPDATES || this.admissionBytes + bytes > ACP_ADMISSION_MAX_BYTES) {
+        this.admissionFailure = new Error("Dữ liệu khởi tạo ACP vượt giới hạn an toàn; phiên chưa được nhận, không tự gửi lại yêu cầu.");
+        this.admission = "failed";
+        this.clearAdmissionUpdates();
+        this.emitEvent({ type: "error", sessionId: this.sessionId, message: this.admissionFailure.message, fatal: true });
+        this.rejectAdmission?.(this.admissionFailure);
+        return;
+      }
+      this.admissionBytes += bytes;
+      this.admissionUpdates.push(buffered);
+      return;
+    }
+    if (this.admission !== "admitted" || sessionId !== this.acpSessionId) return;
+    if (this.taskScope) {
+      if (!this.taskReceipt) return;
+      try { assertNekoTaskEventBinding(envelope, this.acpSessionId, this.taskReceipt); }
+      catch { return; } // Foreign/stale/unbound events never enter projection or activity caches.
+    }
+
+    this.projectExecution(envelope);
     switch (update.sessionUpdate) {
       case "available_commands_update": {
         const commands = normalizeCommands(update.availableCommands);
@@ -814,6 +1081,16 @@ export class AcpDriver implements Driver {
       return pending;
     }
     if (method === "session/request_permission") {
+      const sessionId = inboundRecord(params)?.sessionId;
+      if (this.disposed || this.admission !== "admitted" || typeof sessionId !== "string" || !sessionId || sessionId !== this.acpSessionId) {
+        return Promise.resolve({ outcome: { outcome: "cancelled" } });
+      }
+      if (this.taskScope) {
+        if (!this.taskReceipt) return Promise.resolve({ outcome: { outcome: "cancelled" } });
+        try { assertNekoTaskEventBinding(params, this.acpSessionId, this.taskReceipt); }
+        catch { return Promise.resolve({ outcome: { outcome: "cancelled" } }); }
+      }
+      this.projectExecution(params);
       return new Promise((resolve) => {
         const p = params as {
           toolCall?: { toolCallId?: unknown; title?: unknown };

@@ -1,4 +1,6 @@
 export interface WorkspaceRef {
+  /** Presentation metadata only; never grants filesystem authority. */
+  kind?: "scratch";
   path: string;
   name: string;
 }

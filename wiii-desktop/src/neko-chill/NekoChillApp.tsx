@@ -1,3 +1,4 @@
+import { NekoRuntimeScope } from "./NekoRuntimeScope";
 /** Neko Chill desktop-agent shell: projects -> sessions -> active runtime. */
 import {
   lazy,
@@ -34,14 +35,14 @@ import { useNekoAgentStore } from "./stores/neko-agent-store";
 import { useNekoProviderSessionStore } from "./stores/neko-provider-session-store";
 import type { NekoProviderSessionRecord } from "@/neko/contracts";
 import {
-  disposeAllNekoRuntimes,
-  startIdleReaper,
   useNekoSessionStore,
 } from "./stores/neko-session-store";
 import { NEKO_SESSION_STATUS_LABELS } from "./session-status";
 import { sessionStatusDotClass } from "./session-catalog";
 import { NekoTranscript } from "./components/NekoTranscript";
 import { NekoComposer, nekoComposerTurnBusy } from "./components/NekoComposer";
+import { NekoOutbox } from "./components/NekoOutbox";
+import { enqueueSessionMessage, useNekoOutboxStore } from "./stores/neko-outbox-store";
 import { NekoOverview } from "./components/NekoOverview";
 import { ProjectHome, type NekoTaskLaunchRequest } from "./components/ProjectHome";
 import { ProjectDialog } from "./components/ProjectDialog";
@@ -71,6 +72,7 @@ import {
 import type { ComposerInsertRequest } from "./components/NekoComposer";
 import {
   chooseWorkspaceFolder,
+  createQuickChatWorkspace,
   isAbsoluteWorkspacePath,
   type WorkspaceRef,
   workspaceFromPath,
@@ -411,7 +413,11 @@ function LiveNekoTranscript({
 
 const NEKO_CHILL_OPEN_MANAGED_NOOP = () => {};
 
-export default function NekoChillApp({
+export default function NekoChillApp(props: ComponentProps<typeof NekoChillScreen>) {
+  return <NekoRuntimeScope><NekoChillScreen {...props} /></NekoRuntimeScope>;
+}
+
+function NekoChillScreen({
   onOpenManaged = NEKO_CHILL_OPEN_MANAGED_NOOP,
   onOpenConnections,
   onOpenWork = () => {},
@@ -478,11 +484,17 @@ export default function NekoChillApp({
   const importProviderSession = useNekoSessionStore((state) => state.importProviderSession);
   const setActiveSession = useNekoSessionStore((state) => state.setActiveSession);
   const setConfigOption = useNekoSessionStore((state) => state.setConfigOption);
+  const queuedCount = useNekoOutboxStore(state => state.snapshot.queues.find(q => q.sessionId === activeSessionId)?.items.length ?? 0);
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [inspectorOpen, setInspectorOpen] = useState(false);
   const [commandCenterOpen, setCommandCenterOpen] = useState(false);
   const workspaceToggleRef = useRef<HTMLButtonElement>(null);
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
+  const [quickChatPending, setQuickChatPending] = useState(false);
+  const [quickChatError, setQuickChatError] = useState<string | null>(null);
+  const quickChatInFlight = useRef(false);
+  const navigationRevision = useRef(0);
+  useEffect(() => () => { navigationRevision.current += 1; }, []);
   const [coworkerHomeOpen, setCoworkerHomeOpen] = useState(false);
   const [projectDialog, setProjectDialog] = useState<"create" | string | null>(null);
   const [projectHomeResetToken, setProjectHomeResetToken] = useState(0);
@@ -616,17 +628,12 @@ export default function NekoChillApp({
     void detect("neko");
     void hydrate();
     void hydrateProjects();
-    const stopIdleReaper = startIdleReaper();
-    return () => {
-      stopIdleReaper();
-      void disposeAllNekoRuntimes();
-    };
   }, [detect, hydrate, hydrateProjects]);
 
   useEffect(() => {
     if (!hydrated || !projectsHydrated) return;
     const workspaces = Object.values(useNekoSessionStore.getState().sessions)
-      .flatMap((item) => item.workspace ? [item.workspace] : []);
+      .flatMap((item) => item.workspace && item.workspace.kind !== "scratch" ? [item.workspace] : []);
     void ensureWorkspaceProjects(workspaces);
   }, [ensureWorkspaceProjects, hydrated, knownWorkspaceKey, projectsHydrated]);
 
@@ -763,6 +770,8 @@ export default function NekoChillApp({
   };
 
   const showOverview = useCallback(() => {
+    navigationRevision.current += 1;
+    setQuickChatError(null);
     setActiveSession(null);
     setSelectedProjectId(null);
     setCoworkerHomeOpen(false);
@@ -770,6 +779,8 @@ export default function NekoChillApp({
   }, [compactSidebar, setActiveSession]);
 
   const showCoworkerHome = useCallback(() => {
+    navigationRevision.current += 1;
+    setQuickChatError(null);
     setActiveSession(null);
     setSelectedProjectId(null);
     setCoworkerHomeOpen(true);
@@ -777,6 +788,8 @@ export default function NekoChillApp({
   }, [compactSidebar, setActiveSession]);
 
   const selectProject = useCallback((projectId: string) => {
+    navigationRevision.current += 1;
+    setQuickChatError(null);
     setActiveSession(null);
     setCoworkerHomeOpen(false);
     setSelectedProjectId(projectId);
@@ -785,6 +798,8 @@ export default function NekoChillApp({
   }, [compactSidebar, setActiveSession]);
 
   const openSession = useCallback((sessionId: string, projectId: string | null) => {
+    navigationRevision.current += 1;
+    setQuickChatError(null);
     markWiiiPerformance("wiii:session:switch-start");
     setCoworkerHomeOpen(false);
     setSelectedProjectId(projectId);
@@ -798,13 +813,15 @@ export default function NekoChillApp({
   }, [openSession]);
 
   const handleNewSession = useCallback(() => {
+    navigationRevision.current += 1;
+    setQuickChatError(null);
     if (compactSidebar) setSidebarOpen(false);
     const latestSession = [...sessions]
       .sort((left, right) => right.updatedAt - left.updatedAt)
-      .find((item) => item.workspace);
-    const target = selectedProject
+      .find((item) => item.workspace && item.workspace.kind !== "scratch");
+    const target = (selectedProject?.roots[0]?.kind !== "scratch" ? selectedProject : null)
       ?? (latestSession ? projectForSession(projects, latestSession) : null)
-      ?? [...projects].sort((left, right) => right.updatedAt - left.updatedAt)[0]
+      ?? projects.filter(project => project.roots[0]?.kind !== "scratch").sort((left, right) => right.updatedAt - left.updatedAt)[0]
       ?? null;
     setActiveSession(null);
     setCoworkerHomeOpen(false);
@@ -816,7 +833,34 @@ export default function NekoChillApp({
     setProjectHomeResetToken((value) => value + 1);
   }, [compactSidebar, projects, selectedProject, sessions, setActiveSession]);
 
-  const openProjectDialog = useCallback(() => setProjectDialog("create"), []);
+  const startQuickChat = useCallback(async () => {
+    if (quickChatInFlight.current) return;
+    quickChatInFlight.current = true;
+    const revision = ++navigationRevision.current;
+    setQuickChatPending(true);
+    setQuickChatError(null);
+    try {
+      const workspace = await createQuickChatWorkspace();
+      if (revision !== navigationRevision.current) return;
+      // Persist the private working-folder identity so an unsent draft remains discoverable.
+      const projectId = await useNekoProjectStore.getState().createProject("Chat riêng", [workspace]);
+      if (revision !== navigationRevision.current) return;
+      setActiveSession(null);
+      setCoworkerHomeOpen(false);
+      setSelectedProjectId(projectId);
+      if (compactSidebar) setSidebarOpen(false);
+    } catch (error) {
+      if (revision === navigationRevision.current) setQuickChatError(error instanceof Error ? error.message : String(error));
+    } finally {
+      quickChatInFlight.current = false;
+      setQuickChatPending(false);
+    }
+  }, [compactSidebar, setActiveSession]);
+
+  const openProjectDialog = useCallback(() => {
+    navigationRevision.current += 1;
+    setProjectDialog("create");
+  }, []);
   const openCommandCenter = useCallback(() => {
     markWiiiPerformance("wiii:command:open-start");
     setCommandCenterOpen(true);
@@ -931,6 +975,9 @@ export default function NekoChillApp({
       onShowOverview={showOverview}
       onShowCoworker={showCoworkerHome}
       onNewSession={handleNewSession}
+      onQuickChat={() => void startQuickChat()}
+      quickChatPending={quickChatPending}
+      quickChatError={quickChatError}
       onCreateProject={openProjectDialogFromSidebar}
       onSelectProject={selectProject}
       onEditProject={editProjectFromSidebar}
@@ -1016,7 +1063,7 @@ export default function NekoChillApp({
                     aria-label={inspectorOpen ? "Ẩn thông tin phiên" : "Mở thông tin phiên"} aria-pressed={inspectorOpen} title="Thông tin phiên"
                     onClick={() => { if (!inspectorOpen) closeWorkspace(session.id); setInspectorOpen((value) => !value); }}><Info size={15} aria-hidden="true" /></button>}
                   {session && session.status !== "exited" && session.status !== "stopping" && (session.status !== "error" || session.runtime !== null) && (
-                    <button type="button" className="nk-chrome-button flex h-8 items-center gap-1.5 rounded-md px-2 text-[11.5px] text-[var(--nk-text-3)]" onClick={() => void closeSession(session.id)}><Power size={13} aria-hidden="true" />Kết thúc</button>
+                    <button type="button" className="nk-chrome-button flex h-8 items-center gap-1.5 rounded-md px-2 text-[11.5px] text-[var(--nk-text-3)]" title="Yêu cầu dừng agent và đóng phiên. Lịch sử vẫn được giữ." onClick={() => void closeSession(session.id)}><Power size={13} aria-hidden="true" />Kết thúc phiên</button>
                   )}
                   {titleWorkspaceToggle}
                 </div>
@@ -1041,6 +1088,7 @@ export default function NekoChillApp({
                 onResolvePermission={(optionId) => void resolvePermission(optionId)}
                 onInsertPrompt={insertIntoComposer}
               />
+              <div className="shrink-0 px-5"><NekoOutbox key={session.id} sessionId={session.id} /></div>
               <NekoComposer
                 key={session.id}
                 session={session}
@@ -1048,6 +1096,8 @@ export default function NekoChillApp({
                 streaming={nekoComposerTurnBusy(session.status)}
                 onSend={(text, onAccepted) => sendPrompt(text, onAccepted)}
                 onCancel={() => void cancelTurn()}
+                onQueue={(text) => enqueueSessionMessage(session.id, text)}
+                queuedCount={queuedCount}
                 onSetConfigOption={(optionId, value) => void setConfigOption(optionId, value)}
                 onClientCommand={handleClientCommand}
                 insertRequest={insertRequest}
@@ -1118,7 +1168,7 @@ export default function NekoChillApp({
                         showOverview();
                         setHarnessFocusRequest((value) => value + 1);
                       }}
-                      onEditProject={selectedProject
+                      onEditProject={selectedProject && selectedProject.roots[0]?.kind !== "scratch"
                         ? () => setProjectDialog(selectedProject.id)
                         : undefined}
                     />

@@ -1,6 +1,6 @@
 /* Markdown content styling */
 .markdown-content {
-  font-family: var(--font-serif);
+  font-family: var(--font-body);
   font-size: 16px;
   line-height: 1.85;
   color: var(--text);
@@ -130,4 +130,40 @@
 
 .thinking-markdown .markdown-content p {
   margin-bottom: 0.25rem;
+}
+
+.wiii-code-block__viewport {
+  max-height: 24rem;
+  max-width: 100%;
+  overflow: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+}
+
+.wiii-code-block__viewport:focus-visible,
+.wiii-code-block button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+.wiii-code-block__viewport pre {
+  margin: 0;
+  width: max-content;
+  min-width: 100%;
+  overflow: visible;
+  white-space: pre;
+  font-family: var(--font-mono);
+  font-size: 13px;
+  line-height: 1.7;
+  tab-size: 2;
+}
+
+.wiii-code-block__viewport code {
+  white-space: inherit;
+}
+
+.wiii-code-block[data-wrap="true"] .wiii-code-block__viewport pre {
+  width: 100%;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
 }
