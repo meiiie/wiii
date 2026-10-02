@@ -109,8 +109,8 @@ def render_sidebar(mascot: Image.Image) -> None:
         fill=(126, 124, 118),
     )
     draw.text(
-        (centered_x(draw, "VERSION 1.2.0", small_font, width), 289),
-        "VERSION 1.2.0",
+        (centered_x(draw, "VERSION 1.3.0", small_font, width), 289),
+        "VERSION 1.3.0",
         font=small_font,
         fill=(92, 91, 87),
     )

@@ -440,6 +440,14 @@ jobs:
           notes_source="$(find artifacts/platforms -type f -name release-notes.md -print -quit)"
           [[ -n "$notes_source" ]] || { echo 'Release notes are missing.' >&2; exit 1; }
           cp "$notes_source" artifacts/publish-release-notes.md
+          {
+            echo
+            echo '## Included runtime'
+            echo
+            echo 'Neko Core is bundled with this Wiii installer and verified against pinned runtime metadata.'
+            echo 'A separate CLI installation is not required. Provider account configuration may still be needed.'
+            echo 'Bundled Neko updates are delivered with Wiii; the optional Computer pilot requires Docker Desktop.'
+          } >> artifacts/publish-release-notes.md
           if [[ "$WIII_WINDOWS_SIGNING" == 'unsigned' ]]; then
             {
               echo
@@ -447,7 +455,6 @@ jobs:
               echo
               echo 'This official release has no Windows publisher certificate. The Windows installer is explicitly unsigned.'
               echo 'Windows SmartScreen may warn or block installation. Verify SHA-256 and provenance; do not disable OS protection globally.'
-              echo 'Neko Core requires separate installation and account configuration; the optional Computer pilot requires Docker Desktop.'
             } >> artifacts/publish-release-notes.md
           fi
           if [[ "$RELEASE_SCOPE_VALUE" == 'windows' ]]; then
