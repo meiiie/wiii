@@ -8,6 +8,7 @@ on:
       - 'tools/release/**'
       - 'docs/releases/**'
       - 'wiii-desktop/src-tauri/tauri.conf.json'
+      - 'wiii-desktop/src-tauri/tauri.*.conf.json'
       - 'VERSION'
       - 'CHANGELOG.md'
   workflow_dispatch:

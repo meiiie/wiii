@@ -837,6 +837,34 @@ pub struct ResolvedProvider {
     pub version: Option<String>,
 }
 
+/// Reject executable-name collisions such as the unrelated Linux `neko`
+/// remote-desktop server. This checks the public CLI output contract, not
+/// publisher identity; executable provenance still belongs to installation.
+fn validated_probe_version(
+    provider: ProviderDefinition,
+    stdout: &[u8],
+) -> io::Result<Option<String>> {
+    let text = String::from_utf8_lossy(stdout);
+    let version = text.trim();
+    if provider.id == "neko" {
+        let valid = version.strip_prefix("neko-core ").is_some_and(|number| {
+            !number.is_empty()
+                && number.len() <= 96
+                && number.as_bytes()[0].is_ascii_digit()
+                && number
+                    .bytes()
+                    .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'-' | b'+'))
+        });
+        if !valid {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "provider version response did not identify Neko Core; expected neko-core <version>",
+            ));
+        }
+    }
+    Ok((!version.is_empty()).then(|| version.to_string()))
+}
+
 fn probe_definition(
     provider: ProviderDefinition,
 ) -> Result<Option<ResolvedProvider>, SpawnOwnedError> {
@@ -851,43 +879,66 @@ fn probe_definition(
                 )
                 .into());
             }
-            let version = String::from_utf8_lossy(&output.stdout).trim().to_string();
+            let version = validated_probe_version(provider, &output.stdout)
+                .map_err(SpawnOwnedError::after_proven_cleanup)?;
             return Ok(Some(ResolvedProvider {
                 definition: provider,
                 program,
-                version: (!version.is_empty()).then_some(version),
+                version,
             }));
         }
     }
+    probe_installed_candidates(
+        provider,
+        provider
+            .candidates()
+            .iter()
+            .flat_map(|name| candidate_paths(name)),
+    )
+}
+
+// Keep installed-candidate selection separate from bundled precedence. Taking
+// resolved paths also lets tests exercise real probes without mutating PATH.
+fn probe_installed_candidates(
+    provider: ProviderDefinition,
+    programs: impl IntoIterator<Item = PathBuf>,
+) -> Result<Option<ResolvedProvider>, SpawnOwnedError> {
     let mut last_failure = None;
-    for candidate in provider.candidates() {
-        for program in candidate_paths(candidate) {
-            let mut command = Command::new(&program);
-            command.arg(provider.version_arg);
-            let timeout = if provider.id == "neko" {
-                NEKO_STARTUP_TIMEOUT
-            } else {
-                PROBE_TIMEOUT
-            };
-            match run_probe_with_timeout(command, timeout) {
-                Ok(output) if output.status.success() => {
-                    let version = String::from_utf8_lossy(&output.stdout).trim().to_string();
-                    return Ok(Some(ResolvedProvider {
-                        definition: provider,
-                        program,
-                        version: (!version.is_empty()).then_some(version),
-                    }));
-                }
-                Err(error) if error.cleanup_unproven() || error.post_spawn_cleanup_proven() => {
-                    return Err(error);
-                }
-                Ok(_) => {
-                    return Err(SpawnOwnedError::after_proven_cleanup(io::Error::other(
-                        "provider version check exited unsuccessfully",
-                    )));
-                }
-                Err(error) => last_failure = Some(error),
+    for program in programs {
+        let mut command = Command::new(&program);
+        command.arg(provider.version_arg);
+        let timeout = if provider.id == "neko" {
+            NEKO_STARTUP_TIMEOUT
+        } else {
+            PROBE_TIMEOUT
+        };
+        match run_probe_with_timeout(command, timeout) {
+            Ok(output) if output.status.success() => {
+                let version = match validated_probe_version(provider, &output.stdout) {
+                    Ok(version) => version,
+                    Err(error) => {
+                        // The bounded probe exited and cleanup was proven. A
+                        // same-name program must not hide a valid later PATH
+                        // candidate or become eligible for profiles/ACP.
+                        last_failure = Some(SpawnOwnedError::after_proven_cleanup(error));
+                        continue;
+                    }
+                };
+                return Ok(Some(ResolvedProvider {
+                    definition: provider,
+                    program,
+                    version,
+                }));
             }
+            Err(error) if error.cleanup_unproven() || error.post_spawn_cleanup_proven() => {
+                return Err(error);
+            }
+            Ok(_) => {
+                return Err(SpawnOwnedError::after_proven_cleanup(io::Error::other(
+                    "provider version check exited unsuccessfully",
+                )));
+            }
+            Err(error) => last_failure = Some(error),
         }
     }
     match last_failure {
@@ -1080,6 +1131,150 @@ pub fn profiles(provider_id: &str, cwd: &str) -> Result<Vec<AgentProfile>, Strin
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn neko_version_accepts_the_branded_cli_contract() {
+        let provider = definition("neko").unwrap();
+        for output in [
+            "neko-core 1.5.1\n",
+            "neko-core 1.7.0\n",
+            "neko-core 1.8.0-rc.1+build.2\r\n",
+        ] {
+            assert_eq!(
+                validated_probe_version(provider, output.as_bytes()).unwrap(),
+                Some(output.trim().to_string()),
+            );
+        }
+    }
+
+    #[test]
+    fn neko_version_rejects_same_name_programs_and_unstructured_output() {
+        let provider = definition("neko").unwrap();
+        for output in [
+            "",
+            "2.9.0",
+            "NekoVM 2.4.1",
+            "\x1b[34m nurdism/m1k1o server v2.9.0\nVersion v2.9.0",
+            "neko-core ",
+            "neko-core v1.7.0",
+            "neko-core 1.7.0\nprivate output",
+            "neko-core 1.7.0 --unexpected",
+            "neko-core 1.7.0\0",
+            "neko-core 1.7.0\u{1b}[0m",
+        ] {
+            let error = validated_probe_version(provider, output.as_bytes()).unwrap_err();
+            assert_eq!(error.kind(), io::ErrorKind::InvalidData);
+            assert!(!error.to_string().contains("private output"));
+            assert!(!error.to_string().contains("nurdism"));
+        }
+        let oversized = format!("neko-core 1{}", "0".repeat(96));
+        assert!(validated_probe_version(provider, oversized.as_bytes()).is_err());
+    }
+
+    #[test]
+    fn other_provider_version_contracts_are_unchanged() {
+        let provider = definition("codex").unwrap();
+        assert_eq!(
+            validated_probe_version(provider, b"codex-cli 0.1.0\n").unwrap(),
+            Some("codex-cli 0.1.0".into()),
+        );
+        assert_eq!(validated_probe_version(provider, b"\n").unwrap(), None);
+    }
+
+    #[cfg(target_os = "linux")]
+    mod installed_candidate_tests {
+        use super::*;
+        use std::os::unix::fs::PermissionsExt;
+
+        struct Fixture(PathBuf);
+
+        impl Fixture {
+            fn new() -> Self {
+                let directory = std::env::temp_dir()
+                    .join(format!("wiii-provider-test-{}", uuid::Uuid::new_v4()));
+                std::fs::create_dir(&directory).unwrap();
+                Self(directory)
+            }
+
+            fn executable(&self, name: &str, body: &str) -> PathBuf {
+                let path = self.0.join(name);
+                std::fs::write(&path, format!("#!/bin/sh\n{body}\n")).unwrap();
+                std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o700)).unwrap();
+                path
+            }
+        }
+
+        impl Drop for Fixture {
+            fn drop(&mut self) {
+                let _ = std::fs::remove_dir_all(&self.0);
+            }
+        }
+
+        fn containment_available() -> bool {
+            let available = super::super::linux_containment::containment_available();
+            if !available {
+                eprintln!("SKIP real candidate probes: Linux bubblewrap containment unavailable");
+            }
+            available
+        }
+
+        #[test]
+        fn collision_does_not_hide_a_later_valid_candidate() {
+            if !containment_available() {
+                return;
+            }
+            let fixture = Fixture::new();
+            let collision = fixture.executable("collision", "printf 'NekoVM 2.4.1\\n'");
+            let valid = fixture.executable("valid", "printf 'neko-core 1.5.1\\n'");
+            let resolved =
+                probe_installed_candidates(definition("neko").unwrap(), [collision, valid.clone()])
+                    .unwrap()
+                    .unwrap();
+            assert_eq!(resolved.program, valid);
+            assert_eq!(resolved.version.as_deref(), Some("neko-core 1.5.1"));
+        }
+
+        #[test]
+        fn all_collisions_report_failure_with_proven_cleanup_not_missing() {
+            if !containment_available() {
+                return;
+            }
+            let fixture = Fixture::new();
+            let collision = fixture.executable("collision", "printf 'private banner\\n'");
+            let failure =
+                probe_installed_candidates(definition("neko").unwrap(), [collision]).unwrap_err();
+            assert!(failure.post_spawn_cleanup_proven());
+            assert_eq!(failure.kind(), io::ErrorKind::InvalidData);
+            assert!(!failure.to_string().contains("private banner"));
+            assert!(failure.to_string().contains("did not identify Neko Core"));
+        }
+
+        #[test]
+        fn nonzero_exit_stops_before_a_later_candidate() {
+            if !containment_available() {
+                return;
+            }
+            let fixture = Fixture::new();
+            let failed = fixture.executable("failed", "exit 7");
+            let programs = std::iter::once(failed).chain(std::iter::from_fn(|| {
+                panic!("post-spawn failure must not fall through to another candidate")
+            }));
+            let failure =
+                probe_installed_candidates(definition("neko").unwrap(), programs).unwrap_err();
+            assert!(failure.post_spawn_cleanup_proven());
+            assert!(failure
+                .to_string()
+                .contains("version check exited unsuccessfully"));
+        }
+
+        #[test]
+        fn no_candidates_is_missing_not_a_probe_failure() {
+            assert_eq!(
+                probe_installed_candidates(definition("neko").unwrap(), []).unwrap(),
+                None,
+            );
+        }
+    }
 
     #[test]
     fn scoped_discovery_rejects_paths_and_unknown_providers_before_spawn() {

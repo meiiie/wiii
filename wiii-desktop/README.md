@@ -83,7 +83,7 @@ connection without disabling local files or agents.
 
 ## Quick start
 
-Prerequisites: Node.js 18+, Rust, and the
+Prerequisites: Node.js 22.12+, Rust stable (at least 1.89), and the
 [Tauri v2 prerequisites](https://v2.tauri.app/start/prerequisites/).
 
 ```bash
@@ -96,6 +96,9 @@ npm run dev
 # Full desktop app
 npm run tauri -- dev
 ```
+
+For native Linux setup, packaging and verification boundaries, see the
+[Linux development guide](../docs/operations/WIII_LINUX_DEVELOPMENT.md).
 
 Useful preview routes:
 
