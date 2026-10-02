@@ -1,37 +1,19 @@
-import { useState, useCallback } from "react";
-import { Copy, Check, Play, Maximize2, Loader2 } from "lucide-react";
+import { useState, useCallback, useEffect, useMemo, useRef, useId } from "react";
+import { Copy, Check, Play, Maximize2, Loader2, WrapText } from "lucide-react";
 import { useUIStore } from "@/stores/ui-store";
-import {
-  RUNNABLE_LANGUAGES,
-  PREVIEWABLE_LANGUAGES,
-  getLanguageDisplayName,
-} from "@/lib/code-languages";
+import { RUNNABLE_LANGUAGES, PREVIEWABLE_LANGUAGES, getLanguageDisplayName } from "@/lib/code-languages";
 import type { ArtifactData } from "@/api/types";
 import { ShikiMinimalHighlighter } from "./ShikiMinimalHighlighter";
 
-// Re-export for backward compat (tests import from here)
 export { LANGUAGE_LABELS } from "@/lib/code-languages";
 
-/* ---------------------------------------------------------------------------
- * Constants
- * --------------------------------------------------------------------------- */
-/** Shiki dual-theme — CSS vars handle light↔dark toggle (globals.css) */
 const SHIKI_THEMES = { light: "github-light", dark: "github-dark" } as const;
-
-/** Streaming throttle (ms) — prevents flicker during token streaming */
 const SHIKI_DELAY = 150;
+const HIGHLIGHT_CHARACTER_LIMIT = 100_000;
+const HIGHLIGHT_LINE_LIMIT = 1_000;
+const COLLAPSE_LINE_LIMIT = 200;
+const PREVIEW_LINE_COUNT = 80;
 
-/** Minimum lines before showing line numbers */
-const MIN_LINES_FOR_LINE_NUMBERS = 5;
-
-/** Minimum lines before showing Sandbox/Run action buttons */
-const MIN_LINES_FOR_ACTIONS = 2;
-
-/* ---------------------------------------------------------------------------
- * Helpers
- * --------------------------------------------------------------------------- */
-
-/** Generate a stable artifact ID from code content (for sandbox panel). */
 function codeArtifactId(code: string): string {
   let hash = 0;
   for (let i = 0; i < Math.min(code.length, 200); i++) {
@@ -40,159 +22,143 @@ function codeArtifactId(code: string): string {
   return `code-${Math.abs(hash).toString(36)}`;
 }
 
-/* ---------------------------------------------------------------------------
- * Component
- * --------------------------------------------------------------------------- */
 interface CodeBlockProps {
   code: string;
   language: string;
+  streaming?: boolean;
 }
 
-export function CodeBlock({ code, language }: CodeBlockProps) {
-  const [copied, setCopied] = useState(false);
+export function CodeBlock({ code, language, streaming = false }: CodeBlockProps) {
+  const [copyState, setCopyState] = useState<"idle" | "pending" | "success" | "error">("idle");
+  const [wrap, setWrap] = useState(false);
+  const [expanded, setExpanded] = useState(false);
   const [running, setRunning] = useState(false);
   const [output, setOutput] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-
+  const copyRequestRef = useRef(0);
+  const copyPendingRef = useRef(false);
+  const copyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const mountedRef = useRef(true);
+  const codeRef = useRef(code);
+  codeRef.current = code;
+  const feedbackId = useId();
+  const viewportId = useId();
   const langLower = language.toLowerCase();
   const isRunnable = RUNNABLE_LANGUAGES.has(langLower);
   const isPreviewable = PREVIEWABLE_LANGUAGES.has(langLower);
-  const lineCount = code.split("\n").length;
-  const showActions = lineCount >= MIN_LINES_FOR_ACTIONS;
-  const showLineNumbers = lineCount >= MIN_LINES_FOR_LINE_NUMBERS;
+  const lines = useMemo(() => code.split("\n"), [code]);
+  const lineCount = lines.length;
+  const showActions = lineCount >= 2;
   const displayName = getLanguageDisplayName(language);
+  const collapsed = lineCount > COLLAPSE_LINE_LIMIT && !expanded;
+  const displayedCode = collapsed ? lines.slice(0, PREVIEW_LINE_COUNT).join("\n") : code;
+  const largeCode = code.length > HIGHLIGHT_CHARACTER_LIMIT || lineCount > HIGHLIGHT_LINE_LIMIT;
+  const highlight = !streaming && !largeCode;
+  const copyLabel = copyState === "pending" ? "Đang sao chép" : copyState === "success" ? "Đã sao chép" : "Sao chép mã";
+  const feedback = copyState === "error"
+    ? "Chưa sao chép được. Chọn mã và sao chép thủ công, hoặc thử lại."
+    : copyState === "success" ? "Đã sao chép toàn bộ mã."
+      : copyState === "pending" ? "Đang sao chép mã…" : "";
 
-  /* -- Handlers ----------------------------------------------------------- */
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+      copyRequestRef.current += 1;
+      if (copyTimerRef.current) clearTimeout(copyTimerRef.current);
+    };
+  }, []);
+
+  useEffect(() => {
+    copyRequestRef.current += 1;
+    copyPendingRef.current = false;
+    if (copyTimerRef.current) clearTimeout(copyTimerRef.current);
+    setCopyState("idle");
+  }, [code]);
 
   const handleCopy = useCallback(async () => {
-    await navigator.clipboard.writeText(code);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
+    if (copyPendingRef.current) return;
+    copyPendingRef.current = true;
+    const request = ++copyRequestRef.current;
+    if (copyTimerRef.current) clearTimeout(copyTimerRef.current);
+    setCopyState("pending");
+    const current = () => mountedRef.current && request === copyRequestRef.current && code === codeRef.current;
+    try {
+      if (!navigator.clipboard?.writeText) throw new Error("Clipboard unavailable");
+      await navigator.clipboard.writeText(code);
+      if (current()) {
+        setCopyState("success");
+        copyTimerRef.current = setTimeout(() => {
+          if (current()) setCopyState("idle");
+        }, 2000);
+      }
+    } catch {
+      if (current()) setCopyState("error");
+    } finally {
+      if (request === copyRequestRef.current) copyPendingRef.current = false;
+    }
   }, [code]);
 
   const handleExpand = useCallback(() => {
     const artifactId = codeArtifactId(code);
     const artifact: ArtifactData = {
-      artifact_type: isPreviewable ? "html" : "code",
-      artifact_id: artifactId,
-      title: language ? `${language.toUpperCase()} Code` : "Code",
-      content: code,
-      language: language || "",
-      metadata: {},
+      artifact_type: isPreviewable ? "html" : "code", artifact_id: artifactId,
+      title: language ? `${language.toUpperCase()} Code` : "Code", content: code,
+      language: language || "", metadata: {},
     };
     useUIStore.getState().openArtifact(artifactId, artifact);
   }, [code, language, isPreviewable]);
 
   const handleRun = useCallback(async () => {
     if (!isRunnable || running) return;
-    setRunning(true);
-    setOutput(null);
-    setError(null);
+    setRunning(true); setOutput(null); setError(null);
     try {
       const { getPyodideRuntime } = await import("@/lib/pyodide-runtime");
       const runtime = getPyodideRuntime();
       await runtime.initialize();
       const result = await runtime.execute(code);
-      setOutput(result.stdout || null);
-      setError(result.stderr || null);
+      setOutput(result.stdout || null); setError(result.stderr || null);
     } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      setError(msg);
-    } finally {
-      setRunning(false);
-    }
+      setError(err instanceof Error ? err.message : String(err));
+    } finally { setRunning(false); }
   }, [code, isRunnable, running]);
 
-  /* -- Render ------------------------------------------------------------- */
-
   return (
-    <div className="relative group/code rounded-lg overflow-hidden bg-white/50 dark:bg-white/5 border border-[var(--border)] my-2">
-      {/* Header bar */}
-      <div className="flex items-center gap-2 px-4 py-2 bg-border/30 text-text-secondary text-xs">
-        <span
-          className="rounded-md bg-surface-tertiary/80 px-2 py-0.5 font-medium font-mono text-text-secondary"
-          aria-label={`Ngôn ngữ: ${displayName}`}
-        >
-          {displayName}
-        </span>
-        <span className="flex-1" />
-
-        {showActions && isRunnable && (
-          <button
-            onClick={handleRun}
-            disabled={running}
-            className="flex items-center gap-1 px-2 py-0.5 rounded bg-[var(--accent)]/10 text-[var(--accent)] hover:bg-[var(--accent)]/20 disabled:opacity-50 transition-colors"
-            title="Chạy code Python"
-            aria-label="Chạy code Python"
-          >
-            {running ? <Loader2 size={12} className="animate-spin" /> : <Play size={12} />}
-            <span>Chạy</span>
-          </button>
-        )}
-
-        {showActions && (
-          <button
-            onClick={handleExpand}
-            className="flex items-center gap-1 px-2 py-0.5 rounded hover:bg-border/50 transition-colors"
-            title="Mở trong sandbox"
-            aria-label="Mở trong sandbox"
-          >
-            <Maximize2 size={12} />
-            <span>Sandbox</span>
-          </button>
-        )}
-
-        <button
-          onClick={handleCopy}
-          className="flex items-center gap-1 hover:text-text transition-colors"
-          title="Sao chép mã"
-          aria-label={copied ? "Đã sao chép" : "Sao chép mã"}
-        >
-          {copied ? (
-            <>
-              <Check size={14} />
-              <span>Đã sao chép!</span>
-            </>
-          ) : (
-            <>
-              <Copy size={14} />
-              <span>Sao chép</span>
-            </>
+    <div className="wiii-code-block relative my-2 min-w-0 max-w-full overflow-hidden rounded-lg border border-[var(--border)] bg-white/50 dark:bg-white/5" data-wrap={wrap} data-testid="code-block">
+      <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1.5 bg-border/30 px-3 py-2 text-xs text-text-secondary">
+        <span className="max-w-full truncate rounded-md bg-surface-tertiary/80 px-2 py-0.5 font-mono font-medium" aria-label={`Ngôn ngữ: ${displayName}`}>{displayName}</span>
+        <span className="text-[10px] text-text-tertiary">{lineCount} dòng</span>
+        <div className="ml-auto flex max-w-full flex-wrap items-center gap-1.5">
+          {showActions && isRunnable && (
+            <button type="button" onClick={handleRun} disabled={running} className="flex min-h-7 items-center gap-1 rounded px-2 hover:bg-border/50 disabled:opacity-50" title="Chạy code Python" aria-label="Chạy code Python">
+              {running ? <Loader2 size={12} className="animate-spin" /> : <Play size={12} />}<span>Chạy</span>
+            </button>
           )}
-        </button>
+          {showActions && (
+            <button type="button" onClick={handleExpand} className="flex min-h-7 items-center gap-1 rounded px-2 hover:bg-border/50" title="Mở trong sandbox" aria-label="Mở trong sandbox"><Maximize2 size={12} /><span>Sandbox</span></button>
+          )}
+          <button type="button" onClick={() => setWrap(value => !value)} aria-label="Ngắt dòng mã" aria-pressed={wrap} aria-controls={viewportId} className="flex min-h-7 items-center gap-1 rounded px-2 hover:bg-border/50 aria-pressed:bg-border/50"><WrapText size={14} /><span>Ngắt dòng</span></button>
+          <button type="button" onClick={handleCopy} disabled={copyState === "pending"} aria-busy={copyState === "pending"} aria-label={copyLabel} aria-describedby={feedback ? feedbackId : undefined} className="flex min-h-7 items-center gap-1 rounded px-2 hover:bg-border/50 disabled:opacity-60" title="Sao chép toàn bộ mã">
+            {copyState === "pending" ? <Loader2 size={14} className="animate-spin" /> : copyState === "success" ? <Check size={14} /> : <Copy size={14} />}<span>{copyState === "idle" || copyState === "error" ? "Sao chép" : copyLabel}</span>
+          </button>
+        </div>
       </div>
-
-      {/* Code content — Shiki highlighted */}
-      <div className="p-4 overflow-x-auto [&_.shiki]:!bg-transparent">
-        <ShikiMinimalHighlighter
-          language={langLower || "text"}
-          theme={SHIKI_THEMES}
-          delay={SHIKI_DELAY}
-          showLineNumbers={showLineNumbers}
-          showLanguage={false}
-          addDefaultStyles={false}
-        >
-          {code}
-        </ShikiMinimalHighlighter>
+      {feedback && <p id={feedbackId} role="status" aria-live="polite" className={copyState === "error" ? "border-t border-[var(--border)] px-3 py-2 text-xs text-text-secondary" : "sr-only"}>{feedback}</p>}
+      {streaming && <p className="px-3 pt-2 text-[11px] text-text-tertiary">Đang nhận mã…</p>}
+      {largeCode && <p className="px-3 pt-2 text-[11px] text-text-tertiary">Mã lớn · hiển thị văn bản để cuộn mượt. Sao chép vẫn lấy toàn bộ mã.</p>}
+      <div id={viewportId} className="wiii-code-block__viewport p-3 [&_.shiki]:!bg-transparent" role="region" aria-label={`Mã ${displayName}, ${lineCount} dòng`} tabIndex={0}>
+        {highlight ? (
+          <ShikiMinimalHighlighter language={langLower || "text"} theme={SHIKI_THEMES} delay={SHIKI_DELAY} showLineNumbers={lineCount >= 5 && !wrap} showLanguage={false} addDefaultStyles={false}>{displayedCode}</ShikiMinimalHighlighter>
+        ) : <pre><code>{displayedCode}</code></pre>}
       </div>
-
-      {/* Inline output — Python run results */}
-      {output && (
-        <div className="border-t border-border/50 px-4 py-2">
-          <div className="text-[10px] text-text-tertiary font-medium mb-1 uppercase tracking-wider">stdout</div>
-          <pre className="text-xs font-mono text-green-600 dark:text-green-400 whitespace-pre-wrap max-h-[200px] overflow-auto">
-            {output}
-          </pre>
+      {lineCount > COLLAPSE_LINE_LIMIT && (
+        <div className="flex flex-wrap items-center justify-between gap-2 border-t border-[var(--border)] px-3 py-2 text-xs text-text-secondary">
+          <span>{collapsed ? `${PREVIEW_LINE_COUNT} / ${lineCount} dòng` : `${lineCount} dòng`}</span>
+          <button type="button" aria-expanded={!collapsed} aria-controls={viewportId} onClick={() => setExpanded(value => !value)} className="min-h-7 rounded px-2 hover:bg-border/50">{collapsed ? "Xem toàn bộ mã" : "Thu gọn mã"}</button>
         </div>
       )}
-      {error && (
-        <div className="border-t border-border/50 px-4 py-2">
-          <div className="text-[10px] text-red-500 font-medium mb-1 uppercase tracking-wider">stderr</div>
-          <pre className="text-xs font-mono text-red-600 dark:text-red-400 whitespace-pre-wrap max-h-[150px] overflow-auto">
-            {error}
-          </pre>
-        </div>
-      )}
+      {output && <div className="border-t border-border/50 px-4 py-2"><div className="mb-1 text-[10px] font-medium uppercase tracking-wider text-text-tertiary">stdout</div><pre className="max-h-[200px] overflow-auto whitespace-pre-wrap font-mono text-xs text-green-600 dark:text-green-400">{output}</pre></div>}
+      {error && <div className="border-t border-border/50 px-4 py-2"><div className="mb-1 text-[10px] font-medium uppercase tracking-wider text-red-500">stderr</div><pre className="max-h-[150px] overflow-auto whitespace-pre-wrap font-mono text-xs text-red-600 dark:text-red-400">{error}</pre></div>}
     </div>
   );
 }

@@ -58,7 +58,7 @@ function uniqueRoots(roots: WorkspaceRef[]): WorkspaceRef[] {
     const key = workspaceKey(root.path);
     if (seen.has(key)) return [];
     seen.add(key);
-    return [{ path: root.path, name: root.name.trim() }];
+    return [{ path: root.path, name: root.name.trim(), ...(root.kind === "scratch" ? { kind: "scratch" as const } : {}) }];
   });
 }
 
@@ -156,6 +156,14 @@ function conflictingProject(
   ) ?? null;
 }
 
+// Serialize read-modify-write transactions; native disk writes may finish out of order.
+let projectMutationTail: Promise<unknown> = Promise.resolve();
+function serializeProjectMutation<T>(work: () => Promise<T>): Promise<T> {
+  const result = projectMutationTail.then(work);
+  projectMutationTail = result.catch(() => {});
+  return result;
+}
+
 export const useNekoProjectStore = create<NekoProjectState>((set, get) => ({
   projects: [],
   hydrated: false,
@@ -181,7 +189,7 @@ export const useNekoProjectStore = create<NekoProjectState>((set, get) => ({
     }
   },
 
-  ensureWorkspaceProjects: async (workspaces) => {
+  ensureWorkspaceProjects: (workspaces) => serializeProjectMutation(async () => {
     if (!get().hydrated) return;
     const current = get().projects;
     const next = [...current];
@@ -200,9 +208,9 @@ export const useNekoProjectStore = create<NekoProjectState>((set, get) => ({
     if (next.length === current.length) return;
     set({ projects: next });
     await persistProjects(next, false);
-  },
+  }),
 
-  createProject: async (name, roots) => {
+  createProject: (name, roots) => serializeProjectMutation(async () => {
     if (!get().hydrated) throw new Error("Chưa đọc được danh mục Project; hãy kiểm tra lại trước khi thay đổi.");
     const normalizedRoots = assertProjectInput(name, roots);
     const current = get().projects;
@@ -223,9 +231,9 @@ export const useNekoProjectStore = create<NekoProjectState>((set, get) => ({
     await persistProjects(next, true);
     set({ projects: next, error: null });
     return project.id;
-  },
+  }),
 
-  updateProject: async (id, name, roots) => {
+  updateProject: (id, name, roots) => serializeProjectMutation(async () => {
     if (!get().hydrated) throw new Error("Chưa đọc được danh mục Project; hãy kiểm tra lại trước khi thay đổi.");
     const normalizedRoots = assertProjectInput(name, roots);
     const current = get().projects;
@@ -243,9 +251,9 @@ export const useNekoProjectStore = create<NekoProjectState>((set, get) => ({
     } : item);
     await persistProjects(next, true);
     set({ projects: next, error: null });
-  },
+  }),
 
-  setPreferredHarness: async (id, harnessId) => {
+  setPreferredHarness: (id, harnessId) => serializeProjectMutation(async () => {
     if (!get().hydrated) throw new Error("Chưa đọc được danh mục Project; hãy kiểm tra lại trước khi thay đổi.");
     const current = get().projects;
     const next = current.map((item) => item.id === id ? {
@@ -255,5 +263,5 @@ export const useNekoProjectStore = create<NekoProjectState>((set, get) => ({
     } : item);
     set({ projects: next });
     await persistProjects(next, false);
-  },
+  }),
 }));

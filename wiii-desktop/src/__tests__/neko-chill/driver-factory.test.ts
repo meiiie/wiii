@@ -1053,7 +1053,7 @@ describe("Neko driver factory resource ownership", () => {
     expect(JSON.stringify(startCall)).not.toContain("args");
 
     await owned!.dispose();
-    await expect(creating).rejects.toThrow("client disposed");
+    await expect(creating).rejects.toThrow(/disposed/);
     expect(tauri.invoke.mock.calls.filter(
       ([command]) => command === "neko_control_session_cancel",
     )).toHaveLength(1);
@@ -1090,6 +1090,6 @@ describe("Neko driver factory resource ownership", () => {
     });
 
     await owned!.dispose();
-    await expect(creating).rejects.toThrow("client disposed");
+    await expect(creating).rejects.toThrow(/disposed/);
   });
 });

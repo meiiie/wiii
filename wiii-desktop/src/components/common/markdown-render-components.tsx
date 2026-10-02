@@ -1,4 +1,5 @@
-import { type ReactNode, lazy, Suspense } from "react";
+import { Children, isValidElement, type ReactNode, lazy, Suspense } from "react";
+import type { Components } from "react-markdown";
 
 const MermaidDiagram = lazy(() => import("./MermaidDiagram"));
 const InlineHtmlWidget = lazy(() => import("./InlineHtmlWidget"));
@@ -61,51 +62,48 @@ function CitationLink({ href, children, title }: { href?: string; children?: Rea
   );
 }
 
-export const markdownRenderComponents = {
-  a: CitationLink,
-  code({ className: codeClassName, children, ...props }: {
-    className?: string;
-    children?: ReactNode;
-  }) {
-    const match = /language-(\w+)/.exec(codeClassName || "");
-    const isInline = !match;
+export function createMarkdownRenderComponents(streaming = false): Components {
+  return {
+    a: CitationLink,
+    code({ className, children }) {
+      return <code className={className}>{children}</code>;
+    },
+    pre({ children }) {
+      const element = Children.toArray(children).find(child => isValidElement(child));
+      const language = isValidElement<{ className?: string }>(element)
+        ? /(?:^|\s)language-([^\s]+)/.exec(element.props.className ?? "")?.[1] ?? ""
+        : "";
+      const rawCode = extractText(children).replace(/\n$/, "");
 
-    if (isInline) {
+      if (language === "mermaid" && !streaming) {
+        return (
+          <Suspense fallback={<pre className="p-4 bg-gray-100 dark:bg-gray-800 rounded-lg text-sm"><code>{rawCode}</code></pre>}>
+            <MermaidDiagram code={rawCode} />
+          </Suspense>
+        );
+      }
+
+      if (language === "widget" && !streaming) {
+        return (
+          <Suspense fallback={<div className="p-4 bg-gray-100 dark:bg-gray-800 rounded-lg text-sm animate-pulse">Đang tải widget...</div>}>
+            <InlineHtmlWidget code={rawCode} />
+          </Suspense>
+        );
+      }
+
       return (
-        <code className={codeClassName} {...props}>
-          {children}
-        </code>
-      );
-    }
-
-    const rawCode = extractText(children).replace(/\n$/, "");
-
-    if (match[1] === "mermaid") {
-      return (
-        <Suspense fallback={<pre className="p-4 bg-gray-100 dark:bg-gray-800 rounded-lg text-sm"><code>{rawCode}</code></pre>}>
-          <MermaidDiagram code={rawCode} />
+        <Suspense
+          fallback={(
+            <pre className="my-2 overflow-x-auto rounded-lg border border-[var(--border)] bg-white/50 p-4">
+              <code className="text-sm font-mono leading-relaxed">{rawCode}</code>
+            </pre>
+          )}
+        >
+          <LazyCodeBlock language={language} code={rawCode} streaming={streaming} />
         </Suspense>
       );
-    }
+    },
+  };
+}
 
-    if (match[1] === "widget") {
-      return (
-        <Suspense fallback={<div className="p-4 bg-gray-100 dark:bg-gray-800 rounded-lg text-sm animate-pulse">Đang tải widget...</div>}>
-          <InlineHtmlWidget code={rawCode} />
-        </Suspense>
-      );
-    }
-
-    return (
-      <Suspense
-        fallback={(
-          <pre className="my-2 overflow-x-auto rounded-lg border border-[var(--border)] bg-white/50 p-4">
-            <code className="text-sm font-mono leading-relaxed">{rawCode}</code>
-          </pre>
-        )}
-      >
-        <LazyCodeBlock language={match[1] || ""} code={rawCode} />
-      </Suspense>
-    );
-  },
-};
+export const markdownRenderComponents = createMarkdownRenderComponents();

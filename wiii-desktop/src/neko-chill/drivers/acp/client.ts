@@ -8,6 +8,7 @@
  */
 
 import type { AcpTransport } from "@/neko/acp-transport";
+import { AcpProtocolError, AcpRpcError, AcpTransportError, safeDiagnosticText } from "./errors";
 
 export type { AcpTransport } from "@/neko/acp-transport";
 
@@ -25,6 +26,7 @@ export interface JsonRpcClientHandlers {
 }
 
 interface PendingRequest {
+  method: string;
   resolve: (result: unknown) => void;
   reject: (error: Error) => void;
   timeout?: ReturnType<typeof setTimeout>;
@@ -45,12 +47,12 @@ export class AcpJsonRpcClient {
     private readonly handlers: JsonRpcClientHandlers,
   ) {
     transport.onLine((line) => this.handleLine(line));
-    transport.onExit(() => this.failAllPending("agent process exited"));
+    transport.onExit(() => this.failAllPending("exit", "agent process exited"));
   }
 
   /** Send a client→agent request and await its result. */
   request(method: string, params: unknown, timeoutMs?: number): Promise<unknown> {
-    if (this.disposed) return Promise.reject(new Error("client disposed"));
+    if (this.disposed) return Promise.reject(new AcpTransportError("disposed", method, null, "client disposed"));
     const id = this.nextId++;
     const frame = JSON.stringify({ jsonrpc: "2.0", id, method, params });
     return new Promise((resolve, reject) => {
@@ -58,14 +60,14 @@ export class AcpJsonRpcClient {
         ? undefined
         : setTimeout(() => {
             if (!this.pending.delete(id)) return;
-            reject(new Error(`${method} timed out`));
+            reject(new AcpTransportError("timeout", method, id, `${method} timed out`));
           }, timeoutMs);
-      this.pending.set(id, { resolve, reject, timeout });
+      this.pending.set(id, { method, resolve, reject, timeout });
       this.transport.send(frame).catch((err: unknown) => {
         const entry = this.pending.get(id);
         if (entry?.timeout) clearTimeout(entry.timeout);
         this.pending.delete(id);
-        reject(err instanceof Error ? err : new Error(String(err)));
+        reject(new AcpTransportError("send", method, id, err instanceof Error ? err.message : err));
       });
     });
   }
@@ -78,14 +80,14 @@ export class AcpJsonRpcClient {
 
   async dispose(): Promise<void> {
     this.disposed = true;
-    this.failAllPending("client disposed");
+    this.failAllPending("disposed", "client disposed");
     await this.transport.kill();
   }
 
-  private failAllPending(reason: string): void {
-    for (const [, entry] of this.pending) {
+  private failAllPending(reason: "exit" | "disposed", message: string): void {
+    for (const [id, entry] of this.pending) {
       if (entry.timeout) clearTimeout(entry.timeout);
-      entry.reject(new Error(reason));
+      entry.reject(new AcpTransportError(reason, entry.method, id, message));
     }
     this.pending.clear();
   }
@@ -99,12 +101,17 @@ export class AcpJsonRpcClient {
       method?: string;
       params?: unknown;
       result?: unknown;
-      error?: { code?: number; message?: string };
+      error?: unknown;
     };
     try {
       frame = JSON.parse(trimmed);
     } catch {
-      this.handlers.onProtocolError(`malformed JSON-RPC frame: ${trimmed.slice(0, 120)}`);
+      this.handlers.onProtocolError("malformed JSON-RPC frame");
+      return;
+    }
+
+    if (!frame || typeof frame !== "object" || Array.isArray(frame)) {
+      this.handlers.onProtocolError("malformed JSON-RPC frame");
       return;
     }
 
@@ -117,7 +124,7 @@ export class AcpJsonRpcClient {
           this.respond(id, {
             error: {
               code: err instanceof UnsupportedMethodError ? METHOD_NOT_FOUND : INTERNAL_ERROR,
-              message: err instanceof Error ? err.message : String(err),
+              message: safeDiagnosticText(err instanceof Error ? err.message : err) || "agent request failed",
             },
           }),
       );
@@ -133,18 +140,22 @@ export class AcpJsonRpcClient {
     // Response to one of our requests
     if (frame.id !== undefined && frame.id !== null) {
       if (typeof frame.id !== "number") {
-        this.handlers.onProtocolError(`response for unknown request id ${frame.id}`);
+        this.handlers.onProtocolError("response for unknown request id");
         return;
       }
       const entry = this.pending.get(frame.id);
       if (!entry) {
-        this.handlers.onProtocolError(`response for unknown request id ${frame.id}`);
+        this.handlers.onProtocolError("response for unknown request id");
         return;
       }
       this.pending.delete(frame.id);
       if (entry.timeout) clearTimeout(entry.timeout);
-      if (frame.error) {
-        entry.reject(new Error(frame.error.message ?? `agent error ${frame.error.code}`));
+      if (frame.error !== undefined) {
+        if (!frame.error || typeof frame.error !== "object" || Array.isArray(frame.error)) {
+          entry.reject(new AcpProtocolError(frame.id, entry.method));
+        } else {
+          entry.reject(new AcpRpcError(frame.id, entry.method, frame.error));
+        }
       } else {
         entry.resolve(frame.result);
       }

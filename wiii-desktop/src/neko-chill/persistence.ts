@@ -57,6 +57,8 @@ export interface SessionIndexEntry {
   execution?: NekoExecutionBinding | null;
   /** Provider-owned durable ACP id used to resume across process restarts. */
   backendSessionId?: string | null;
+  /** Raw disk boundary: malformed scope remains explicit input to the store parser. */
+  taskScope?: unknown;
   controls?: DriverConfigOption[];
   commands?: DriverCommand[];
 }
@@ -349,6 +351,7 @@ async function writeSession(session: NekoSession, strict: boolean): Promise<void
     projectId: session.projectId ?? null,
     execution: session.execution,
     backendSessionId: session.backendSessionId,
+    taskScope: session.taskScope,
     controls: session.controls,
     commands: session.commands,
   };

@@ -4,6 +4,7 @@ import type {
   DriverFileLocation,
   DriverFileOperation,
   DriverKind,
+  TurnStopReason,
 } from "./drivers/types";
 import type { RuntimeProviderSnapshot } from "./runtime-manager";
 import { isNekoProviderCapabilitySnapshot } from "@/neko/contracts";
@@ -77,6 +78,8 @@ export type NekoSessionEventData =
       type: "runtime-command";
       action: "cancel";
       providerInstanceId: string;
+      /** Exact local prompt identity; absent on historical/legacy records. */
+      promptEventId?: string;
       delivery?: "staged";
     }
   | {
@@ -84,6 +87,13 @@ export type NekoSessionEventData =
       targetEventId: string;
       action: "prompt" | "knowledge" | "cancel" | "permission";
       providerInstanceId: string;
+    }
+  | {
+      /** Provider-confirmed turn completion; does not imply host-process exit. */
+      type: "turn-terminal";
+      providerInstanceId: string;
+      promptEventId: string;
+      stopReason: TurnStopReason;
     }
   | {
       type: "control-change";
@@ -276,6 +286,7 @@ function isValidEventData(data: Record<string, unknown>): boolean {
       return (
         data.action === "cancel" &&
         typeof data.providerInstanceId === "string" &&
+        (data.promptEventId === undefined || (typeof data.promptEventId === "string" && data.promptEventId.length > 0)) &&
         (data.delivery === undefined || data.delivery === "staged")
       );
     case "dispatch-invoked":
@@ -285,6 +296,10 @@ function isValidEventData(data: Record<string, unknown>): boolean {
         ["prompt", "knowledge", "cancel", "permission"].includes(data.action as string) &&
         typeof data.providerInstanceId === "string"
       );
+    case "turn-terminal":
+      return typeof data.providerInstanceId === "string" && data.providerInstanceId.length > 0
+        && typeof data.promptEventId === "string" && data.promptEventId.length > 0
+        && ["end_turn", "max_tokens", "max_turn_requests", "refusal", "cancelled", "error"].includes(data.stopReason as string);
     case "control-change":
       return (
         ["requested", "committed", "rolled-back", "rollback-failed"].includes(

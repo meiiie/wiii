@@ -2,6 +2,7 @@ import { Activity, Bot, BookOpen, BriefcaseBusiness, Command, Folder, HardDrive,
 import type { DriverConfigOption } from "../drivers/types";
 import type { NekoSession } from "../stores/neko-session-store";
 import { NEKO_SESSION_STATUS_LABELS } from "../session-status";
+import { ExecutionReceiptCard } from "./ExecutionReceiptCard";
 import { useKnowledgeConnectionStore } from "@/workbench/knowledge";
 
 interface SessionInspectorProps {
@@ -116,6 +117,8 @@ export function SessionInspector({
             </dl>
           </section>
         ) : null}
+
+        <ExecutionReceiptCard session={session} />
 
         <section className="mt-3 rounded-xl border border-[var(--nk-border)] bg-[var(--nk-composer)] p-3">
           <h2 className="mb-2 flex items-center gap-1.5 text-[10.5px] font-semibold uppercase tracking-wide text-[var(--nk-text-3)]">

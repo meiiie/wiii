@@ -197,3 +197,72 @@ describe("neko workspace store", () => {
   });
 
 });
+
+
+describe("workspace selection identity regressions", () => {
+  const deferred = <T,>() => { let resolve!: (v: T) => void; let reject!: (e: Error) => void; const promise = new Promise<T>((a,b) => {resolve=a;reject=b;}); return {promise,resolve,reject}; };
+  const activity = (path: string) => ({id:"edit-b",title:`Update(${path})`,kind:"file" as const,status:"pending" as const,operation:"update" as const,locations:[{path}]});
+  beforeEach(() => {
+    useNekoWorkspaceStore.getState().clearSession("selection"); vi.clearAllMocks();
+    listWorkspaceFiles.mockResolvedValue({entries:[],truncated:false});
+    listWorkspaceChanges.mockResolvedValue({isGit:true,changes:[]});
+    readWorkspaceFile.mockImplementation(async (_w:string,p:string)=>file(p));
+  });
+  it("never labels old test contents as a pending edit target", async () => {
+    await useNekoWorkspaceStore.getState().openFile("selection", WORKSPACE, "clamp.test.mjs");
+    useNekoWorkspaceStore.getState().observeActivity("selection", WORKSPACE, activity("clamp.mjs"));
+    const pane=useNekoWorkspaceStore.getState().sessions.selection;
+    expect(pane.selectedPath).toBe("clamp.mjs"); expect(pane.selectedFile).toBeNull(); expect(pane.selectedDiff).toBeNull();
+  });
+  it("invalidates a pending read when an activity selects a different file", async () => {
+    const read=deferred<ReturnType<typeof file>>(); readWorkspaceFile.mockImplementationOnce(()=>read.promise);
+    const first=useNekoWorkspaceStore.getState().openFile("selection",WORKSPACE,"a.ts");
+    useNekoWorkspaceStore.getState().observeActivity("selection",WORKSPACE,activity("b.ts"));
+    read.resolve(file("a.ts","OLD-A")); await first;
+    expect(useNekoWorkspaceStore.getState().sessions.selection.selectedPath).toBe("b.ts");
+    expect(useNekoWorkspaceStore.getState().sessions.selection.selectedFile).toBeNull();
+  });
+  it("rejects an old generation after clear/recreate with the same session id", async () => {
+    const old=deferred<ReturnType<typeof file>>(); readWorkspaceFile.mockImplementationOnce(()=>old.promise).mockResolvedValueOnce(file("new.ts","NEW"));
+    const first=useNekoWorkspaceStore.getState().openFile("selection",WORKSPACE,"old.ts");
+    useNekoWorkspaceStore.getState().clearSession("selection");
+    await useNekoWorkspaceStore.getState().openFile("selection",{path:"C:/work/new",name:"new"},"new.ts");
+    old.resolve(file("old.ts","OLD")); await first;
+    expect(useNekoWorkspaceStore.getState().sessions.selection.selectedFile?.content).toBe("NEW");
+  });
+  it("clears previous workspace contents and rejects its late read", async () => {
+    await useNekoWorkspaceStore.getState().openFile("selection",WORKSPACE,"old.ts");
+    const old=deferred<ReturnType<typeof file>>(); readWorkspaceFile.mockImplementationOnce(()=>old.promise);
+    const first=useNekoWorkspaceStore.getState().openFile("selection",WORKSPACE,"later.ts");
+    await useNekoWorkspaceStore.getState().refresh("selection",{path:"C:/work/new",name:"new"});
+    old.resolve(file("later.ts","OLD-WORKSPACE")); await first;
+    const pane=useNekoWorkspaceStore.getState().sessions.selection;
+    expect(pane.selectedPath).toBeNull(); expect(pane.selectedFile).toBeNull();
+  });
+  it("does not accept a late file or error after switching to changes", async () => {
+    const old=deferred<ReturnType<typeof file>>(); readWorkspaceFile.mockImplementationOnce(()=>old.promise);
+    const first=useNekoWorkspaceStore.getState().openFile("selection",WORKSPACE,"old.ts");
+    useNekoWorkspaceStore.getState().setTab("selection","changes");
+    old.reject(new Error("OLD-ERROR")); await first;
+    const pane=useNekoWorkspaceStore.getState().sessions.selection;
+    expect(pane.activeTab).toBe("changes"); expect(pane.selectedFile).toBeNull(); expect(pane.error).toBeNull(); expect(pane.loading).toBe(false);
+  });
+  it("keeps a canonical file path and contents atomic, including a native alias", async () => {
+    readWorkspaceFile.mockResolvedValueOnce(file("real.ts","CANONICAL"));
+    await useNekoWorkspaceStore.getState().openFile("selection",WORKSPACE,"alias.ts");
+    const pane=useNekoWorkspaceStore.getState().sessions.selection;
+    expect(pane.selectedPath).toBe("real.ts");expect(pane.selectedFile?.path).toBe("real.ts");expect(pane.selectedFile?.content).toBe("CANONICAL");
+  });
+  it("rejects a diff response for a different requested file", async () => {
+    readWorkspaceDiff.mockResolvedValueOnce({path:"other.ts",status:"modified",language:"typescript",original:"a",modified:"b",binary:false});
+    await useNekoWorkspaceStore.getState().openChange("selection",WORKSPACE,"target.ts");
+    const pane=useNekoWorkspaceStore.getState().sessions.selection;
+    expect(pane.selectedPath).toBe("target.ts"); expect(pane.selectedDiff).toBeNull(); expect(pane.error).toBeTruthy();
+  });
+  it("does not follow pending activity while pinned", async () => {
+    await useNekoWorkspaceStore.getState().openFile("selection",WORKSPACE,"pinned.ts");
+    useNekoWorkspaceStore.getState().setPinned("selection",true);
+    useNekoWorkspaceStore.getState().observeActivity("selection",WORKSPACE,activity("b.ts"));
+    expect(useNekoWorkspaceStore.getState().sessions.selection.selectedFile?.path).toBe("pinned.ts");
+  });
+});

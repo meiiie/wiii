@@ -1,3 +1,5 @@
+import type { ComponentProps } from "react";
+import { NekoRuntimeScope } from "@/neko-chill/NekoRuntimeScope";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   AlertTriangle,
@@ -5,7 +7,6 @@ import {
   ArrowRight,
   Bot,
   BriefcaseBusiness,
-  CheckCircle2,
   ChevronRight,
   CircleDot,
   Cloud,
@@ -21,7 +22,8 @@ import { WiiiMark } from "@/components/common/WiiiMark";
 import { getNekoControlClient } from "@/neko/control-client";
 import NekoChillApp from "@/neko-chill/NekoChillApp";
 import type { NekoTaskLaunchRequest } from "@/neko-chill/components/ProjectHome";
-import { useNekoSessionStore } from "@/neko-chill/stores/neko-session-store";
+import { useNekoSessionStore, type NekoSession } from "@/neko-chill/stores/neko-session-store";
+import { NEKO_SESSION_STATUS_LABELS } from "@/neko-chill/session-status";
 import { chooseWorkspaceFolder, workspaceFromPath, type WorkspaceRef } from "@/neko-chill/workspace";
 import type { AdeRun, AdeRunState, AdeTask } from "./domain";
 import {
@@ -42,7 +44,7 @@ const RUN_LABELS: Record<AdeRunState, string> = {
   review: "Sẵn sàng duyệt",
   completed: "Đã hoàn thành",
   failed: "Thực thi thất bại",
-  cancelled: "Đã hủy",
+  cancelled: "Đã dừng",
   unknown_outcome: "Chưa rõ kết quả",
 };
 
@@ -58,8 +60,38 @@ function shortId(value: string): string {
   return value.length > 10 ? value.slice(0, 8) : value;
 }
 
-function latestRun(task: AdeTask, runs: AdeRun[]): AdeRun | null {
-  return [...runs].reverse().find((run) => run.taskId === task.id) ?? null;
+function workSessionStatusLabel(session: NekoSession): string {
+  return session.status === "idle" && !session.runtime
+    ? "đã lưu · chưa kết nối"
+    : NEKO_SESSION_STATUS_LABELS[session.status];
+}
+
+function WorkTaskRow({ task, run, projectName, session, onSelect }: {
+  task: AdeTask;
+  run: AdeRun | undefined;
+  projectName: string;
+  session: NekoSession | undefined;
+  onSelect: () => void;
+}) {
+  return (
+    <button type="button" onClick={onSelect}
+      className="group flex w-full items-center gap-4 rounded-xl border border-[var(--nk-border)] bg-[var(--nk-composer)] px-4 py-3.5 text-left hover:border-[var(--nk-border-strong)] hover:bg-[var(--nk-raised)]">
+      <span className="grid h-9 w-9 place-items-center rounded-lg bg-[var(--nk-inset)]">
+        <BriefcaseBusiness aria-hidden="true" className="h-4 w-4 text-[var(--nk-text-3)]" />
+      </span>
+      <span className="min-w-0 flex-1">
+        <strong className="block truncate text-[13.5px] font-medium">{task.title}</strong>
+        <small className="mt-0.5 block truncate text-[10.5px] text-[var(--nk-ghost)]">
+          {projectName} · {run ? `Run ${shortId(run.id)}` : "Chưa có lần chạy"}
+        </small>
+      </span>
+      <span className="shrink-0 text-right text-[11px]">
+        {run ? <span className={`block ${statusTone(run.state)}`}>Lần chạy: {RUN_LABELS[run.state]}</span> : null}
+        {session ? <span className="mt-1 block text-[var(--nk-text-3)]">Phiên: {workSessionStatusLabel(session)}</span> : null}
+      </span>
+      <ChevronRight aria-hidden="true" className="h-3.5 w-3.5 text-[var(--nk-ghost)] transition-transform group-hover:translate-x-0.5" />
+    </button>
+  );
 }
 
 function WorkRecovery({ error, retry }: { error: string | null; retry: () => void }) {
@@ -103,6 +135,12 @@ function NewTaskForm({
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  const prerequisiteHint = submitting ? "Đang lưu công việc…"
+    : !workspace && !title.trim() ? "Chọn thư mục dự án và nhập mục tiêu để tiếp tục."
+    : !workspace ? "Chọn thư mục dự án để tiếp tục."
+    : !title.trim() ? "Nhập mục tiêu cần hoàn thành để tiếp tục."
+    : "Mục tiêu và tiêu chí được lưu trước khi chọn agent.";
+
   const chooseWorkspace = async () => {
     setError(null);
     try {
@@ -127,6 +165,7 @@ function NewTaskForm({
         execution: created.execution,
         workspace,
         title: title.trim(),
+        acceptanceCriteria: criteria.split("\n").map(item => item.trim()).filter(Boolean),
       });
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause));
@@ -168,10 +207,11 @@ function NewTaskForm({
           </section>
 
           <section>
-            <label htmlFor="wiii-task-title" className="mb-2 block text-[11.5px] font-semibold uppercase tracking-wide text-[var(--nk-text-3)]">Mục tiêu</label>
+            <label htmlFor="wiii-task-title" className="mb-2 block text-[11.5px] font-semibold uppercase tracking-wide text-[var(--nk-text-3)]">Mục tiêu <span className="font-normal normal-case text-[var(--nk-ghost)]">· bắt buộc</span></label>
             <textarea
               id="wiii-task-title"
               data-testid="task-title"
+              required
               rows={3}
               value={title}
               onChange={(event) => setTitle(event.target.value)}
@@ -195,12 +235,14 @@ function NewTaskForm({
 
         {error ? <p className="mt-4 text-[12px] text-[var(--nk-danger)]">{error}</p> : null}
         <div className="mt-7 flex items-center justify-between gap-4 border-t border-[var(--nk-border)] pt-5">
-          <p className="flex items-center gap-2 text-[10.5px] text-[var(--nk-ghost)]"><ShieldCheck aria-hidden="true" className="h-3.5 w-3.5" />Task và Run được lưu trước khi agent khởi động.</p>
+          <p id="wiii-task-prerequisites" role="status" className="flex min-w-0 items-start gap-2 text-[11.5px] leading-5 text-[var(--nk-text-3)]"><ShieldCheck aria-hidden="true" className="mt-0.5 h-3.5 w-3.5 shrink-0" />{prerequisiteHint}</p>
           <button
             type="button"
             data-testid="continue-task"
+            aria-describedby="wiii-task-prerequisites"
+            title={prerequisiteHint}
             disabled={!workspace || !title.trim() || submitting}
-            className="inline-flex h-9 items-center gap-2 rounded-lg bg-[var(--nk-inverse)] px-4 text-[12.5px] font-medium text-[var(--nk-on-inverse)] disabled:cursor-not-allowed disabled:opacity-30"
+            className="inline-flex h-9 shrink-0 items-center gap-2 whitespace-nowrap rounded-lg bg-[var(--nk-inverse)] px-4 text-[12.5px] font-medium text-[var(--nk-on-inverse)] disabled:cursor-not-allowed disabled:opacity-30"
             onClick={() => void submit()}
           >
             {submitting ? <LoaderCircle aria-hidden="true" className="h-3.5 w-3.5 animate-spin" /> : null}
@@ -212,7 +254,14 @@ function NewTaskForm({
   );
 }
 
-export default function WiiiAdeApp({ onOpenManaged = () => {} }: { onOpenManaged?: () => void }) {
+export default function WiiiAdeApp(props: ComponentProps<typeof WiiiAdeScreen>) {
+  return <NekoRuntimeScope><WiiiAdeScreen {...props} /></NekoRuntimeScope>;
+}
+
+function WiiiAdeScreen({ onOpenManaged = () => {}, onOpenConnections }: {
+  onOpenManaged?: () => void;
+  onOpenConnections?: () => void;
+}) {
   const hydrate = useAdeWorkStore((state) => state.hydrate);
   const hydrated = useAdeWorkStore((state) => state.hydrated);
   const error = useAdeWorkStore((state) => state.error);
@@ -222,9 +271,24 @@ export default function WiiiAdeApp({ onOpenManaged = () => {} }: { onOpenManaged
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
   const [pendingLaunch, setPendingLaunch] = useState<NekoTaskLaunchRequest | null>(null);
+  const [navigationError, setNavigationError] = useState<string | null>(null);
   const lifecycleSyncs = useRef(new Set<string>());
   const sessions = useNekoSessionStore((state) => state.sessions);
   const desktopChrome = typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
+  // Last stored Run wins, matching the previous latestRun lookup without
+  // conflating a Task's broad phase with a currently executing Run.
+  const latestRuns = useMemo(() => new Map(graph.runs.map(run => [run.taskId, run] as const)), [graph.runs]);
+  const runSessions = useMemo(() => {
+    const result = new Map<string, NekoSession>();
+    for (const session of Object.values(sessions)) {
+      const runId = session.execution?.runId;
+      if (runId && !result.has(runId)) result.set(runId, session);
+    }
+    return result;
+  }, [sessions]);
+  const runningRunCount = [...latestRuns.values()].filter(run =>
+    run.state === "running" || run.state === "verifying").length;
+
 
   useEffect(() => {
     void hydrate().catch(() => {});
@@ -291,7 +355,7 @@ export default function WiiiAdeApp({ onOpenManaged = () => {} }: { onOpenManaged
   const visibleTasks = useMemo(() => graph.tasks.filter((task) =>
     !selectedProjectId || task.projectId === selectedProjectId), [graph.tasks, selectedProjectId]);
   const selectedTask = graph.tasks.find((task) => task.id === selectedTaskId) ?? null;
-  const selectedRun = selectedTask ? latestRun(selectedTask, graph.runs) : null;
+  const selectedRun = selectedTask ? latestRuns.get(selectedTask.id) ?? null : null;
   const selectedSpec = selectedTask
     ? [...graph.specs].reverse().find((spec) => spec.taskId === selectedTask.id) ?? null
     : null;
@@ -299,7 +363,7 @@ export default function WiiiAdeApp({ onOpenManaged = () => {} }: { onOpenManaged
     ? graph.projects.find((project) => project.id === selectedTask.projectId) ?? null
     : null;
   const selectedSession = selectedRun
-    ? Object.values(sessions).find((session) => session.execution?.runId === selectedRun.id) ?? null
+    ? runSessions.get(selectedRun.id) ?? null
     : null;
   const selectedEnvironment = selectedRun
     ? graph.environments.find((environment) => environment.id === selectedRun.environmentId) ?? null
@@ -310,7 +374,28 @@ export default function WiiiAdeApp({ onOpenManaged = () => {} }: { onOpenManaged
 
   const openNeko = (sessionId?: string) => {
     if (sessionId) useNekoSessionStore.getState().setActiveSession(sessionId);
+    setNavigationError(null);
     setSurface("neko");
+  };
+
+  const openWork = () => {
+    try {
+      // Re-read at the action boundary: the rendered session snapshot may be
+      // older than an approval or a turn that just started.
+      const busy = Object.values(useNekoSessionStore.getState().sessions).some(session =>
+        ["connecting", "dispatching", "streaming", "stopping"].includes(session.status)
+        || session.cancelPending || session.closePending
+        || session.pendingPermission !== null || session.resolvingPermissionId !== null);
+      if (busy) {
+        setNavigationError("Chưa thể mở Công việc khi agent đang xử lý hoặc chờ duyệt. Hãy chờ lượt hiện tại kết thúc rồi mở lại.");
+        return;
+      }
+      setNavigationError(null);
+      setPendingLaunch(null);
+      setSurface("work");
+    } catch {
+      setNavigationError("Chưa kiểm tra được trạng thái agent. Giữ phiên hiện tại và thử mở Công việc lại.");
+    }
   };
 
   const beginTaskExecution = (launch: NekoTaskLaunchRequest) => {
@@ -369,15 +454,21 @@ export default function WiiiAdeApp({ onOpenManaged = () => {} }: { onOpenManaged
 
   if (surface === "neko") {
     return (
-      <NekoChillApp
-        onOpenManaged={onOpenManaged}
-        showWorkNavigation
-        onOpenWork={() => {
-          setPendingLaunch(null);
-          setSurface("work");
-        }}
-        taskLaunch={pendingLaunch}
-      />
+      <>
+        <NekoChillApp
+          onOpenManaged={onOpenManaged}
+          onOpenConnections={onOpenConnections}
+          showWorkNavigation
+          onOpenWork={openWork}
+          taskLaunch={pendingLaunch}
+        />
+        {navigationError ? (
+          <p role="status" data-testid="work-navigation-status"
+            className="fixed bottom-4 left-1/2 z-50 w-[calc(100%-2rem)] max-w-lg -translate-x-1/2 rounded-xl border border-[var(--nk-border)] bg-[var(--nk-composer)] px-4 py-3 text-[12px] leading-5 text-[var(--nk-text-2)] shadow-lg">
+            {navigationError}
+          </p>
+        ) : null}
+      </>
     );
   }
 
@@ -404,7 +495,7 @@ export default function WiiiAdeApp({ onOpenManaged = () => {} }: { onOpenManaged
             <button type="button" className={`flex h-8 w-full items-center gap-2 rounded-lg px-2.5 text-[12.5px] font-medium ${selectedProjectId === null ? "bg-[var(--nk-item-active)]" : "hover:bg-[var(--nk-overlay)]"}`} onClick={() => { setSelectedProjectId(null); setSelectedTaskId(null); setNewTask(false); }}><BriefcaseBusiness aria-hidden="true" className="h-3.5 w-3.5" />Tất cả<span className="ml-auto text-[10px] tabular-nums text-[var(--nk-ghost)]">{graph.tasks.length}</span></button>
             <div className="mt-1 grid grid-cols-3 gap-1 px-1 text-center text-[9.5px] text-[var(--nk-ghost)]">
               <span>{graph.tasks.filter((task) => task.state === "blocked").length} cần bạn</span>
-              <span>{graph.tasks.filter((task) => task.state === "running").length} đang chạy</span>
+              <span>{runningRunCount} lượt đang thực hiện</span>
               <span>{graph.tasks.filter((task) => task.state === "review").length} cần duyệt</span>
             </div>
           </nav>
@@ -417,7 +508,7 @@ export default function WiiiAdeApp({ onOpenManaged = () => {} }: { onOpenManaged
             )) : <p className="px-2 py-2 text-[11.5px] leading-5 text-[var(--nk-ghost)]">Project xuất hiện khi bạn tạo công việc đầu tiên.</p>}
           </div>
           <div className="border-t border-[var(--nk-border)] p-2">
-            <button type="button" data-testid="open-neko" className="flex min-h-10 w-full items-center gap-2 rounded-lg px-2.5 text-left hover:bg-[var(--nk-overlay)]" onClick={() => openNeko()}><Bot aria-hidden="true" className="h-3.5 w-3.5 text-[var(--nk-text-3)]" /><span><strong className="block text-[12.5px] font-medium">Neko Chill</strong><small className="block text-[10px] text-[var(--nk-ghost)]">Theo dõi agent và phiên thủ công</small></span></button>
+            <button type="button" data-testid="open-neko" className="flex min-h-10 w-full items-center gap-2 rounded-lg px-2.5 text-left hover:bg-[var(--nk-overlay)]" onClick={() => openNeko()}><Bot aria-hidden="true" className="h-3.5 w-3.5 text-[var(--nk-text-3)]" /><span><strong className="block text-[12.5px] font-medium">Chat và dự án</strong><small className="block text-[10px] text-[var(--nk-ghost)]">Trò chuyện và theo dõi agent · Neko</small></span></button>
             <button type="button" className="mt-1 flex min-h-10 w-full items-center gap-2 rounded-lg px-2.5 text-left hover:bg-[var(--nk-overlay)]" onClick={onOpenManaged}><Cloud aria-hidden="true" className="h-3.5 w-3.5 text-[var(--nk-text-3)]" /><span><strong className="block text-[12.5px] font-medium">Wiii Service</strong><small className="block text-[10px] text-[var(--nk-ghost)]">Đồng bộ và tri thức · tùy chọn</small></span></button>
           </div>
         </aside>
@@ -432,16 +523,33 @@ export default function WiiiAdeApp({ onOpenManaged = () => {} }: { onOpenManaged
               <button type="button" className="mb-6 inline-flex items-center gap-1.5 text-[11.5px] text-[var(--nk-text-3)] hover:text-[var(--nk-text)]" onClick={() => setSelectedTaskId(null)}><ArrowLeft aria-hidden="true" className="h-3.5 w-3.5" />Công việc</button>
               <p className="text-[11px] uppercase tracking-[0.1em] text-[var(--nk-ghost)]">{selectedProject?.name ?? "Project"}</p>
               <h1 className="mt-2 text-[28px] font-normal tracking-[-0.025em]" style={{ fontFamily: "var(--font-serif)" }}>{selectedTask.title}</h1>
-              <div className={`mt-3 inline-flex items-center gap-2 text-[12px] font-medium ${statusTone(selectedRun.state)}`}><CircleDot aria-hidden="true" className="h-3.5 w-3.5" />{RUN_LABELS[selectedRun.state]} · Run {shortId(selectedRun.id)}</div>
+              <div className={`mt-3 inline-flex items-center gap-2 text-[12px] font-medium ${statusTone(selectedRun.state)}`}><CircleDot aria-hidden="true" className="h-3.5 w-3.5" />Lần chạy: {RUN_LABELS[selectedRun.state]} · Run {shortId(selectedRun.id)}</div>
+              {(selectedRun.state === "unknown_outcome" || (selectedSession?.runtime
+                && ["idle", "streaming", "dispatching"].includes(selectedSession.status)
+                && ["completed", "failed", "cancelled"].includes(selectedRun.state))) ? (
+                <p role="status" className="mt-3 rounded-lg border border-[var(--nk-border)] bg-[var(--nk-raised)] px-4 py-3 text-[12.5px] leading-5 text-[var(--nk-text-2)]">
+                  {selectedRun.state === "unknown_outcome"
+                    ? (selectedSession
+                      ? "Kết quả lần chạy chưa xác định. Mở phiên để kiểm tra; không tự gửi lại yêu cầu."
+                      : "Kết quả lần chạy chưa xác định. Chưa tìm thấy phiên liên kết. Giữ nguyên công việc và kiểm tra nhật ký runtime; không tự gửi lại yêu cầu.")
+                    : "Phiên hiện còn mở. Trạng thái lần chạy trước vẫn được giữ; mở phiên để xem hoạt động hiện tại. Đây chưa phải xác nhận công việc đã hoàn thành."}
+                </p>
+              ) : null}
               <div className="mt-8 grid gap-4 lg:grid-cols-[1fr_300px]">
                 <section className="rounded-2xl border border-[var(--nk-border)] bg-[var(--nk-composer)] p-5">
                   <h2 className="text-[12px] font-semibold uppercase tracking-wide text-[var(--nk-text-3)]">Tiêu chí chấp nhận</h2>
-                  {selectedSpec?.acceptanceCriteria.length ? <ul className="mt-4 space-y-3">{selectedSpec.acceptanceCriteria.map((criterion) => <li key={criterion} className="flex gap-2 text-[13px] leading-5"><CheckCircle2 aria-hidden="true" className="mt-0.5 h-4 w-4 shrink-0 text-[var(--nk-ghost)]" />{criterion}</li>)}</ul> : <p className="mt-3 text-[12.5px] text-[var(--nk-text-3)]">Chưa có tiêu chí riêng. Mục tiêu Task vẫn là yêu cầu gốc.</p>}
+                  {selectedSpec?.acceptanceCriteria.length ? <>
+                    <p className="mt-2 text-[11.5px] leading-5 text-[var(--nk-text-3)]">Danh sách yêu cầu, chưa phải kết quả kiểm chứng.</p>
+                    <ol aria-label="Tiêu chí cần đáp ứng" className="mt-4 list-decimal space-y-3 pl-5 marker:text-[var(--nk-ghost)]">
+                      {selectedSpec.acceptanceCriteria.map((criterion, index) => <li key={`${index}:${criterion}`} className="pl-1 text-[13px] leading-5">{criterion}</li>)}
+                    </ol>
+                  </> : <p className="mt-3 text-[12.5px] text-[var(--nk-text-3)]">Chưa có tiêu chí riêng. Mục tiêu Task vẫn là yêu cầu gốc.</p>}
                 </section>
                 <aside className="rounded-2xl border border-[var(--nk-border)] bg-[var(--nk-raised)] p-5">
-                  <h2 className="text-[12px] font-semibold uppercase tracking-wide text-[var(--nk-text-3)]">Execution</h2>
-                  <dl className="mt-4 space-y-3 text-[11.5px]"><div><dt className="text-[var(--nk-ghost)]">Môi trường</dt><dd className="mt-0.5">Local workspace</dd></div><div><dt className="text-[var(--nk-ghost)]">Agent</dt><dd className="mt-0.5">{selectedSession?.agentName ?? "Chưa gắn"}</dd></div><div><dt className="text-[var(--nk-ghost)]">Phiên</dt><dd className="mt-0.5 font-mono text-[10.5px]">{selectedSession ? shortId(selectedSession.id) : "—"}</dd></div></dl>
-                  {selectedSession ? <button type="button" className="mt-5 flex h-8 w-full items-center justify-center gap-2 rounded-lg bg-[var(--nk-inverse)] text-[11.5px] font-medium text-[var(--nk-on-inverse)]" onClick={() => openNeko(selectedSession.id)}>Mở phiên agent <ArrowRight aria-hidden="true" className="h-3.5 w-3.5" /></button> : selectedRun.state === "starting" && selectedWorkspace?.roots[0] ? <button type="button" className="mt-5 flex h-8 w-full items-center justify-center gap-2 rounded-lg bg-[var(--nk-inverse)] text-[11.5px] font-medium text-[var(--nk-on-inverse)]" onClick={() => beginTaskExecution({ execution: { taskId: selectedTask.id, runId: selectedRun.id, environmentId: selectedRun.environmentId }, workspace: workspaceFromPath(selectedWorkspace.roots[0]), title: selectedTask.title })}>Chọn agent <ArrowRight aria-hidden="true" className="h-3.5 w-3.5" /></button> : null}
+                  <h2 className="text-[12px] font-semibold uppercase tracking-wide text-[var(--nk-text-3)]">Thực thi</h2>
+                  <dl className="mt-4 space-y-3 text-[11.5px]"><div><dt className="text-[var(--nk-ghost)]">Môi trường</dt><dd className="mt-0.5">Thư mục trên máy</dd></div><div><dt className="text-[var(--nk-ghost)]">Agent</dt><dd className="mt-0.5">{selectedSession?.agentName ?? "Chưa gắn"}</dd></div><div><dt className="text-[var(--nk-ghost)]">Phiên</dt><dd className="mt-0.5 font-mono text-[10.5px]">{selectedSession ? shortId(selectedSession.id) : "—"}</dd></div></dl>
+                  {selectedSession ? <p className="mt-3 text-[11.5px] text-[var(--nk-text-2)]">Phiên: {workSessionStatusLabel(selectedSession)}</p> : null}
+                  {selectedSession ? <button type="button" className="mt-5 flex h-8 w-full items-center justify-center gap-2 rounded-lg bg-[var(--nk-inverse)] text-[11.5px] font-medium text-[var(--nk-on-inverse)]" onClick={() => openNeko(selectedSession.id)}>Mở phiên agent <ArrowRight aria-hidden="true" className="h-3.5 w-3.5" /></button> : selectedRun.state === "starting" && selectedWorkspace?.roots[0] ? <button type="button" className="mt-5 flex h-8 w-full items-center justify-center gap-2 rounded-lg bg-[var(--nk-inverse)] text-[11.5px] font-medium text-[var(--nk-on-inverse)]" onClick={() => beginTaskExecution({ execution: { taskId: selectedTask.id, runId: selectedRun.id, environmentId: selectedRun.environmentId }, workspace: workspaceFromPath(selectedWorkspace.roots[0]), title: selectedTask.title, acceptanceCriteria: selectedSpec?.acceptanceCriteria })}>Chọn agent <ArrowRight aria-hidden="true" className="h-3.5 w-3.5" /></button> : null}
                 </aside>
               </div>
             </div>
@@ -449,8 +557,19 @@ export default function WiiiAdeApp({ onOpenManaged = () => {} }: { onOpenManaged
         ) : (
           <main className="min-w-0 flex-1 overflow-y-auto px-8 py-9" data-testid="work-home">
             <div className="mx-auto max-w-[980px]">
-              <div className="flex items-end justify-between gap-6"><div><p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-[var(--nk-accent)]">Wiii ADE</p><h1 className="mt-2 text-[30px] font-normal tracking-[-0.03em]" style={{ fontFamily: "var(--font-serif)" }}>Công việc</h1><p className="mt-2 text-[13px] text-[var(--nk-text-2)]">Theo dõi điều cần hoàn thành; Neko lo phần thực thi.</p></div><button type="button" className="inline-flex h-9 items-center gap-2 rounded-lg bg-[var(--nk-inverse)] px-4 text-[12.5px] font-medium text-[var(--nk-on-inverse)]" onClick={() => setNewTask(true)}><Plus aria-hidden="true" className="h-3.5 w-3.5" />Công việc mới</button></div>
-              {visibleTasks.length ? <div className="mt-8 space-y-2">{[...visibleTasks].reverse().map((task) => { const run = latestRun(task, graph.runs); const project = graph.projects.find((item) => item.id === task.projectId); return <button key={task.id} type="button" className="group flex w-full items-center gap-4 rounded-xl border border-[var(--nk-border)] bg-[var(--nk-composer)] px-4 py-3.5 text-left hover:border-[var(--nk-border-strong)] hover:bg-[var(--nk-raised)]" onClick={() => setSelectedTaskId(task.id)}><span className="grid h-9 w-9 place-items-center rounded-lg bg-[var(--nk-inset)]"><BriefcaseBusiness aria-hidden="true" className="h-4 w-4 text-[var(--nk-text-2)]" /></span><span className="min-w-0 flex-1"><strong className="block truncate text-[13.5px] font-medium">{task.title}</strong><small className="mt-0.5 block truncate text-[10.5px] text-[var(--nk-ghost)]">{project?.name ?? "Project"} · {run ? `Run ${shortId(run.id)}` : "Chưa có Run"}</small></span>{run ? <span className={`shrink-0 text-[11px] ${statusTone(run.state)}`}>{RUN_LABELS[run.state]}</span> : null}<ChevronRight aria-hidden="true" className="h-3.5 w-3.5 text-[var(--nk-ghost)] transition-transform group-hover:translate-x-0.5" /></button>; })}</div> : <section className="mt-8 rounded-2xl border border-dashed border-[var(--nk-border-strong)] bg-[var(--nk-composer)] px-8 py-14 text-center"><span className="mx-auto grid h-12 w-12 place-items-center rounded-2xl bg-[var(--nk-inset)]"><BriefcaseBusiness aria-hidden="true" className="h-5 w-5 text-[var(--nk-text-3)]" /></span><h2 className="mt-5 text-[16px] font-medium">Chưa có công việc nào</h2><p className="mx-auto mt-2 max-w-md text-[12.5px] leading-5 text-[var(--nk-text-3)]">Bắt đầu bằng mục tiêu cần hoàn thành. Wiii sẽ giữ Task; Neko Chill tạo Run và phiên agent bên dưới.</p><button type="button" className="mt-5 inline-flex h-9 items-center gap-2 rounded-lg bg-[var(--nk-inverse)] px-4 text-[12px] font-medium text-[var(--nk-on-inverse)]" onClick={() => setNewTask(true)}><Plus aria-hidden="true" className="h-3.5 w-3.5" />Tạo công việc đầu tiên</button></section>}
+              <div className="flex items-end justify-between gap-6"><div><p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-[var(--nk-accent)]">Wiii ADE</p><h1 className="mt-2 text-[30px] font-normal tracking-[-0.03em]" style={{ fontFamily: "var(--font-serif)" }}>Công việc</h1><p className="mt-2 text-[13px] text-[var(--nk-text-2)]">Theo dõi điều cần hoàn thành; Neko lo phần thực thi.</p></div><button type="button" className="inline-flex h-9 shrink-0 items-center gap-2 whitespace-nowrap rounded-lg bg-[var(--nk-inverse)] px-4 text-[12.5px] font-medium text-[var(--nk-on-inverse)]" onClick={() => setNewTask(true)}><Plus aria-hidden="true" className="h-3.5 w-3.5" />Công việc mới</button></div>
+              {visibleTasks.length ? (
+                <div className="mt-8 space-y-2">
+                  {[...visibleTasks].reverse().map(task => {
+                    const run = latestRuns.get(task.id);
+                    const project = graph.projects.find(item => item.id === task.projectId);
+                    return <WorkTaskRow key={task.id} task={task} run={run}
+                      projectName={project?.name ?? "Project"}
+                      session={run ? runSessions.get(run.id) : undefined}
+                      onSelect={() => setSelectedTaskId(task.id)} />;
+                  })}
+                </div>
+              ) : <section className="mt-8 rounded-2xl border border-dashed border-[var(--nk-border-strong)] bg-[var(--nk-composer)] px-8 py-14 text-center"><span className="mx-auto grid h-12 w-12 place-items-center rounded-2xl bg-[var(--nk-inset)]"><BriefcaseBusiness aria-hidden="true" className="h-5 w-5 text-[var(--nk-text-3)]" /></span><h2 className="mt-5 text-[16px] font-medium">Chưa có công việc nào</h2><p className="mx-auto mt-2 max-w-md text-[12.5px] leading-5 text-[var(--nk-text-3)]">Bắt đầu bằng mục tiêu cần hoàn thành. Wiii sẽ giữ Task; Neko Chill tạo Run và phiên agent bên dưới.</p><button type="button" className="mt-5 inline-flex h-9 items-center gap-2 rounded-lg bg-[var(--nk-inverse)] px-4 text-[12px] font-medium text-[var(--nk-on-inverse)]" onClick={() => setNewTask(true)}><Plus aria-hidden="true" className="h-3.5 w-3.5" />Tạo công việc đầu tiên</button></section>}
             </div>
           </main>
         )}

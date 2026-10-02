@@ -24,6 +24,7 @@ export interface ObservedWorkspaceActivity {
 }
 
 export interface NekoWorkspaceSession {
+  workspacePath: string | null;
   open: boolean;
   activeTab: NekoWorkspaceTab;
   followAgent: boolean;
@@ -44,7 +45,7 @@ export interface NekoWorkspaceSession {
 
 interface NekoWorkspaceState {
   sessions: Record<string, NekoWorkspaceSession>;
-  ensureSession: (sessionId: string) => void;
+  ensureSession: (sessionId: string, workspace?: WorkspaceRef) => void;
   toggle: (sessionId: string) => void;
   close: (sessionId: string) => void;
   setTab: (sessionId: string, tab: NekoWorkspaceTab) => void;
@@ -70,14 +71,21 @@ interface NekoWorkspaceState {
   clearSession: (sessionId: string) => void;
 }
 
+// Never reuse a token after clear/recreate: old promises may still settle.
+let requestSequence = 0;
 const requestVersions = new Map<string, number>();
 const refreshVersions = new Map<string, number>();
 const refreshOperations = new Map<string, Promise<void>>();
 const refreshCompletedAt = new Map<string, number>();
 const AUTO_REFRESH_TTL_MS = 1_500;
 
+export function workspaceSelectionKey(workspace: WorkspaceRef): string {
+  const path = workspace.path.replace(/\\/g, "/").replace(/\/+$/, "");
+  return /^[a-z]:\//i.test(path) || path.startsWith("//") ? path.toLowerCase() : path;
+}
+
 function refreshKey(sessionId: string, workspace: WorkspaceRef): string {
-  return `${sessionId}\u0000${workspace.path.replace(/\\/g, "/").toLocaleLowerCase()}`;
+  return `${sessionId}\u0000${workspaceSelectionKey(workspace)}`;
 }
 
 function clearRefreshMetadata(sessionId: string): void {
@@ -92,6 +100,7 @@ function clearRefreshMetadata(sessionId: string): void {
 
 function emptySession(): NekoWorkspaceSession {
   return {
+    workspacePath: null,
     open: false,
     activeTab: "files",
     followAgent: true,
@@ -128,7 +137,7 @@ function relativePath(workspace: WorkspaceRef, path: string): string {
 }
 
 function nextRequestVersion(sessionId: string): number {
-  const next = (requestVersions.get(sessionId) ?? 0) + 1;
+  const next = ++requestSequence;
   requestVersions.set(sessionId, next);
   return next;
 }
@@ -140,12 +149,16 @@ function isCurrentRequest(sessionId: string, version: number): boolean {
 export const useNekoWorkspaceStore = create<NekoWorkspaceState>((set, get) => ({
   sessions: {},
 
-  ensureSession: (sessionId) =>
-    set((state) =>
-      state.sessions[sessionId]
-        ? state
-        : { sessions: { ...state.sessions, [sessionId]: emptySession() } },
-    ),
+  ensureSession: (sessionId, workspace) => {
+    const current = get().sessions[sessionId];
+    const path = workspace ? workspaceSelectionKey(workspace) : current?.workspacePath ?? null;
+    if (current && (!workspace || current.workspacePath === path)) return;
+    nextRequestVersion(sessionId);
+    refreshVersions.set(sessionId, ++requestSequence);
+    clearRefreshMetadata(sessionId);
+    set((state) => ({ sessions: { ...state.sessions, [sessionId]: { ...emptySession(),
+      open: current?.open ?? false, workspacePath: path } } }));
+  },
 
   toggle: (sessionId) =>
     set((state) => {
@@ -170,7 +183,8 @@ export const useNekoWorkspaceStore = create<NekoWorkspaceState>((set, get) => ({
       };
     }),
 
-  setTab: (sessionId, activeTab) =>
+  setTab: (sessionId, activeTab) => {
+    nextRequestVersion(sessionId);
     set((state) => {
       const current = state.sessions[sessionId] ?? emptySession();
       return {
@@ -180,6 +194,7 @@ export const useNekoWorkspaceStore = create<NekoWorkspaceState>((set, get) => ({
             ...current,
             activeTab,
             open: true,
+            loading: false,
             selectedFile: activeTab === "files" ? current.selectedFile : null,
             selectedDiff: activeTab === "changes" ? current.selectedDiff : null,
             error: null,
@@ -187,7 +202,8 @@ export const useNekoWorkspaceStore = create<NekoWorkspaceState>((set, get) => ({
           },
         },
       };
-    }),
+    });
+  },
 
   setFollowAgent: (sessionId, followAgent) =>
     set((state) => {
@@ -209,7 +225,7 @@ export const useNekoWorkspaceStore = create<NekoWorkspaceState>((set, get) => ({
     }),
 
   refresh: async (sessionId, workspace, options) => {
-    get().ensureSession(sessionId);
+    get().ensureSession(sessionId, workspace);
     const key = refreshKey(sessionId, workspace);
     const running = refreshOperations.get(key);
     if (running) return running;
@@ -217,7 +233,7 @@ export const useNekoWorkspaceStore = create<NekoWorkspaceState>((set, get) => ({
     if (!options?.force && Date.now() - completedAt < AUTO_REFRESH_TTL_MS) return;
 
     const operation = (async () => {
-      const refreshVersion = (refreshVersions.get(sessionId) ?? 0) + 1;
+      const refreshVersion = ++requestSequence;
       refreshVersions.set(sessionId, refreshVersion);
       set((state) => ({
         sessions: {
@@ -233,8 +249,8 @@ export const useNekoWorkspaceStore = create<NekoWorkspaceState>((set, get) => ({
         listWorkspaceFiles(workspace.path),
         listWorkspaceChanges(workspace.path),
       ]);
-      refreshCompletedAt.set(key, Date.now());
       if (refreshVersions.get(sessionId) !== refreshVersion) return;
+      refreshCompletedAt.set(key, Date.now());
       set((state) => {
         const current = state.sessions[sessionId];
         if (!current) return state;
@@ -269,6 +285,7 @@ export const useNekoWorkspaceStore = create<NekoWorkspaceState>((set, get) => ({
   },
 
   openFile: async (sessionId, workspace, path) => {
+    get().ensureSession(sessionId, workspace);
     const version = nextRequestVersion(sessionId);
     set((state) => {
       const current = state.sessions[sessionId] ?? emptySession();
@@ -323,6 +340,7 @@ export const useNekoWorkspaceStore = create<NekoWorkspaceState>((set, get) => ({
   },
 
   openChange: async (sessionId, workspace, path) => {
+    get().ensureSession(sessionId, workspace);
     const version = nextRequestVersion(sessionId);
     set((state) => {
       const current = state.sessions[sessionId] ?? emptySession();
@@ -346,13 +364,16 @@ export const useNekoWorkspaceStore = create<NekoWorkspaceState>((set, get) => ({
     try {
       const selectedDiff = await readWorkspaceDiff(workspace.path, path);
       if (!isCurrentRequest(sessionId, version)) return;
+      if (relativePath(workspace, selectedDiff.path) !== relativePath(workspace, path)) {
+        throw new Error("Runtime trả thay đổi của tệp khác; chưa hiển thị nội dung.");
+      }
       set((state) => {
         const current = state.sessions[sessionId];
         if (!current) return state;
         return {
           sessions: {
             ...state.sessions,
-            [sessionId]: { ...current, selectedDiff, loading: false },
+            [sessionId]: { ...current, selectedPath: selectedDiff.path, selectedDiff, loading: false },
           },
         };
       });
@@ -373,6 +394,9 @@ export const useNekoWorkspaceStore = create<NekoWorkspaceState>((set, get) => ({
 
   observeActivity: (sessionId, workspace, activity) => {
     if (!activity.locations?.length) return;
+    get().ensureSession(sessionId, workspace);
+    const following = get().sessions[sessionId];
+    if (following?.followAgent && !following.pinned) nextRequestVersion(sessionId);
     const now = Date.now();
     set((state) => {
       const current = state.sessions[sessionId] ?? emptySession();
@@ -395,6 +419,10 @@ export const useNekoWorkspaceStore = create<NekoWorkspaceState>((set, get) => ({
           [sessionId]: {
             ...current,
             activities,
+            selectedFile: shouldFollow ? null : current.selectedFile,
+            selectedDiff: shouldFollow ? null : current.selectedDiff,
+            loading: shouldFollow ? false : current.loading,
+            error: shouldFollow ? null : current.error,
             open: shouldFollow ? true : current.open,
             activeTab: shouldFollow ? "files" : current.activeTab,
             selectedPath: shouldFollow
@@ -421,6 +449,7 @@ export const useNekoWorkspaceStore = create<NekoWorkspaceState>((set, get) => ({
   },
 
   restoreActivities: (sessionId, workspace, activities) => {
+    get().ensureSession(sessionId, workspace);
     set((state) => {
       const current = state.sessions[sessionId] ?? emptySession();
       const restored = { ...current.activities };

@@ -31,12 +31,12 @@ vi.mock("@/neko-chill/workspace", async () => {
 
 vi.mock("@/neko-chill/NekoChillApp", () => ({
   default: ({ taskLaunch, onOpenWork }: {
-    taskLaunch?: { title: string; execution: { taskId: string; runId: string } } | null;
+    taskLaunch?: { title: string; acceptanceCriteria?: readonly string[]; execution: { taskId: string; runId: string } } | null;
     onOpenWork: () => void;
   }) => (
     <div data-testid="mock-neko">
       <span>{taskLaunch ? `Task launch: ${taskLaunch.title}` : "Manual Neko Chill"}</span>
-      {taskLaunch ? <span>Run {taskLaunch.execution.runId}</span> : null}
+      {taskLaunch ? <><span>Run {taskLaunch.execution.runId}</span><span data-testid="launch-criteria">{taskLaunch.acceptanceCriteria?.join(" | ")}</span></> : null}
       <button type="button" onClick={onOpenWork}>Về công việc</button>
     </div>
   ),
@@ -64,6 +64,25 @@ describe("Wiii task-first desktop shell", () => {
 
     fireEvent.click(screen.getByTestId("open-neko"));
     expect(screen.getByText("Manual Neko Chill")).toBeTruthy();
+  });
+
+  it("explains missing Work prerequisites and marks the goal required", async () => {
+    render(<WiiiAdeApp />);
+    fireEvent.click(screen.getByTestId("new-task"));
+    const next = screen.getByTestId("continue-task");
+    const title = screen.getByTestId("task-title");
+    expect(title.getAttribute("required")).not.toBeNull();
+    expect(next.getAttribute("aria-describedby")).toBe("wiii-task-prerequisites");
+    expect(screen.getByText("Chọn thư mục dự án và nhập mục tiêu để tiếp tục.")).toBeTruthy();
+    fireEvent.change(title, { target: { value: "A clear goal" } });
+    expect(screen.getByText("Chọn thư mục dự án để tiếp tục.")).toBeTruthy();
+    fireEvent.click(screen.getByTestId("choose-task-workspace"));
+    await screen.findByText("C:\\src\\wiii");
+    expect(next.hasAttribute("disabled")).toBe(false);
+    fireEvent.change(title, { target: { value: "   " } });
+    expect(screen.getByText("Nhập mục tiêu cần hoàn thành để tiếp tục.")).toBeTruthy();
+    expect(next.hasAttribute("disabled")).toBe(true);
+    expect(saveGraph).not.toHaveBeenCalled();
   });
 
   it("commits Project, Task and Run before handing execution to Neko", async () => {
@@ -105,6 +124,102 @@ describe("Wiii task-first desktop shell", () => {
     fireEvent.click(screen.getByTestId("open-neko"));
     expect(screen.getByText("Manual Neko Chill")).toBeTruthy();
     expect(screen.queryByText("Task launch: One durable launch")).toBeNull();
+  });
+
+  it("preserves saved criteria when revisiting a pending Work launch", async () => {
+    await useAdeWorkStore.getState().createTaskRun({
+      workspace: { name: "Wiii", path: "C:\\src\\wiii" },
+      title: "Saved draft", acceptanceCriteria: ["Keep source", "Pass checks"],
+    });
+    render(<WiiiAdeApp />);
+    fireEvent.click(screen.getByRole("button", { name: /Saved draft/ }));
+    fireEvent.click(screen.getByRole("button", { name: "Chọn agent" }));
+    expect((await screen.findByTestId("launch-criteria")).textContent).toBe("Keep source | Pass checks");
+  });
+
+  it("does not count a pending agent selection as a running execution", async () => {
+    await useAdeWorkStore.getState().createTaskRun({
+      workspace: { name: "Wiii", path: "C:\\src\\wiii" }, title: "Choose later",
+    });
+    render(<WiiiAdeApp />);
+    expect(screen.getByText("0 lượt đang thực hiện")).toBeTruthy();
+    expect(screen.getByRole("button", { name: /Choose later/ }).textContent).toContain("Đang chuẩn bị thực thi");
+  });
+
+  it("shows current session status without rewriting a terminal Run", async () => {
+    const created = await useAdeWorkStore.getState().createTaskRun({
+      workspace: { name: "Wiii", path: "C:\\src\\wiii" }, title: "Continued conversation",
+    });
+    await useAdeWorkStore.getState().transitionRun(created.runId, "cancelled");
+    useNekoSessionStore.setState({ sessions: { continued: {
+      id: "continued", agentName: "Neko Core", execution: created.execution,
+      status: "idle", events: [], runtime: { instanceId: "live-instance" },
+      cancelPending: false, closePending: false,
+    } as NekoSession } });
+    render(<WiiiAdeApp />);
+    const row = screen.getByRole("button", { name: /Continued conversation/ });
+    expect(row.textContent).toContain("Lần chạy: Đã dừng");
+    expect(row.textContent).toContain("Phiên: sẵn sàng");
+    fireEvent.click(row);
+    expect(screen.getByText(/Phiên hiện còn mở/)).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Mở phiên agent" })).toBeTruthy();
+    expect(useAdeWorkStore.getState().graph.runs[0].state).toBe("cancelled");
+    expect(useAdeWorkStore.getState().graph.tasks[0].state).toBe("cancelled");
+  });
+
+  it("presents acceptance criteria as requirements rather than passed checks", async () => {
+    await useAdeWorkStore.getState().createTaskRun({
+      workspace: { name: "Wiii", path: "C:\\src\\wiii" }, title: "Unverified criteria",
+      acceptanceCriteria: ["Keep behavior", "Keep behavior"],
+    });
+    render(<WiiiAdeApp />);
+    fireEvent.click(screen.getByRole("button", { name: /Unverified criteria/ }));
+    const requirements = screen.getByRole("list", { name: "Tiêu chí cần đáp ứng" });
+    expect(requirements.querySelectorAll("li")).toHaveLength(2);
+    expect(requirements.querySelector(".lucide-circle-check")).toBeNull();
+    expect(screen.getByText("Danh sách yêu cầu, chưa phải kết quả kiểm chứng.")).toBeTruthy();
+  });
+
+  it.each([true, false])("keeps unknown-outcome guidance visible without a runtime (session present: %s)", async (hasSession) => {
+    const created = await useAdeWorkStore.getState().createTaskRun({
+      workspace: { name: "Wiii", path: "C:\\src\\wiii" }, title: "Interrupted work",
+    });
+    await useAdeWorkStore.getState().transitionRun(created.runId, "unknown_outcome");
+    useNekoSessionStore.setState({ sessions: hasSession ? { interrupted: {
+      id: "interrupted", execution: created.execution, status: "error", runtime: null, events: [],
+    } as NekoSession } : {} });
+    render(<WiiiAdeApp />);
+    fireEvent.click(screen.getByRole("button", { name: /Interrupted work/ }));
+    expect(screen.getByText(/Kết quả lần chạy chưa xác định/)).toBeTruthy();
+    expect(screen.getByText(/không tự gửi lại yêu cầu/)).toBeTruthy();
+    if (hasSession) expect(screen.getByRole("button", { name: "Mở phiên agent" })).toBeTruthy();
+    else expect(screen.queryByRole("button", { name: "Mở phiên agent" })).toBeNull();
+    expect(useAdeWorkStore.getState().graph.runs[0].state).toBe("unknown_outcome");
+  });
+
+  it("does not call a saved idle snapshot connected without a runtime", async () => {
+    const created = await useAdeWorkStore.getState().createTaskRun({
+      workspace: { name: "Wiii", path: "C:\\src\\wiii" }, title: "Saved only",
+    });
+    useNekoSessionStore.setState({ sessions: { saved: {
+      id: "saved", execution: created.execution, status: "idle", events: [], runtime: null,
+    } as NekoSession } });
+    render(<WiiiAdeApp />);
+    const row = screen.getByRole("button", { name: /Saved only/ });
+    expect(row.textContent).toContain("Phiên: đã lưu · chưa kết nối");
+    expect(row.textContent).not.toContain("Phiên: sẵn sàng");
+  });
+
+  it("does not borrow the status of a session belonging to another Run", async () => {
+    await useAdeWorkStore.getState().createTaskRun({
+      workspace: { name: "Wiii", path: "C:\\src\\wiii" }, title: "Isolated row",
+    });
+    useNekoSessionStore.setState({ sessions: { other: {
+      id: "other", execution: { runId: "another-run", taskId: "another-task", environmentId: "other-env" },
+      status: "streaming", events: [], runtime: { instanceId: "other-live" },
+    } as NekoSession } });
+    render(<WiiiAdeApp />);
+    expect(screen.getByRole("button", { name: /Isolated row/ }).textContent).not.toContain("Phiên:");
   });
 
   it("projects authoritative native completion to review and releases the environment", async () => {

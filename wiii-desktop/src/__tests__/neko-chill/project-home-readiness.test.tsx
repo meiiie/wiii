@@ -59,7 +59,7 @@ beforeEach(() => {
   clearNekoComposerDraft(`project:${project.id}`);
   useNekoAgentStore.setState({ agents: [], isLoading: false, error: null, detect });
   useNekoProjectStore.setState({ projects: [project], setPreferredHarness: vi.fn(async () => {}) });
-  useNekoSessionStore.setState({ createSession: vi.fn(async () => "created"), sendPrompt: vi.fn(async () => {}) });
+  useNekoSessionStore.setState({ createSession: vi.fn(async () => "created"), sendPromptToSession: vi.fn(async () => {}) });
 });
 
 describe("Project Home readiness and missing Neko recovery", () => {
@@ -68,14 +68,14 @@ describe("Project Home readiness and missing Neko recovery", () => {
     await pickHarness("Gemini CLI");
     await vi.waitFor(() => expect(sendButton().disabled).toBe(false));
     await act(async () => { fireEvent.click(sendButton()); });
-    await vi.waitFor(() => expect(useNekoSessionStore.getState().sendPrompt).toHaveBeenCalledOnce());
+    await vi.waitFor(() => expect(useNekoSessionStore.getState().sendPromptToSession).toHaveBeenCalledOnce());
     expect(readNekoComposerDraft(`project:${project.id}`)).toBe("Bản nháp cần được giữ");
     expect((screen.getByRole("textbox", { name: "Lời nhắn đầu tiên" }) as HTMLTextAreaElement).value).toBe("Bản nháp cần được giữ");
     await vi.waitFor(() => expect(sendButton().disabled).toBe(false));
   });
 
   it("clears only an accepted Project draft", async () => {
-    useNekoSessionStore.setState({ sendPrompt: vi.fn(async (_text, accepted) => { accepted?.(); }) });
+    useNekoSessionStore.setState({ sendPromptToSession: vi.fn(async (_sessionId, _text, accepted) => { accepted?.(); }) });
     home([gemini]);
     await pickHarness("Gemini CLI");
     await vi.waitFor(() => expect(sendButton().disabled).toBe(false));
@@ -95,7 +95,43 @@ describe("Project Home readiness and missing Neko recovery", () => {
       gemini, project.roots[0], null, { projectId: project.id, execution, title: "Task fixture" },
     ));
     expect(readNekoComposerDraft(`project:${project.id}`)).toBe("Manual draft");
-    expect(useNekoSessionStore.getState().sendPrompt).not.toHaveBeenCalled();
+    await vi.waitFor(() => expect(useNekoSessionStore.getState().sendPromptToSession).toHaveBeenCalledWith("created", "Task fixture", expect.any(Function)));
+  });
+
+  it("waits for the Work binding and targets the created session despite navigation", async () => {
+    let release!: () => void;
+    const binding = new Promise<void>(resolve => { release = resolve; });
+    const onSessionCreated = vi.fn(async () => {
+      useNekoSessionStore.setState({ activeSessionId: "another-session" });
+      await binding;
+    });
+    useNekoAgentStore.setState({ agents: [gemini] });
+    render(<ProjectHome project={{ ...project, preferredHarnessId: "gemini" }} resetToken={0}
+      taskLaunch={{ execution: { taskId: "task", runId: "run", environmentId: "env" },
+        workspace: project.roots[0], title: "Task goal", acceptanceCriteria: ["Keep data", "Pass tests"], onSessionCreated }} />);
+    expect((screen.getByRole("textbox", { name: "Lời nhắn đầu tiên" }) as HTMLTextAreaElement).value)
+      .toBe("Task goal\n\nTiêu chí chấp nhận:\n- Keep data\n- Pass tests");
+    const send = sendButton();
+    act(() => { fireEvent.click(send); fireEvent.click(send); });
+    await vi.waitFor(() => expect(onSessionCreated).toHaveBeenCalledWith("created"));
+    expect(useNekoSessionStore.getState().sendPromptToSession).not.toHaveBeenCalled();
+    expect(useNekoSessionStore.getState().createSession).toHaveBeenCalledOnce();
+    await act(async () => { release(); });
+    await vi.waitFor(() => expect(useNekoSessionStore.getState().sendPromptToSession).toHaveBeenCalledWith(
+      "created", "Task goal\n\nTiêu chí chấp nhận:\n- Keep data\n- Pass tests", expect.any(Function),
+    ));
+  });
+
+  it("does not dispatch when durable Work binding fails", async () => {
+    const onLaunchError = vi.fn();
+    useNekoAgentStore.setState({ agents: [gemini] });
+    render(<ProjectHome project={{ ...project, preferredHarnessId: "gemini" }} resetToken={0}
+      taskLaunch={{ execution: { taskId: "task", runId: "run", environmentId: "env" },
+        workspace: project.roots[0], title: "Task goal",
+        onSessionCreated: async () => { throw new Error("binding unavailable"); }, onLaunchError }} />);
+    fireEvent.click(sendButton());
+    await vi.waitFor(() => expect(onLaunchError).toHaveBeenCalledOnce());
+    expect(useNekoSessionStore.getState().sendPromptToSession).not.toHaveBeenCalled();
   });
 
   it("removes all four starter actions, keeping the heading and composer", () => {
@@ -242,7 +278,7 @@ describe("Project Home readiness and missing Neko recovery", () => {
     expect(input.value).toBe("Bản nháp cần được giữ");
     expect(useNekoSessionStore.getState().createSession).not.toHaveBeenCalled();
     fireEvent.click(sendButton());
-    await vi.waitFor(() => expect(useNekoSessionStore.getState().sendPrompt).toHaveBeenCalledOnce());
+    await vi.waitFor(() => expect(useNekoSessionStore.getState().sendPromptToSession).toHaveBeenCalledOnce());
   });
 
   it("retries failed profile reads, not the unrelated installation probe", async () => {
@@ -354,4 +390,18 @@ describe("Project Home readiness and missing Neko recovery", () => {
     await vi.waitFor(() => expect(host.providers).toHaveBeenCalledOnce());
     expect(useNekoSessionStore.getState().createSession).not.toHaveBeenCalled();
   });
+});
+
+it("does not let delayed initial autofocus steal an already opened picker", () => {
+  const frames: FrameRequestCallback[] = [];
+  const raf = vi.spyOn(window, "requestAnimationFrame").mockImplementation(callback => { frames.push(callback); return frames.length; });
+  try {
+    home([neko, gemini]);
+    fireEvent.click(harnessTrigger());
+    const search = screen.getByRole("combobox");
+    expect(document.activeElement).toBe(search);
+    act(() => { for (const callback of frames.splice(0)) callback(0); });
+    expect(document.activeElement).toBe(search);
+    expect(screen.getByRole("listbox", { name: "Chọn Harness" })).toBeTruthy();
+  } finally { raf.mockRestore(); }
 });

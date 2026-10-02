@@ -12,8 +12,7 @@ export function splitWidgetBlocks(raw: string): ContentSegment[] {
   let match: RegExpExecArray | null;
 
   const pushMarkdown = (value: string) => {
-    const trimmed = value.trim();
-    if (trimmed) segments.push({ type: "markdown", content: trimmed });
+    if (value.trim()) segments.push({ type: "markdown", content: value });
   };
 
   while ((match = widgetStartRe.exec(raw)) !== null) {

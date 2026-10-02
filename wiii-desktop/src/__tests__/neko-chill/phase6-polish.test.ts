@@ -101,7 +101,9 @@ describe("T602 — honest error surfaces", () => {
     const errors = events.filter((e) => e.type === "error");
     expect(errors).toHaveLength(1);
     if (errors[0].type === "error") {
-      expect(errors[0].message).toContain("API key");
+      expect(errors[0].message).toContain(`RPC (${responses[2].error.code})`);
+      expect(errors[0].diagnostic?.code).toBe(responses[2].error.code);
+      expect(errors[0].message).not.toBe(responses[2].error.message);
       expect(errors[0].fatal).toBe(false);
     }
     expect(events.at(-1)).toEqual({

@@ -43,10 +43,18 @@ export interface NekoTaskLaunchRequest {
   execution: NekoExecutionBinding;
   workspace: WorkspaceRef;
   title: string;
+  acceptanceCriteria?: readonly string[];
   onSessionCreated?: (sessionId: string) => void | Promise<void>;
   onLaunchError?: (error: unknown) => void | Promise<void>;
 }
 
+
+function taskLaunchPrompt(launch: NekoTaskLaunchRequest): string {
+  const criteria = launch.acceptanceCriteria?.map(item => item.trim()).filter(Boolean) ?? [];
+  return criteria.length
+    ? `${launch.title}\n\nTiêu chí chấp nhận:\n${criteria.map(item => `- ${item}`).join("\n")}`
+    : launch.title;
+}
 
 /** Control-local reason when send is gated (ZCode cue: disabled = explained). */
 export function projectHomeSendTitle(args: {
@@ -58,6 +66,7 @@ export function projectHomeSendTitle(args: {
   selectedAgent: boolean;
   draftReady: boolean;
   nekoProfileBlocked: boolean;
+  nekoProfileLoading: boolean;
   codexBlocked: boolean;
 }): string | undefined {
   if (args.canStart) return "Gửi và mở phiên";
@@ -66,6 +75,7 @@ export function projectHomeSendTitle(args: {
   if (args.discoveryError) return "Không kiểm tra được harness trên máy. Bản nháp vẫn được giữ.";
   if (!args.selectedRoot) return "Project cần thư mục nguồn trước khi gửi.";
   if (!args.selectedAgent) return "Harness đã chọn chưa sẵn sàng. Bản nháp vẫn được giữ.";
+  if (args.nekoProfileLoading) return "Đang đọc cấu hình Neko Core… Bản nháp vẫn được giữ.";
   if (args.nekoProfileBlocked) return "Chưa đọc được cấu hình Neko Core. Bản nháp vẫn được giữ.";
   if (args.codexBlocked) return "Cần đăng nhập Codex trước khi mở phiên.";
   if (!args.draftReady) return "Nhập lời nhắn đầu tiên trước khi gửi.";
@@ -90,6 +100,7 @@ export function ProjectHome({
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const previousResetTokenRef = useRef(resetToken);
   const draftScope = `project:${project.id}`;
+  const quickChat = project.roots[0]?.kind === "scratch";
   const { agents, isLoading, discoveryError, detect } = useNekoAgentStore(useShallow((state) => ({
     agents: state.agents,
     isLoading: state.isLoading,
@@ -98,8 +109,9 @@ export function ProjectHome({
   })));
   const createSession = useNekoSessionStore((state) => state.createSession);
   const setPreferredHarness = useNekoProjectStore((state) => state.setPreferredHarness);
+  const taskPrompt = taskLaunch ? taskLaunchPrompt(taskLaunch) : null;
   const [draft, setDraftState] = useState(
-    () => taskLaunch?.title ?? readNekoComposerDraft(draftScope),
+    () => taskPrompt ?? readNekoComposerDraft(draftScope),
   );
   const [selectedRootPath, setSelectedRootPath] = useState(
     taskLaunch?.workspace.path ?? project.roots[0]?.path ?? "",
@@ -112,6 +124,7 @@ export function ProjectHome({
   const [profileAttempt, setProfileAttempt] = useState(0);
   const [selectedProfileId, setSelectedProfileId] = useState("");
   const [starting, setStarting] = useState(false);
+  const launchInFlight = useRef(false);
   const [error, setError] = useState<string | null>(null);
   const [codexAccount, setCodexAccount] = useState<CodexAccountSummary | null>(null);
   const [codexAccountState, setCodexAccountState] = useState<
@@ -151,16 +164,20 @@ export function ProjectHome({
   }, [agents, detect, discoveryError, isLoading, selectedAgentId]);
 
   useEffect(() => {
-    if (taskLaunch?.title) {
-      setDraftState(taskLaunch.title);
+    if (taskPrompt !== null) {
+      setDraftState(taskPrompt);
     } else if (previousResetTokenRef.current !== resetToken) {
-      setDraftState("");
-      clearNekoComposerDraft(draftScope);
+      setDraftState(readNekoComposerDraft(draftScope));
     }
     previousResetTokenRef.current = resetToken;
     setError(null);
-    requestAnimationFrame(() => textareaRef.current?.focus());
-  }, [draftScope, resetToken, taskLaunch?.execution.runId, taskLaunch?.title]);
+    const focusAtRequest = document.activeElement;
+    const frame = requestAnimationFrame(() => {
+      // A newer pointer/keyboard action owns focus; initial autofocus must not close its picker.
+      if (document.activeElement === focusAtRequest || document.activeElement === document.body) textareaRef.current?.focus();
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [draftScope, resetToken, taskLaunch?.execution.runId, taskPrompt]);
 
   useEffect(() => {
     const requestedPath = taskLaunch?.workspace.path;
@@ -264,7 +281,7 @@ export function ProjectHome({
   const selectAgent = (agentId: string) => {
     setSelectedAgentId(agentId);
     setError(null);
-    void setPreferredHarness(project.id, agentId);
+    if (!quickChat) void setPreferredHarness(project.id, agentId);
   };
 
   const loginCodex = async () => {
@@ -304,7 +321,8 @@ export function ProjectHome({
     selectedRoot: Boolean(selectedRoot),
     selectedAgent: Boolean(selectedAgent),
     draftReady: Boolean(taskLaunch || draft.trim()),
-    nekoProfileBlocked: Boolean(selectedAgent?.id === "neko" && (profileLoading || profileError)),
+    nekoProfileBlocked: Boolean(selectedAgent?.id === "neko" && profileError),
+    nekoProfileLoading: Boolean(selectedAgent?.id === "neko" && profileLoading),
     codexBlocked: Boolean(selectedAgent?.id === "codex" && codexAccountState !== "signed-in"),
   });
   const harnessSelectTitle = (
@@ -363,11 +381,12 @@ export function ProjectHome({
   );
 
   const start = async () => {
-    if (!selectedRoot || !selectedAgent || !canStart) return;
+    if (!selectedRoot || !selectedAgent || !canStart || launchInFlight.current) return;
+    launchInFlight.current = true;
     const profile = selectedAgent.id === "neko"
       ? profiles.find((item) => item.id === selectedProfileId) ?? null
       : null;
-    const prompt = taskLaunch?.title ?? draft.trim();
+    const prompt = taskPrompt ?? draft.trim();
     setStarting(true);
     setError(null);
     try {
@@ -377,11 +396,12 @@ export function ProjectHome({
         profile,
         taskLaunch
           ? { projectId: project.id, execution: taskLaunch.execution, title: taskLaunch.title }
-          : { projectId: project.id },
+          : { projectId: quickChat ? null : project.id },
       );
       await taskLaunch?.onSessionCreated?.(sessionId);
-      if (!taskLaunch && prompt) {
-        await useNekoSessionStore.getState().sendPrompt(prompt, () => {
+      if (prompt) {
+        await useNekoSessionStore.getState().sendPromptToSession(sessionId, prompt, () => {
+          if (taskLaunch) return; // Work intent is durable; do not erase the manual draft.
           if (readNekoComposerDraft(draftScope).trim() === prompt) {
             clearNekoComposerDraft(draftScope);
           }
@@ -398,6 +418,7 @@ export function ProjectHome({
           : String(classificationError));
       }
     } finally {
+      launchInFlight.current = false;
       setStarting(false);
     }
   };
@@ -417,7 +438,7 @@ export function ProjectHome({
             id="project-home-title"
             className="nk-project-heading min-w-0 break-words text-center text-[28px] font-medium leading-tight tracking-[-0.035em] text-[var(--nk-text)]"
           >
-            Bạn muốn làm gì trong <span className="underline decoration-[var(--nk-border-strong)] decoration-dotted underline-offset-4">{project.name}</span>?
+            {quickChat ? "Bạn muốn trao đổi điều gì?" : <>Bạn muốn làm gì trong <span className="underline decoration-[var(--nk-border-strong)] decoration-dotted underline-offset-4">{project.name}</span>?</>}
           </h1>
           {onEditProject ? <button
             type="button"
@@ -428,7 +449,8 @@ export function ProjectHome({
             <MoreHorizontal aria-hidden="true" className="h-4 w-4" />
           </button> : null}
         </div>
-        {!taskLaunch ? (
+        {quickChat && <p className="mt-3 max-w-lg px-4 text-center text-[12px] leading-5 text-[var(--nk-text-2)]">Chat này dùng một thư mục trống riêng của Wiii, không gắn mã nguồn dự án. Đây là thư mục làm việc, không phải sandbox; các quyền của agent vẫn áp dụng.</p>}
+        {!taskLaunch && !quickChat ? (
           <div
             className="mt-5 flex max-w-[560px] flex-wrap justify-center gap-2"
             data-testid="project-home-starters"

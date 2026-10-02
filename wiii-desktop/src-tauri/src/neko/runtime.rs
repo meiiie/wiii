@@ -12,7 +12,7 @@ use sha2::{Digest, Sha256};
 use std::collections::{HashMap, HashSet};
 use std::fs::{File, OpenOptions};
 use std::io::{self, BufRead, BufReader, Read, Write};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{channel, sync_channel, Receiver, SyncSender, TrySendError};
@@ -132,6 +132,10 @@ pub struct SessionStartResult {
     pub agent_session_id: String,
     pub run_id: String,
     pub provider: AgentInfo,
+    /// Physical launch root. Missing on historical journal results; never
+    /// inferred from their caller-supplied workspace alias.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub canonical_workspace_path: Option<String>,
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -318,6 +322,22 @@ impl NekoRuntime {
             let _operation = lock(&self.inner.operations);
             return Err(self.reject_start_error(&app, &request, "invalid_workspace", None, error));
         }
+        // Volatile physical-root resolution follows idempotent replay lookup.
+        // The original request alias remains the journal/fingerprint identity;
+        // the provider process and new receipt use this resolved launch root.
+        let canonical_workspace_path = match canonical_start_workspace(&request.workspace_path) {
+            Ok(root) => root,
+            Err(error) => {
+                let _operation = lock(&self.inner.operations);
+                return Err(self.reject_start_error(
+                    &app,
+                    &request,
+                    "invalid_workspace",
+                    None,
+                    error,
+                ));
+            }
+        };
 
         // Version/profile discovery can invoke a slow or broken provider shim.
         // The request and its Starting projection are durable first, but this
@@ -409,7 +429,7 @@ impl NekoRuntime {
         let mut command = resolved.command();
         command
             .args(&args)
-            .current_dir(&request.workspace_path)
+            .current_dir(&canonical_workspace_path)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped());
@@ -551,6 +571,9 @@ impl NekoRuntime {
         let result = SessionStartResult {
             agent_session_id: request.agent_session_id.clone(),
             run_id: request.run_id.clone(),
+            canonical_workspace_path: Some(display_canonical_workspace_path(
+                &canonical_workspace_path,
+            )),
             provider: AgentInfo {
                 id: resolved.definition.id.to_string(),
                 name: resolved.definition.name.to_string(),
@@ -1490,6 +1513,31 @@ fn validate_provider_frame(frame: &str) -> Result<(), String> {
     Ok(())
 }
 
+fn canonical_start_workspace(workspace: &str) -> Result<PathBuf, String> {
+    let root = std::fs::canonicalize(workspace)
+        .map_err(|error| format!("canonical workspace resolution failed: {error}"))?;
+    if !root.is_dir() {
+        return Err("workspace must resolve to an existing directory".into());
+    }
+    Ok(root)
+}
+
+/// Display normalization mirrors the native workspace picker. It changes no
+/// filesystem authority and does not perform lexical or case-folded matching.
+fn display_canonical_workspace_path(path: &Path) -> String {
+    let value = path.to_string_lossy();
+    #[cfg(windows)]
+    {
+        if let Some(rest) = value.strip_prefix(r"\\?\UNC\") {
+            return format!(r"\\{rest}");
+        }
+        if let Some(rest) = value.strip_prefix(r"\\?\") {
+            return rest.to_string();
+        }
+    }
+    value.into_owned()
+}
+
 fn validate_start_workspace(request: &SessionStartRequest) -> Result<(), String> {
     if !Path::new(&request.workspace_path).is_dir() {
         return Err("workspace must be an existing absolute directory".into());
@@ -1861,6 +1909,81 @@ mod tests {
         let mut short_unterminated = BufReader::with_capacity(2, io::Cursor::new(b"1234"));
         let error = read_bounded_frame(&mut short_unterminated, &mut frame, 4).unwrap_err();
         assert_eq!(error.kind(), io::ErrorKind::InvalidData);
+    }
+
+    #[test]
+    fn start_root_is_a_canonical_existing_directory() {
+        let base = std::env::temp_dir().join(format!(
+            "wiii-start-root-{}",
+            uuid::Uuid::new_v4(),
+        ));
+        let workspace = base.join("project");
+        let nested = workspace.join("nested");
+        std::fs::create_dir_all(&nested).unwrap();
+        let resolved = canonical_start_workspace(
+            &nested.join("..").to_string_lossy(),
+        ).unwrap();
+        assert_eq!(resolved, std::fs::canonicalize(&workspace).unwrap());
+        assert_eq!(
+            std::fs::canonicalize(display_canonical_workspace_path(&resolved)).unwrap(),
+            resolved,
+        );
+        std::fs::remove_dir_all(base).unwrap();
+    }
+
+    #[test]
+    fn start_root_rejects_a_missing_directory() {
+        let missing = std::env::temp_dir().join(format!(
+            "wiii-missing-canonical-root-{}",
+            uuid::Uuid::new_v4(),
+        ));
+        assert!(canonical_start_workspace(&missing.to_string_lossy()).is_err());
+    }
+
+    #[test]
+    fn start_root_rejects_a_regular_file() {
+        let base = std::env::temp_dir().join(format!(
+            "wiii-file-start-root-{}",
+            uuid::Uuid::new_v4(),
+        ));
+        std::fs::create_dir_all(&base).unwrap();
+        let file = base.join("not-a-workspace.txt");
+        std::fs::write(&file, "fixture").unwrap();
+        assert!(canonical_start_workspace(&file.to_string_lossy()).is_err());
+        std::fs::remove_dir_all(base).unwrap();
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn canonical_start_root_display_preserves_drive_and_unc_identity() {
+        assert_eq!(
+            display_canonical_workspace_path(Path::new(r"\\?\E:\Project\Code")),
+            r"E:\Project\Code",
+        );
+        assert_eq!(
+            display_canonical_workspace_path(Path::new(r"\\?\UNC\server\share\Code")),
+            r"\\server\share\Code",
+        );
+    }
+
+    #[test]
+    fn historical_start_results_do_not_invent_a_canonical_launch_root() {
+        let historical = json!({
+            "agentSessionId": "legacy-session",
+            "runId": "legacy-run",
+            "provider": {
+                "id": "neko",
+                "name": "Neko",
+                "version": null,
+                "found": true,
+                "availability": "available",
+                "supportsProfiles": true,
+                "detail": null,
+            },
+        });
+        let result: SessionStartResult = serde_json::from_value(historical.clone()).unwrap();
+        assert_eq!(result.canonical_workspace_path, None);
+        assert_eq!(serde_json::to_value(&result).unwrap(), historical);
     }
 
     #[test]

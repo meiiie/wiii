@@ -1,4 +1,4 @@
-import { memo, useDeferredValue, useMemo, useState, type ReactNode } from "react";
+import { memo, useDeferredValue, useMemo, useRef, useState, type ReactNode } from "react";
 import {
   ChevronDown,
   ChevronRight,
@@ -20,6 +20,7 @@ import {
 } from "../stores/neko-session-store";
 import { sessionStatusDotClass } from "../session-catalog";
 import { useNekoSessionCatalog } from "../hooks/useNekoSessionCatalog";
+import { SessionDeleteDialog } from "./SessionDeleteDialog";
 
 interface ProjectProjection {
   project: NekoProject;
@@ -45,6 +46,9 @@ export const SessionSidebar = memo(function SessionSidebar({
   onShowCoworker,
   onShowConnections,
   onNewSession,
+  onQuickChat,
+  quickChatPending = false,
+  quickChatError,
   onCreateProject,
   onSelectProject,
   onEditProject,
@@ -60,6 +64,9 @@ export const SessionSidebar = memo(function SessionSidebar({
   onShowCoworker: () => void;
   onShowConnections: () => void;
   onNewSession: () => void;
+  onQuickChat?: () => void;
+  quickChatPending?: boolean;
+  quickChatError?: string | null;
   onCreateProject: () => void;
   onSelectProject: (projectId: string) => void;
   onEditProject: (projectId: string) => void;
@@ -67,7 +74,10 @@ export const SessionSidebar = memo(function SessionSidebar({
 }) {
   const sessions = useNekoSessionCatalog();
   const activeSessionId = useNekoSessionStore((state) => state.activeSessionId);
-  const deleteSession = useNekoSessionStore((state) => state.deleteSession);
+  const [deleteTarget, setDeleteTarget] = useState<{ id: string; title: string } | null>(null);
+  const deleteOpenerRef = useRef<HTMLButtonElement | null>(null);
+  const newSessionRef = useRef<HTMLButtonElement>(null);
+  const searchRef = useRef<HTMLInputElement>(null);
   const [query, setQuery] = useState("");
   const deferredQuery = useDeferredValue(query);
   const [collapsed, setCollapsed] = useState<Set<string>>(() => new Set());
@@ -78,7 +88,7 @@ export const SessionSidebar = memo(function SessionSidebar({
     const unassigned: NekoSession[] = [];
     for (const session of sessions) {
       const project = projectForSession(projects, session);
-      if (!project) {
+      if (!project || project.roots[0]?.kind === "scratch") {
         unassigned.push(session);
         continue;
       }
@@ -87,7 +97,7 @@ export const SessionSidebar = memo(function SessionSidebar({
       else sessionsByProject.set(project.id, [session]);
     }
 
-    const rows: ProjectProjection[] = projects.flatMap((project) => {
+    const rows: ProjectProjection[] = projects.filter(project => project.roots[0]?.kind !== "scratch").flatMap((project) => {
       const all = (sessionsByProject.get(project.id) ?? [])
         .sort((left, right) => right.updatedAt - left.updatedAt);
       const projectMatch = !term || normalize([
@@ -118,6 +128,9 @@ export const SessionSidebar = memo(function SessionSidebar({
     return { projectRows: rows, legacySessions: legacy };
   }, [deferredQuery, projects, sessions]);
   const searching = deferredQuery.trim().length > 0;
+  const pendingScratch = projects.filter(project => project.roots[0]?.kind === "scratch"
+    && !sessions.some(session => session.workspace?.path === project.roots[0].path)
+    && (!searching || normalize([project.name, ...project.roots.map(root => root.path)].join(" ")).includes(normalize(deferredQuery))));
 
   const renderSession = (session: NekoSession, projectId: string | null) => (
     <div
@@ -144,7 +157,10 @@ export const SessionSidebar = memo(function SessionSidebar({
         className="nk-row-action rounded p-1 text-[var(--nk-ghost)] transition-colors hover:text-[var(--nk-danger)]"
         title="Xoá phiên"
         aria-label={`Xoá phiên ${session.title}`}
-        onClick={() => void deleteSession(session.id)}
+        onClick={(event) => {
+          deleteOpenerRef.current = event.currentTarget;
+          setDeleteTarget({ id: session.id, title: session.title });
+        }}
       >
         <X aria-hidden="true" className="h-3 w-3" />
       </button>
@@ -189,19 +205,30 @@ export const SessionSidebar = memo(function SessionSidebar({
           Kết nối
           <span className="ml-auto text-[9.5px] font-normal text-[var(--nk-ghost)]">Tài khoản</span>
         </button>
+        {onQuickChat && <button type="button" onClick={onQuickChat} disabled={quickChatPending}
+          className="mt-2 flex min-h-9 w-full items-center gap-2 rounded-lg bg-[var(--nk-inverse)] px-2.5 text-[12.5px] font-medium text-[var(--nk-on-inverse)] disabled:opacity-60"
+          title="Bắt đầu chat với thư mục riêng, không cần chọn dự án">
+          <Plus aria-hidden="true" className="h-3.5 w-3.5" />
+          {quickChatPending ? "Đang chuẩn bị chat…" : "Chat mới"}
+        </button>}
+        {quickChatError && <p role="alert" className="px-2.5 py-2 text-[11px] text-[var(--nk-danger)]">{quickChatError} Nhấn Chat mới để thử lại.</p>}
         <button
           type="button"
           className="mt-0.5 flex h-8 w-full items-center gap-2 rounded-lg px-2.5 text-[12.5px] font-medium text-[var(--nk-text-2)] transition-colors hover:bg-[var(--nk-overlay)] hover:text-[var(--nk-text)]"
+          ref={newSessionRef}
           onClick={onNewSession}
           data-testid="new-session"
         >
           <Plus aria-hidden="true" className="h-3.5 w-3.5 text-[var(--nk-text-3)]" />
-          Phiên mới
+          Chat trong dự án
         </button>
         <label className="nk-input-field mt-1.5 flex h-8 items-center gap-2 rounded-lg bg-[var(--nk-inset)] px-2.5 text-[var(--nk-text-3)]">
           <Search aria-hidden="true" className="h-3.5 w-3.5 shrink-0" />
           <input
-            type="search"
+            ref={searchRef}
+            type="text"
+            role="searchbox"
+            onKeyDown={event => { if (event.key === "Escape" && query) { event.preventDefault(); event.stopPropagation(); setQuery(""); } }}
             value={query}
             onChange={(event) => setQuery(event.target.value)}
             className="min-w-0 flex-1 bg-transparent text-[12px] text-[var(--nk-text)] placeholder:text-[var(--nk-ghost)] focus:outline-none"
@@ -210,7 +237,7 @@ export const SessionSidebar = memo(function SessionSidebar({
             aria-busy={query !== deferredQuery}
           />
           {query ? (
-            <button type="button" aria-label="Xoá tìm kiếm" className="rounded p-0.5 hover:bg-[var(--nk-overlay)]" onClick={() => setQuery("")}>
+            <button type="button" aria-label="Xoá tìm kiếm" className="grid h-6 w-6 shrink-0 place-items-center rounded hover:bg-[var(--nk-overlay)]" onClick={() => { setQuery(""); searchRef.current?.focus(); }}>
               <X aria-hidden="true" className="h-3 w-3" />
             </button>
           ) : null}
@@ -231,11 +258,12 @@ export const SessionSidebar = memo(function SessionSidebar({
       </div>
 
       <div className="nk-scroll-surface min-h-0 flex-1 overflow-y-auto px-2 pb-3">
-        {projectRows.length === 0 && legacySessions.length === 0 ? (
+        {(searching ? projectRows.length === 0 && legacySessions.length === 0 && pendingScratch.length === 0 : projects.length === 0 && legacySessions.length === 0) ? (
           searching ? (
-            <p className="px-2.5 py-3 text-[12px] leading-5 text-[var(--nk-text-3)]">
-              Không tìm thấy phiên hoặc Project phù hợp.
-            </p>
+            <div className="px-2.5 py-3 text-[12px] leading-5 text-[var(--nk-text-3)]">
+              <p role="status">Không tìm thấy phiên hoặc dự án phù hợp.</p>
+              <button type="button" className="mt-2 min-h-8 rounded-md px-2 text-[var(--nk-text)] hover:bg-[var(--nk-overlay)]" onClick={() => { setQuery(""); searchRef.current?.focus(); }}>Xóa bộ lọc</button>
+            </div>
           ) : (
             <div className="px-2.5 py-3" data-testid="empty-projects-cta">
               <p className="text-[12px] leading-5 text-[var(--nk-text-3)]">
@@ -288,6 +316,15 @@ export const SessionSidebar = memo(function SessionSidebar({
                     </button>
                     <button
                       type="button"
+                      className="grid h-8 w-8 shrink-0 place-items-center rounded-md text-[var(--nk-text-3)] hover:bg-[var(--nk-raised)] hover:text-[var(--nk-text)]"
+                      aria-label={`Chat mới trong ${project.name}`}
+                      title={`Chat mới trong ${project.name}`}
+                      onClick={() => onSelectProject(project.id)}
+                    >
+                      <Plus aria-hidden="true" className="h-3.5 w-3.5" />
+                    </button>
+                    <button
+                      type="button"
                       className="nk-row-action mr-1 grid h-6 w-6 place-items-center rounded-md text-[var(--nk-ghost)] transition-colors hover:bg-[var(--nk-raised)] hover:text-[var(--nk-text)]"
                       aria-label={`Chỉnh sửa Project ${project.name}`}
                       onClick={() => onEditProject(project.id)}
@@ -310,11 +347,16 @@ export const SessionSidebar = memo(function SessionSidebar({
               );
             })}
 
+            {pendingScratch.length > 0 && <section>
+              <p className="px-2 py-2 text-[11px] text-[var(--nk-text-3)]">Chat chưa gửi</p>
+              {pendingScratch.map(project =>
+                <button key={project.id} className="flex min-h-8 w-full items-center rounded-lg px-3 text-left text-[12px] hover:bg-[var(--nk-overlay)]" onClick={() => onSelectProject(project.id)}>Tiếp tục chat riêng</button>)}
+            </section>}
             {legacySessions.length ? (
               <section>
                 <div className="flex h-8 items-center gap-2 px-2 text-[12px] text-[var(--nk-text-3)]">
                   <History aria-hidden="true" className="h-3.5 w-3.5" />
-                  <span className="min-w-0 flex-1 truncate">Legacy · Chưa gắn Project</span>
+                  <span className="min-w-0 flex-1 truncate">Chat riêng và phiên chưa gắn dự án</span>
                   <span className="text-[9.5px] tabular-nums text-[var(--nk-ghost)]">{legacySessions.length}</span>
                 </div>
                 {legacySessions.slice(0, searching ? 50 : 6).map((session) => renderSession(session, null))}
@@ -325,8 +367,18 @@ export const SessionSidebar = memo(function SessionSidebar({
       </div>
 
       <div className="border-t border-[var(--nk-border)] px-3 py-2 text-[10.5px] text-[var(--nk-ghost)]">
-        {projects.length} Project · {sessions.length} phiên Wiii
+        {projects.filter(project => project.roots[0]?.kind !== "scratch").length} dự án · {sessions.length} phiên Wiii
       </div>
+      {deleteTarget ? (
+        <SessionDeleteDialog
+          key={deleteTarget.id}
+          target={deleteTarget}
+          opener={deleteOpenerRef.current}
+          fallbackFocusRef={newSessionRef}
+          onCancel={() => setDeleteTarget(null)}
+          onDeleted={() => setDeleteTarget(null)}
+        />
+      ) : null}
     </aside>
   );
 });

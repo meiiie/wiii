@@ -13,9 +13,9 @@ function manualChunks(id: string) {
     return undefined;
   }
 
-  if (normalizedId.includes("/node_modules/monaco-editor/")) {
-    return "vendor-monaco";
-  }
+  // Let Monaco follow its lazy workspace import. Forcing all of its modules
+  // into one manual chunk also captures shared helpers and preloads the full
+  // engine/CSS from the application entry. Workers are separate local assets.
 
   const shikiThemeMatch = normalizedId.match(/\/node_modules\/@shikijs\/themes\/dist\/([^/]+)\.mjs$/);
   if (shikiThemeMatch) {

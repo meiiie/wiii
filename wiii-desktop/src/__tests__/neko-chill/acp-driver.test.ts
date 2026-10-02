@@ -164,6 +164,19 @@ async function startDurableDriver(
 }
 
 describe("AcpDriver golden replay (real neko-core v0.24.0 fixture)", () => {
+  it("keeps prompt correlation fixed in started/terminal events and out of ACP wire params", async () => {
+    const transport = new FakeTransport();const events:DriverEvent[]=[];
+    const driver=await startDriver(events,transport);
+    const context={promptEventId:"local-input-1"};const turn=driver.prompt("Synthetic request",context);
+    context.promptEventId="changed-after-call";
+    await tick();const request=transport.sent.find(frame=>frame.method==="session/prompt")!;
+    expect(request.params).toEqual({sessionId:driver.backendSessionId,prompt:[{type:"text",text:"Synthetic request"}]});
+    transport.inject({jsonrpc:"2.0",id:request.id,result:{stopReason:"cancelled"}});await turn;
+    expect(events.filter(event=>event.type==="turn-started"||event.type==="turn-finished")).toEqual([
+      {type:"turn-started",sessionId:"local-1",promptEventId:"local-input-1"},
+      {type:"turn-finished",sessionId:"local-1",promptEventId:"local-input-1",stopReason:"cancelled"},
+    ]);
+  });
   it("does not overwrite fatal Computer cleanup failure with normal turn completion", async () => {
     const transport = new FakeTransport();
     const events: DriverEvent[] = [];
@@ -722,6 +735,54 @@ describe("AcpDriver golden replay (real neko-core v0.24.0 fixture)", () => {
 
     // Every emitted event carries the local session id.
     for (const event of events) expect(event.sessionId).toBe("local-1");
+  });
+
+  it("keeps a genuine RPC fault after Deny and waits for a new explicit Allow request", async () => {
+    const events: DriverEvent[] = [];
+    const transport = new FakeTransport();
+    const driver = await startDriver(events, transport);
+    const perm = agentMidTurnFrames().find(frame => frame.method === "session/request_permission")!;
+    const first = driver.prompt("Deny probe");
+    await tick();
+    const firstId = transport.sent.at(-1)!.id;
+    transport.inject({ ...perm, id: 880 });
+    await tick();
+    const request = events.filter(event => event.type === "permission-request").at(-1)!;
+    if (request.type !== "permission-request") throw new Error("missing permission request");
+    await driver.resolvePermission({ requestId: request.request.requestId, optionId: "reject_once" });
+    await driver.resolvePermission({ requestId: request.request.requestId, optionId: "reject_once" });
+    await tick();
+    expect(transport.sent.filter(frame => frame.id === 880)).toHaveLength(1);
+    transport.inject({ id: firstId, error: { code: -32603, message: "Internal error", data: { statusCode: 400, details: "provider rejected duplicate tool result", headers: { Authorization: "Bearer synthetic-private" } } } });
+    await first;
+    const errors = events.filter(event => event.type === "error");
+    expect(errors).toHaveLength(1);
+    expect(errors[0]).toMatchObject({ fatal: false, diagnostic: { category: "rpc-response", code: -32603, operation: "session/prompt", data: { statusCode: 400 } } });
+    if (errors[0].type !== "error") throw new Error("missing error");
+    expect(errors[0].message).toContain("provider rejected duplicate tool result");
+    expect(JSON.stringify(errors)).not.toContain("synthetic-private");
+    expect(events.filter(event => event.type === "turn-finished")).toEqual([{ type: "turn-finished", sessionId: "local-1", stopReason: "error" }]);
+    expect(transport.sent.filter(frame => frame.method === "session/prompt")).toHaveLength(1);
+
+    // An explicit new prompt and new permission request are required; no replay.
+    const second = driver.prompt("A separate, newly authorized Allow probe");
+    await tick();
+    const secondId = transport.sent.at(-1)!.id;
+    transport.inject({ ...perm, id: 881 });
+    await tick();
+    const next = events.filter(event => event.type === "permission-request").at(-1)!;
+    if (next.type !== "permission-request") throw new Error("missing new permission request");
+    expect(next.request.requestId).not.toBe(request.request.requestId);
+    await driver.resolvePermission({ requestId: next.request.requestId, optionId: "allow_once" });
+    await driver.resolvePermission({ requestId: next.request.requestId, optionId: "allow_once" });
+    await tick();
+    expect(transport.sent.filter(frame => frame.id === 881)).toHaveLength(1);
+    expect(transport.sent.find(frame => frame.id === 881)?.result.outcome).toEqual({ outcome: "selected", optionId: "allow_once" });
+    transport.inject({ id: secondId, result: { stopReason: "end_turn" } });
+    await second;
+    expect(events.filter(event => event.type === "error")).toHaveLength(1);
+    expect(transport.sent.filter(frame => frame.method === "session/prompt")).toHaveLength(2);
+    expect(events.filter(event => event.type === "turn-finished").at(-1)).toEqual({ type: "turn-finished", sessionId: "local-1", stopReason: "end_turn" });
   });
 
   it("fails closed: null decisions, unknown options, and dispose all cancel", async () => {

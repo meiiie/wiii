@@ -1,0 +1,52 @@
+/* Inline Neko Peek is static until a direct interaction or explicit state. */
+.wiii-logo {
+  display: block;
+  flex-shrink: 0;
+  overflow: visible;
+}
+
+.wiii-logo .wiii-eye-left,
+.wiii-logo .wiii-eye-right {
+  transform-box: fill-box;
+  transform-origin: center;
+}
+
+.wiii-logo .wiii-tail-front {
+  transform-box: fill-box;
+  transform-origin: 50% 70%;
+}
+
+.wiii-logo[data-state="arriving"] .wiii-eye-left,
+.wiii-logo[data-state="arriving"] .wiii-eye-right {
+  animation: wiii-logo-blink 800ms ease-in-out 1;
+}
+
+.wiii-logo[data-state="settling"] .wiii-tail-front {
+  animation: wiii-logo-tail-settle 550ms ease-out 1;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .wiii-logo[data-state="ready"]:hover .wiii-eye-left,
+  .wiii-logo[data-state="ready"]:hover .wiii-eye-right {
+    animation: wiii-logo-blink 800ms ease-in-out 1;
+  }
+}
+
+@keyframes wiii-logo-blink {
+  0%, 30%, 70%, 100% { transform: scaleY(1); }
+  48%, 52% { transform: scaleY(.12); }
+}
+
+@keyframes wiii-logo-tail-settle {
+  0%, 100% { transform: translateY(0); }
+  38% { transform: translateY(-3px); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .wiii-logo .wiii-eye-left,
+  .wiii-logo .wiii-eye-right,
+  .wiii-logo .wiii-tail-front {
+    animation: none !important;
+    transform: none !important;
+  }
+}

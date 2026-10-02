@@ -144,6 +144,8 @@ export class RuntimeRegistry {
     Map<RuntimeScope, RuntimeProviderSnapshot | null>
   >();
   private generation = 0;
+  private readonly preparingInstances = new Map<string, { sessionId: string; generation: number; sessionGeneration: number }>();
+
 
   get(sessionId: string): RuntimeProviderSnapshot | null {
     return this.bindings.get(sessionId)?.provider ?? null;
@@ -151,6 +153,15 @@ export class RuntimeRegistry {
 
   isCurrent(sessionId: string, instanceId: string): boolean {
     return this.bindings.get(sessionId)?.provider.instanceId === instanceId;
+  }
+
+  /** Admission callbacks run before commit, but only within their live preparation. */
+  isCurrentOrPreparing(sessionId: string, instanceId: string): boolean {
+    if (this.isCurrent(sessionId, instanceId)) return true;
+    const preparation = this.preparingInstances.get(instanceId);
+    return preparation?.sessionId === sessionId
+      && preparation.generation === this.generation
+      && preparation.sessionGeneration === (this.sessionGenerations.get(sessionId) ?? 0);
   }
 
   hasRetainedCleanup(sessionId: string): boolean {
@@ -336,11 +347,14 @@ export class RuntimeRegistry {
       for (const scope of scopes) this.retainCleanupScope(sessionId, scope);
       return { failed: true, error: failed.reason };
     };
+    let preparingInstanceId: string | null = null;
     try {
       // Transaction prepare: no registry mutation until creation succeeds.
       const generation = this.generation;
       const sessionGeneration = this.sessionGenerations.get(sessionId) ?? 0;
       const instanceId = uuidv4();
+      preparingInstanceId = instanceId;
+      this.preparingInstances.set(instanceId, { sessionId, generation, sessionGeneration });
       let driver: Driver;
       try {
         driver = await create(instanceId, own);
@@ -460,6 +474,7 @@ export class RuntimeRegistry {
         cleanupFailed: false,
       };
     } finally {
+      if (preparingInstanceId) this.preparingInstances.delete(preparingInstanceId);
       if (preparationCleanupFailed) {
         this.retainCleanupScope(sessionId, preparation.scope);
         for (const scope of unownedScopes) this.retainCleanupScope(sessionId, scope);
@@ -618,6 +633,7 @@ export class RuntimeRegistry {
     this.generation += 1;
     this.sessionGenerations.clear();
     this.pendingPreparations.clear();
+    this.preparingInstances.clear();
     this.inFlightDisposals.clear();
     this.retainedCleanupScopes.clear();
     this.bindings.clear();

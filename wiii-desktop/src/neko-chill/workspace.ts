@@ -80,3 +80,10 @@ export async function chooseWorkspaceFolder(): Promise<WorkspaceRef | null> {
     ? await resolveWorkspaceFolder(selected)
     : null;
 }
+
+/** Create an explicit empty working folder; never fall back to cwd/home. */
+export async function createQuickChatWorkspace(): Promise<WorkspaceRef> {
+  if (!canChooseWorkspaceFolder()) throw new Error("Chat riêng cần ứng dụng desktop Wiii.");
+  const { invoke } = await import("@tauri-apps/api/core");
+  return invoke<WorkspaceRef>("neko_create_quick_chat_workspace");
+}

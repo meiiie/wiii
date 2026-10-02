@@ -6,6 +6,22 @@ import {
 } from "@/neko-chill/session-events";
 import { createProviderCapabilitySnapshot } from "@/neko/provider-registry";
 
+describe("local presentation terminal facts", () => {
+  const record = (data: unknown) => ({v:1,eventId:"terminal",seq:1,at:1,visibility:"runtime",data});
+  it("accepts bounded known terminal vocabulary and keeps historical cancel readable", () => {
+    expect(isNekoSessionEvent(record({type:"turn-terminal",providerInstanceId:"instance",promptEventId:"input",stopReason:"cancelled"}))).toBe(true);
+    expect(isNekoSessionEvent(record({type:"runtime-command",action:"cancel",providerInstanceId:"instance",delivery:"staged"}))).toBe(true);
+  });
+  it.each([
+    {type:"turn-terminal",providerInstanceId:"",promptEventId:"input",stopReason:"cancelled"},
+    {type:"turn-terminal",providerInstanceId:"instance",promptEventId:"",stopReason:"cancelled"},
+    {type:"turn-terminal",providerInstanceId:"instance",promptEventId:"input",stopReason:"accepted"},
+    {type:"runtime-command",action:"cancel",providerInstanceId:"instance",promptEventId:null},
+  ])("rejects malformed or merely accepted completion %#", data => {
+    expect(isNekoSessionEvent(record(data))).toBe(false);
+  });
+});
+
 function event(data: NekoSessionEvent["data"]): NekoSessionEvent {
   const events: NekoSessionEvent[] = [];
   return appendSessionEvent(events, "model", data, 100);

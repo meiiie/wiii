@@ -1,14 +1,14 @@
-import { memo, useEffect, useMemo, useRef, useState } from "react";
+import { memo, useEffect, useId, useMemo, useRef, useState } from "react";
 import {
   ArrowUp,
+  ListPlus,
   Bot,
   Command,
+  ChevronDown,
   Folder,
   Gauge,
   LoaderCircle,
   LockKeyhole,
-  Search,
-  Settings2,
   Square,
 } from "lucide-react";
 import type { DriverConfigOption } from "../drivers/types";
@@ -47,6 +47,8 @@ interface NekoComposerProps {
   streaming: boolean;
   onSend: (text: string, onAccepted: () => void) => void | Promise<void>;
   onCancel: () => void;
+  onQueue?: (text: string) => Promise<void>;
+  queuedCount?: number;
   onSetConfigOption: (optionId: string, value: string | boolean) => void;
   onClientCommand: (command: ClientCommandName) => void;
   insertRequest?: ComposerInsertRequest | null;
@@ -87,7 +89,7 @@ export function nekoComposerStopTitle(args: {
 }): string {
   if (args.cancelPending) return "Đang lưu yêu cầu dừng…";
   if (args.resolvingPermission) return "Đang lưu quyết định…";
-  return "Dừng";
+  return "Dừng lượt đang chạy";
 }
 
 
@@ -122,7 +124,7 @@ function ControlSelect({
       emptyLabel="Không tìm thấy mục phù hợp."
       icon={<Icon aria-hidden="true" className="h-3.5 w-3.5 shrink-0" />}
       testId={`neko-control-${option.category}`}
-      className="max-w-[190px] text-[11.5px] text-[var(--nk-text-3)]"
+      className="min-w-0 max-w-[190px] text-[11.5px] text-[var(--nk-text-3)]"
     />
   );
 }
@@ -133,6 +135,8 @@ function NekoComposerComponent({
   streaming,
   onSend,
   onCancel,
+  onQueue,
+  queuedCount = 0,
   onSetConfigOption,
   onClientCommand,
   insertRequest,
@@ -142,8 +146,14 @@ function NekoComposerComponent({
   const [highlight, setHighlight] = useState(0);
   const [slashDismissed, setSlashDismissed] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const [queueError, setQueueError] = useState<string | null>(null);
   const submittingRef = useRef(false);
+  const submissionRevision = useRef(0);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const workspaceTriggerRef = useRef<HTMLButtonElement>(null);
+  const [workspacePathOpen, setWorkspacePathOpen] = useState(false);
+  const contextId = useId();
+  const hintId = useId();
   const mode = session.controls.find((option) => option.category === "mode" && option.kind === "select");
   const model = session.controls.find((option) => option.category === "model" && option.kind === "select");
   const interactionBlocked =
@@ -153,7 +163,18 @@ function NekoComposerComponent({
     Boolean(session.pendingControlId);
   const composerDisabled =
     (session.status !== "idle" && session.status !== "exited") || interactionBlocked;
-  const controlsDisabled = session.status !== "idle" || interactionBlocked;
+  // Draft editing is local intent, not permission to dispatch another turn.
+  // Keep lifecycle/configuration gates on sending while the current turn runs.
+  const draftEditableDuringTurn = streaming
+    && nekoComposerTurnBusy(session.status)
+    && !session.pendingControlId
+    && !session.pendingPermission
+    && !session.closePending
+    && !session.deletePending;
+  const draftReadOnly = composerDisabled && !draftEditableDuringTurn;
+  const controlsDisabled = session.status !== "idle" || interactionBlocked || queuedCount > 0;
+  const queueAllowed = Boolean(onQueue) && (draftEditableDuringTurn || (!composerDisabled && queuedCount > 0))
+    && !CLIENT_COMMANDS.some(command => `/${command.name}` === draft.trim());
   const slashQuery = draft.startsWith("/") && !draft.includes("\n")
     ? draft.slice(1).toLocaleLowerCase("vi")
     : null;
@@ -192,6 +213,27 @@ function NekoComposerComponent({
     resolvingPermission: Boolean(session.resolvingPermissionId),
   });
 
+  const composerHint = queuedCount > 0 && !streaming
+    ? "Tin mới được thêm cuối hàng đợi. Model được giữ nguyên."
+    : draftEditableDuringTurn
+    ? (onQueue ? "Enter để xếp hàng. Dừng sẽ giữ lại các tin chờ." : "Bạn có thể soạn tiếp. Bản nháp chưa được gửi; chờ lượt này kết thúc rồi nhấn Gửi.")
+    : session.pendingControlId
+    ? "Đang đổi cấu hình. Bản nháp được giữ lại."
+    : submitting
+      ? "Đang gửi. Bản nháp được giữ tới khi phiên nhận."
+      : composerDisabled && !streaming && !session.pendingPermission
+        ? sendTitle
+        : null;
+
+  useEffect(() => {
+    setWorkspacePathOpen(false);
+  }, [session.workspace?.path]);
+
+  const changeControl = (optionId: string, value: string) => {
+    onSetConfigOption(optionId, value);
+    textareaRef.current?.focus();
+  };
+
   const setDraft = (value: string) => {
     setDraftState(value);
     writeNekoComposerDraft(draftScope, value);
@@ -218,9 +260,32 @@ function NekoComposerComponent({
 
   const submit = async () => {
     const text = draft.trim();
-    if (!text || composerDisabled || submittingRef.current) return;
+    if (!text || submittingRef.current) return;
+    const operation = ++submissionRevision.current;
+    const releaseSubmission = () => {
+      if (submissionRevision.current !== operation) return;
+      submittingRef.current = false;
+      setSubmitting(false);
+    };
+    if (queueAllowed && onQueue) {
+      submittingRef.current = true;
+      setSubmitting(true); setQueueError(null);
+      try {
+        await onQueue(text);
+        if (readNekoComposerDraft(draftScope) === draft) {
+          clearNekoComposerDraft(draftScope);
+          setDraftState(current => current === draft ? "" : current);
+        }
+      } catch (error) { setQueueError(error instanceof Error ? error.message : String(error)); }
+      finally { releaseSubmission(); }
+      return;
+    }
+    if (composerDisabled) return;
     const local = CLIENT_COMMANDS.find((command) => `/${command.name}` === text);
     const accepted = () => {
+      // prompt() lasts for the entire turn; admission ends as soon as the
+      // runtime accepts it. A late turn completion must not unlock a newer enqueue.
+      releaseSubmission();
       if (readNekoComposerDraft(draftScope) !== draft) return;
       clearNekoComposerDraft(draftScope);
       setDraftState((current) => current === draft ? "" : current);
@@ -238,8 +303,7 @@ function NekoComposerComponent({
     } catch {
       // The session owns the failure message; the unsent draft remains here.
     } finally {
-      submittingRef.current = false;
-      setSubmitting(false);
+      releaseSubmission();
     }
   };
 
@@ -290,33 +354,58 @@ function NekoComposerComponent({
           </div>
         ) : null}
 
-        <div className="mx-3 -mb-2 flex h-10 items-center gap-2 rounded-t-xl border border-b-0 border-[var(--nk-border)] bg-[var(--nk-sidebar)] px-3 pb-2 text-[11.5px] text-[var(--nk-text-3)]">
-          <Folder aria-hidden="true" className="h-3.5 w-3.5 shrink-0" />
-          <span className="min-w-0 flex-1 truncate" title={session.workspace?.path}>
-            {session.workspace?.name ?? "Chưa gắn dự án"}
-          </span>
-          {!session.workspace ? (
-            <button
-              type="button"
-              className="rounded px-1.5 py-0.5 text-[var(--nk-accent)] hover:bg-[var(--nk-overlay)] disabled:cursor-not-allowed disabled:opacity-45 disabled:hover:bg-transparent"
-              disabled={!canChooseWorkspaceFolder()}
-              title={!canChooseWorkspaceFolder() ? BROWSER_FOLDER_PICKER_UNAVAILABLE_VI : "Chọn thư mục dự án"}
-              aria-disabled={!canChooseWorkspaceFolder() || undefined}
-              data-testid="neko-composer-choose-folder"
-              onClick={() => {
-                if (canChooseWorkspaceFolder()) onClientCommand("project");
-              }}
-            >
-              Chọn thư mục
-            </button>
-          ) : (
-            <span className="max-w-[50%] truncate text-[10px] text-[var(--nk-ghost)]" title={session.workspace.path}>
-              {session.workspace.path}
-            </span>
-          )}
-        </div>
-
-        <div className="nk-input-field relative rounded-[14px] border border-[var(--nk-border-strong)] bg-[var(--nk-composer)] p-2.5 shadow-[0_4px_18px_rgba(30,30,28,0.05)]">
+        <div className="nk-input-field relative rounded-[14px] border border-[var(--nk-border-strong)] bg-[var(--nk-composer)] p-3 shadow-[0_4px_18px_rgba(30,30,28,0.05)]" data-testid="neko-composer">
+          <div className="mb-2 flex min-w-0 items-center gap-2 text-[11.5px] text-[var(--nk-text-3)]">
+            {session.workspace ? (
+              <button
+                ref={workspaceTriggerRef}
+                type="button"
+                className="flex h-7 min-w-0 max-w-full items-center gap-1.5 rounded-md px-1.5 transition-colors hover:bg-[var(--nk-overlay)]"
+                title={session.workspace.path}
+                aria-label={`Dự án ${session.workspace.name}. Xem đường dẫn`}
+                aria-expanded={workspacePathOpen}
+                aria-controls={contextId}
+                data-testid="neko-composer-project"
+                onClick={() => setWorkspacePathOpen((open) => !open)}
+                onKeyDown={(event) => {
+                  if (event.key === "Escape" && workspacePathOpen) {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    setWorkspacePathOpen(false);
+                    workspaceTriggerRef.current?.focus();
+                  }
+                }}
+              >
+                <Folder aria-hidden="true" className="h-3.5 w-3.5 shrink-0" />
+                <span className="truncate">{session.workspace.name}</span>
+                <ChevronDown aria-hidden="true" className={`h-3 w-3 shrink-0 transition-transform ${workspacePathOpen ? "rotate-180" : ""}`} />
+              </button>
+            ) : (
+              <>
+                <Folder aria-hidden="true" className="ml-1.5 h-3.5 w-3.5 shrink-0" />
+                <span className="min-w-0 truncate">Chưa gắn dự án</span>
+                <button
+                  type="button"
+                  className="shrink-0 rounded-md px-1.5 py-1 text-[var(--nk-accent)] hover:bg-[var(--nk-overlay)] disabled:cursor-not-allowed disabled:opacity-45 disabled:hover:bg-transparent"
+                  disabled={!canChooseWorkspaceFolder()}
+                  title={!canChooseWorkspaceFolder() ? BROWSER_FOLDER_PICKER_UNAVAILABLE_VI : "Chọn thư mục dự án"}
+                  aria-disabled={!canChooseWorkspaceFolder() || undefined}
+                  data-testid="neko-composer-choose-folder"
+                  onClick={() => {
+                    if (canChooseWorkspaceFolder()) onClientCommand("project");
+                  }}
+                >
+                  Chọn thư mục
+                </button>
+              </>
+            )}
+          </div>
+          {session.workspace ? (
+            <div id={contextId} hidden={!workspacePathOpen} className="mb-2 rounded-lg bg-[var(--nk-inset)] px-2.5 py-2">
+              <span className="block text-[10px] text-[var(--nk-ghost)]">Đường dẫn dự án của phiên</span>
+              <span className="mt-0.5 block break-all text-[11px] leading-4 text-[var(--nk-text-2)]">{session.workspace.path}</span>
+            </div>
+          ) : null}
           <textarea
             ref={textareaRef}
             className="max-h-44 min-h-[48px] w-full resize-none bg-transparent px-1 pt-0.5 text-[13.5px] leading-[20px] text-[var(--nk-text)] placeholder:text-[var(--nk-ghost)] focus:outline-none"
@@ -324,8 +413,10 @@ function NekoComposerComponent({
             placeholder={session.workspace ? "Nhắn cho agent… Gõ / để xem lệnh" : "Gắn dự án trước khi nhắn…"}
             value={draft}
             disabled={!session.workspace}
-            readOnly={composerDisabled}
-            aria-busy={composerDisabled}
+            readOnly={draftReadOnly}
+            aria-busy={draftReadOnly}
+            aria-label={`Tin nhắn cho ${session.agentName}`}
+            aria-describedby={composerHint ? hintId : undefined}
             data-testid="neko-composer-input"
             onChange={(event) => {
               setDraft(event.target.value);
@@ -333,6 +424,7 @@ function NekoComposerComponent({
               setSlashDismissed(false);
             }}
             onKeyDown={(event) => {
+              if (event.nativeEvent.isComposing || event.keyCode === 229) return;
               if (slashOpen && suggestions.length) {
                 if (event.key === "ArrowDown") {
                   event.preventDefault();
@@ -366,8 +458,9 @@ function NekoComposerComponent({
               }
             }}
           />
-          <div className="mt-1.5 flex min-h-7 items-center gap-1 text-[11.5px]">
-            <span className="flex h-7 max-w-[150px] items-center gap-1.5 truncate rounded-md px-1.5 text-[var(--nk-text-3)]" title={session.agentName}>
+          <div className="mt-2 grid grid-cols-[minmax(0,1fr)_auto] items-end gap-2 text-[11.5px]">
+            <div className="flex min-w-0 flex-wrap items-center gap-x-1 gap-y-0.5" role="group" aria-label="Cấu hình phiên">
+            <span className="flex h-8 min-w-0 max-w-[150px] items-center gap-1.5 truncate rounded-md px-1.5 text-[var(--nk-text-3)]" title={session.agentName}>
               <Bot aria-hidden="true" className="h-3.5 w-3.5 shrink-0" />
               <span className="truncate">{session.agentName}</span>
             </span>
@@ -376,7 +469,7 @@ function NekoComposerComponent({
                 option={mode}
                 disabled={controlsDisabled}
                 pending={session.pendingControlId === mode.id}
-                onChange={(value) => onSetConfigOption(mode.id, value)}
+                onChange={(value) => changeControl(mode.id, value)}
               />
             ) : null}
             {model ? (
@@ -384,7 +477,7 @@ function NekoComposerComponent({
                 option={model}
                 disabled={controlsDisabled}
                 pending={session.pendingControlId === model.id}
-                onChange={(value) => onSetConfigOption(model.id, value)}
+                onChange={(value) => changeControl(model.id, value)}
               />
             ) : session.launchProfile ? (
               <button
@@ -399,27 +492,17 @@ function NekoComposerComponent({
                 <span className="truncate">{session.launchProfile.model ?? session.launchProfile.id}</span>
               </button>
             ) : null}
-            <button
-              type="button"
-              className="flex h-7 items-center gap-1.5 rounded-md px-1.5 text-[11.5px] text-[var(--nk-text-3)] hover:bg-[var(--nk-overlay)]"
-              title="Tìm phiên (Ctrl+K)"
-              onClick={() => onClientCommand("search")}
-            >
-              <Search aria-hidden="true" className="h-3.5 w-3.5" />
-            </button>
-            <button
-              type="button"
-              className="flex h-7 items-center gap-1.5 rounded-md px-1.5 text-[11.5px] text-[var(--nk-text-3)] hover:bg-[var(--nk-overlay)]"
-              title="Thông tin phiên"
-              onClick={() => onClientCommand("info")}
-            >
-              <Settings2 aria-hidden="true" className="h-3.5 w-3.5" />
-            </button>
-            <div className="flex-1" />
+            </div>
+            <div className="flex shrink-0 items-center gap-2">
+            {streaming && onQueue && draft.trim() && <button type="button" onClick={() => void submit()} disabled={!queueAllowed || submitting}
+              className="grid h-9 w-9 place-items-center rounded-full bg-[var(--nk-inverse)] text-[var(--nk-on-inverse)] disabled:opacity-40"
+              aria-label="Xếp hàng tin nhắn" title="Thêm vào hàng đợi (Enter)">
+              {submitting ? <LoaderCircle size={15} aria-hidden="true" className="animate-spin motion-reduce:animate-none" /> : <ListPlus size={16} aria-hidden="true" />}
+            </button>}
             {streaming ? (
               <button
                 type="button"
-                className="flex h-[28px] w-[28px] items-center justify-center rounded-full bg-[var(--nk-danger-soft)] text-[var(--nk-danger)] transition-colors hover:bg-[var(--nk-danger)] hover:text-[var(--nk-on-inverse)] aria-disabled:cursor-wait aria-disabled:opacity-50 aria-disabled:hover:bg-[var(--nk-danger-soft)] aria-disabled:hover:text-[var(--nk-danger)]"
+                className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[var(--nk-danger-soft)] text-[var(--nk-danger)] transition-colors hover:bg-[var(--nk-danger)] hover:text-[var(--nk-on-inverse)] aria-disabled:cursor-wait aria-disabled:opacity-50 aria-disabled:hover:bg-[var(--nk-danger-soft)] aria-disabled:hover:text-[var(--nk-danger)]"
                 aria-disabled={cancelBlocked}
                 onClick={() => {
                   if (!cancelBlocked) onCancel();
@@ -434,12 +517,12 @@ function NekoComposerComponent({
             ) : (
               <button
                 type="button"
-                className="flex h-[28px] w-[28px] items-center justify-center rounded-full bg-[var(--nk-inverse)] text-[var(--nk-on-inverse)] disabled:opacity-30"
+                className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[var(--nk-inverse)] text-[var(--nk-on-inverse)] disabled:opacity-30"
                 disabled={composerDisabled || !session.workspace || !draft.trim()}
                 onClick={() => void submit()}
-                title={sendTitle}
-                aria-label={submitting ? "Đang gửi" : "Gửi tin nhắn"}
-                aria-busy={submitting || undefined}
+                title={queueAllowed ? "Thêm vào cuối hàng đợi" : sendTitle}
+                aria-label={submitting ? "Đang gửi" : queueAllowed ? "Xếp hàng tin nhắn" : "Gửi tin nhắn"}
+                aria-busy={draftReadOnly}
                 data-testid="neko-send"
               >
                 {submitting
@@ -448,9 +531,16 @@ function NekoComposerComponent({
               </button>
             )}
           </div>
+          </div>
+          {queueError && <p role="alert" className="mt-2 text-[11px] text-[var(--nk-danger)]">{queueError} Bản nháp được giữ lại.</p>}
+          {composerHint ? (
+            <p id={hintId} role="status" aria-live="polite" aria-atomic="true" className="mt-2 px-1 text-[11px] leading-4 text-[var(--nk-text-3)]">
+              {composerHint}
+            </p>
+          ) : null}
         </div>
         <p className="mx-3 mt-1.5 flex items-center gap-2 px-1 text-[10px] text-[var(--nk-ghost)]" aria-hidden="true">
-          <span><kbd className="rounded border border-[var(--nk-border)] bg-[var(--nk-raised)] px-1 py-px text-[9.5px]">Enter</kbd> gửi</span>
+          {!composerDisabled && <span><kbd className="rounded border border-[var(--nk-border)] bg-[var(--nk-raised)] px-1 py-px text-[9.5px]">Enter</kbd> gửi</span>}
           <span><kbd className="rounded border border-[var(--nk-border)] bg-[var(--nk-raised)] px-1 py-px text-[9.5px]">Shift+Enter</kbd> xuống dòng</span>
         </p>
       </div>
@@ -475,6 +565,8 @@ export const NekoComposer = memo(
     && previous.session.resolvingPermissionId === next.session.resolvingPermissionId
     && previous.session.closePending === next.session.closePending
     && previous.session.deletePending === next.session.deletePending
+    && previous.onQueue === next.onQueue
+    && previous.queuedCount === next.queuedCount
     && previous.disabled === next.disabled
     && previous.streaming === next.streaming
     && previous.insertRequest?.token === next.insertRequest?.token

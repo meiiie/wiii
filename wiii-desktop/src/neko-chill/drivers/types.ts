@@ -123,11 +123,39 @@ export interface DriverCommand {
   inputHint?: string;
 }
 
+/** Bounded, redacted diagnostics only. Never raw headers, credentials or provider bodies. */
+export interface DriverDiagnosticData {
+  [key: string]: string | number | boolean | DriverDiagnosticData;
+}
+
+export interface DriverErrorDiagnostic {
+  category: "rpc-response" | "transport" | "protocol";
+  operation: string;
+  requestId?: number;
+  code?: number | null;
+  reason?: "send" | "exit" | "timeout" | "disposed";
+  dataPresent?: boolean;
+  data?: DriverDiagnosticData;
+}
+
+/** Bounded passive Neko execution report; never an authority or routing input. */
+export type NekoExecutionProjection =
+  | { readonly status: "unknown" | "unsupported" | "unverified" }
+  | { readonly status: "reported"; readonly version: 1;
+      readonly taskId: string; readonly root: string;
+      readonly activationEpoch: number; readonly activationId: string;
+      readonly bashTarget: "host" | "sandbox";
+      readonly bashExecutor: "local-process" | "native-backend";
+      readonly approvalMode: "default" | "accept-edits" | "plan" | "auto";
+      readonly yolo: boolean;
+      readonly nativeBackendSandbox: "backend-enforced" | "unsupported" | null };
+
 /**
  * Everything a driver may emit. `sessionId` scopes every event so concurrent
  * sessions can never cross streams (spec edge case).
  */
 export type DriverEvent =
+  | { type: "neko-execution-info"; sessionId: string; backendSessionId: string; projection: NekoExecutionProjection }
   | { type: "session-controls"; sessionId: string; controls: DriverConfigOption[] }
   | { type: "available-commands"; sessionId: string; commands: DriverCommand[] }
   | {
@@ -138,13 +166,13 @@ export type DriverEvent =
       continuityLevel?: "durable" | "recovered";
       revision?: number;
     }
-  | { type: "turn-started"; sessionId: string }
+  | { type: "turn-started"; sessionId: string; promptEventId?: string }
   | { type: "reasoning-delta"; sessionId: string; text: string }
   | { type: "answer-delta"; sessionId: string; text: string }
   | { type: "activity"; sessionId: string; activity: DriverActivity }
   | { type: "permission-request"; sessionId: string; request: PermissionRequest }
-  | { type: "turn-finished"; sessionId: string; stopReason: TurnStopReason }
-  | { type: "error"; sessionId: string; message: string; fatal: boolean }
+  | { type: "turn-finished"; sessionId: string; stopReason: TurnStopReason; promptEventId?: string }
+  | { type: "error"; sessionId: string; message: string; fatal: boolean; diagnostic?: DriverErrorDiagnostic }
   | { type: "process-exited"; sessionId: string; code: number | null; stderrTail?: string | null };
 
 export type DriverEventType = DriverEvent["type"];
@@ -171,7 +199,7 @@ export interface Driver {
   readonly backendSessionId?: string | null;
   start(): Promise<void>;
   /** Send one user prompt; events stream via the subscribed handler. */
-  prompt(text: string): Promise<void>;
+  prompt(text: string, context?: { promptEventId: string }): Promise<void>;
   /** Interrupt the running turn (FR-007). No-op when idle. */
   cancel(): Promise<void>;
   /** Deliver the user's permission decision (FR-006). */

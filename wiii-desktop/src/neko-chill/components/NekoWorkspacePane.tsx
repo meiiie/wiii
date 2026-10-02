@@ -40,6 +40,7 @@ import { projectForWorkspace, useNekoProjectStore } from "../stores/neko-project
 import type { WorkspaceRef } from "../workspace";
 import {
   useNekoWorkspaceStore,
+  workspaceSelectionKey,
   type ObservedWorkspaceActivity,
 } from "../stores/neko-workspace-store";
 import {
@@ -58,11 +59,11 @@ import { WORKSPACE_CODE_EDITOR_OPTIONS } from "../workspace-editor-options";
 import { NekoComputerSurface } from "@/neko-computer/NekoComputerSurface";
 
 const MonacoEditor = lazy(async () => {
-  const module = await import("@monaco-editor/react");
+  const module = await import("../workspace-monaco");
   return { default: module.Editor };
 });
 const MonacoDiffEditor = lazy(async () => {
-  const module = await import("@monaco-editor/react");
+  const module = await import("../workspace-monaco");
   return { default: module.DiffEditor };
 });
 
@@ -519,7 +520,16 @@ function NekoWorkspacePaneComponent({
   const catalogProject = workspace ? projectForWorkspace(projects, workspace.path) : null;
   const computerProjectId = session?.projectId ?? target?.projectId ?? catalogProject?.id ?? null;
   const computerProjectName = target?.projectName ?? catalogProject?.name ?? workspace?.name ?? "Project";
-  const pane = useNekoWorkspaceStore((state) => state.sessions[targetId]);
+  const storedPane = useNekoWorkspaceStore((state) => state.sessions[targetId]);
+  // Never render a previous workspace or payload under a new selection title,
+  // including the render before effects refresh a reused target id.
+  const pane = useMemo(() => {
+    if (!workspace || !storedPane || storedPane.workspacePath !== workspaceSelectionKey(workspace)) return undefined;
+    return { ...storedPane,
+      selectedFile: storedPane.selectedFile?.path === storedPane.selectedPath ? storedPane.selectedFile : null,
+      selectedDiff: storedPane.selectedDiff?.path === storedPane.selectedPath ? storedPane.selectedDiff : null,
+    };
+  }, [storedPane, workspace?.path]);
   const close = useNekoWorkspaceStore((state) => state.close);
   const openChange = useNekoWorkspaceStore((state) => state.openChange);
   const openFile = useNekoWorkspaceStore((state) => state.openFile);
@@ -932,6 +942,7 @@ function NekoWorkspacePaneComponent({
               computerSurface("computer")
             ) : surface === "preview" ? (
               <BrowserSurface
+                key={`${workspace.path}\u0000${pane.selectedFile?.path ?? "empty"}`}
                 sessionId={sessionId}
                 file={pane.selectedFile}
                 workspacePath={workspace.path}
@@ -942,6 +953,7 @@ function NekoWorkspacePaneComponent({
               ) : (
                 <Suspense fallback={<SurfaceLoading label="Đang mở trình so sánh…" />}>
                   <MonacoDiffEditor
+                    key={`${workspace.path}\u0000${pane.selectedDiff.path}`}
                     original={pane.selectedDiff.original}
                     modified={pane.selectedDiff.modified}
                     language={pane.selectedDiff.language}
@@ -954,6 +966,7 @@ function NekoWorkspacePaneComponent({
               pane.selectedFile.content !== null ? (
                 <Suspense fallback={<SurfaceLoading label="Đang mở trình soạn thảo…" />}>
                   <MonacoEditor
+                    key={`${workspace.path}\u0000${pane.selectedFile.path}`}
                     value={pane.selectedFile.content}
                     language={pane.selectedFile.language}
                     theme={document.documentElement.classList.contains("dark") ? "vs-dark" : "light"}
@@ -961,7 +974,7 @@ function NekoWorkspacePaneComponent({
                   />
                 </Suspense>
               ) : (
-                <FilePreview file={pane.selectedFile} workspacePath={workspace.path} />
+                <FilePreview key={`${workspace.path}\u0000${pane.selectedFile.path}`} file={pane.selectedFile} workspacePath={workspace.path} />
               )
             ) : surface === "files" ? (
               <div className="grid h-full place-items-center px-8">

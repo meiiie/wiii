@@ -42,6 +42,18 @@ describe("Neko Project registry", () => {
     });
   });
 
+  it("keeps both projects when private-chat creation overlaps opening a source project", async () => {
+    const [privateId, sourceId] = await Promise.all([
+      useNekoProjectStore.getState().createProject("Chat riêng", [{ path: "/qa/private", name: "Chat riêng", kind: "scratch" }]),
+      useNekoProjectStore.getState().createProject("Source", [{ path: "/qa/source", name: "Source" }]),
+    ]);
+    expect(useNekoProjectStore.getState().projects.map(p => p.id)).toEqual(expect.arrayContaining([privateId, sourceId]));
+    useNekoProjectStore.setState({ hydrated: false, projects: [] });
+    await useNekoProjectStore.getState().hydrate();
+    expect(useNekoProjectStore.getState().projects.find(p => p.id === privateId)?.roots[0].kind).toBe("scratch");
+    expect(useNekoProjectStore.getState().projects.find(p => p.id === sourceId)).toBeDefined();
+  });
+
   it("prepends a newly created Project and persists that explicit order", async () => {
     useNekoProjectStore.setState({
       projects: [project("older", "Older", "E:/work/older")],
