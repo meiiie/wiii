@@ -1209,6 +1209,7 @@ mod tests {
     use std::collections::HashSet;
 
     fn ingress(dedupe: &str, cursor: &str, resource: &str) -> SignalIngress {
+        let current = now();
         SignalIngress {
             source_id: "gmail.history.v1".to_string(),
             account_grant_ref: "grant-neko-mail".to_string(),
@@ -1217,13 +1218,29 @@ mod tests {
             kind: SignalKind::ContentChanged,
             source_cursor: cursor.to_string(),
             dedupe_key: dedupe.to_string(),
-            observed_at: "2026-08-31T01:00:00.000Z".to_string(),
+            observed_at: timestamp(current - Duration::minutes(1)),
             available_at: None,
-            expires_at: "2026-09-30T01:00:00.000Z".to_string(),
+            expires_at: timestamp(current + Duration::days(30)),
             priority_class: SignalPriority::Normal,
             content_available: true,
             gap_detected: false,
         }
+    }
+
+    #[test]
+    fn expired_fixture_is_not_claimable() {
+        let inbox = SignalInbox::in_memory();
+        let mut expired = ingress("expired-event", "1", "gmail:message:expired");
+        expired.expires_at = timestamp(now() - Duration::seconds(1));
+        inbox.ingest(expired).unwrap();
+        let claimed = inbox
+            .claim(SignalClaimRequest {
+                worker_id: "worker-expiry".to_string(),
+                max_items: 1,
+                lease_seconds: 120,
+            })
+            .unwrap();
+        assert!(claimed.is_empty());
     }
 
     #[test]
@@ -1308,9 +1325,7 @@ mod tests {
                     max_items: 1,
                     lease_seconds: 120,
                 },
-                DateTime::parse_from_rfc3339("2026-08-31T01:00:01.000Z")
-                    .unwrap()
-                    .with_timezone(&Utc),
+                now(),
             )
             .unwrap();
         assert_eq!(claimed[0].coalesced_count, 10_000);
@@ -1343,9 +1358,7 @@ mod tests {
                     max_items: 1,
                     lease_seconds: 120,
                 },
-                DateTime::parse_from_rfc3339("2026-08-31T01:00:01.000Z")
-                    .unwrap()
-                    .with_timezone(&Utc),
+                now(),
             )
             .unwrap();
         assert_eq!(claimed[0].resource_ref, "gmail:message:private");
@@ -1498,9 +1511,7 @@ mod tests {
                     max_items: 1,
                     lease_seconds: 120,
                 },
-                DateTime::parse_from_rfc3339("2026-08-31T01:00:01.000Z")
-                    .unwrap()
-                    .with_timezone(&Utc),
+                now(),
             )
             .unwrap();
         assert_eq!(
