@@ -13,6 +13,35 @@ always `wiii-v<version>` and requires a dated matching section below.
 
 - (none yet)
 
+## [1.3.0] - 2026-10-02
+
+Desktop workflow and UX release. Official installer scope remains **Windows x64**, explicitly unsigned.
+
+### Added
+
+- Private quick chats with dedicated session folders and per-project new-chat entry.
+- Durable, session-bound FIFO prompt queues with explicit pause and uncertain-delivery recovery.
+- Integration of the received opt-in Neko task protocol handoff and durable Work intent mapping.
+- Pinned Neko runtime packaging with integrity checks and explicit bundled-runtime ownership.
+
+### Fixed
+
+- Preserve drafts while agents run, when switching sessions, and when editing queued prompts.
+- Keep runtime ownership across navigation; close owned ACP sessions before orphan cleanup.
+- Preserve acceptance criteria and distinguish requirements from independently verified results.
+- Deliberate model-picker keyboard interaction, visible selection, focus recovery and useful empty-search states.
+- Follow streaming transcript growth while preserving a reader's intentional scroll position.
+- Improve narrow-window wrapping, small status contrast, stop/recovery guidance and Linux provider discovery.
+- Keep Signal Inbox test fixtures valid across calendar dates without relaxing runtime expiration.
+
+### Known limitations
+
+- Neko Core **1.7.0** is bundled. The owner elected to release with this existing pin rather than wait for a new Neko release.
+- **Work flows requiring the opt-in task-v1 protocol are not compatible with the bundled 1.7.0 runtime.** The host refuses these operations safely. Ordinary ACP chat and its model configuration are separate from this limitation.
+- Do not treat the unreleased Neko source used for task-v1 QA as the immutable 1.7.0 binary. No task identity or permission validation has been removed.
+- Windows installer build, checksums and provenance are verified by the release workflow. Full Windows GUI/provider-account and upgrade acceptance has not been independently completed in this release preparation.
+- Linux/macOS installed-package support and automatic desktop updates are not newly certified by this release.
+
 ## [1.2.0] - 2026-09-22
 
 First public **stable** desktop release. Supersedes pre-release

@@ -27,26 +27,56 @@ class ReleaseToolTests(unittest.TestCase):
     def test_repository_surfaces_are_synchronized(self) -> None:
         result = wiii_release.check_repository()
         self.assertTrue(result["ok"], result)
-        self.assertEqual(result["version"], "1.2.0")
+        self.assertEqual(result["version"], wiii_release.read_version())
         self.assertEqual(result["release_state"], "candidate")
         self.assertFalse(result["license_mismatches"])
 
     def test_candidate_notes_come_from_unreleased(self) -> None:
         notes = wiii_release.candidate_changelog_section("1.2.0")
         self.assertTrue(notes.startswith("## Wiii 1.2.0 candidate\n"))
-        # After dating [1.2.0], Unreleased holds only post-release stubs.
+        # Candidate notes must contain new work rather than the previous release.
         self.assertIn("(none yet)", notes)
         self.assertNotIn("host-aware Workbench bootstrap", notes)
 
-    def test_stable_validation_accepts_dated_1_2_0_section(self) -> None:
-        result = wiii_release.check_repository(tag="wiii-v1.2.0")
-        self.assertTrue(result["ok"], result)
-        self.assertEqual(result["release_state"], "stable")
-        self.assertEqual(result["version"], "1.2.0")
+    def test_stable_validation_requires_a_dated_current_version(self) -> None:
+        # A future version bump must not invalidate this contract test or force
+        # Unreleased work to masquerade as an already accepted stable release.
+        source_root = wiii_release.ROOT
+        relative_files = {
+            "VERSION", "wiii-desktop/package-lock.json", "wiii-desktop/src-tauri/Cargo.lock",
+            *wiii_release.LICENSE_SOURCE_PATHS,
+            *(surface.path for surface in wiii_release.TEXT_SURFACES),
+        }
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            for relative in relative_files:
+                target = root / relative
+                target.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(source_root / relative, target)
+            brand = "docs/assets/brand/neko-family-v1"
+            shutil.copytree(source_root / brand, root / brand)
+            version = wiii_release.read_version(root)
+            (root / "CHANGELOG.md").write_text(
+                f"# Changelog\n\n## [Unreleased]\n\nPending.\n\n## [{version}] - 2026-10-02\n\nAccepted fixture.\n",
+                encoding="utf-8",
+            )
+            result = wiii_release.check_repository(tag=f"wiii-v{version}", root=root)
+            self.assertTrue(result["ok"], result)
+            self.assertEqual(result["release_state"], "stable")
+            (root / "CHANGELOG.md").write_text("# Changelog\n\n## [Unreleased]\n\nPending.\n", encoding="utf-8")
+            self.assertFalse(wiii_release.check_repository(tag=f"wiii-v{version}", root=root)["ok"])
+
+    def test_previous_stable_notes_remain_available(self) -> None:
         notes = wiii_release.stable_changelog_section("1.2.0")
         self.assertTrue(notes.startswith("## Wiii 1.2.0\n"))
         self.assertIn("host-aware Workbench bootstrap", notes)
         self.assertIn("bubblewrap", notes)
+
+    def test_public_notes_describe_the_bundled_runtime(self) -> None:
+        workflow = (wiii_release.ROOT / ".github/workflows/release-desktop.yml").read_text(encoding="utf-8")
+        self.assertIn("Neko Core is bundled with this Wiii installer", workflow)
+        self.assertIn("Provider account configuration may still be needed", workflow)
+        self.assertNotIn("Neko Core requires separate installation", workflow)
 
     def test_stable_notes_require_and_accept_a_dated_version_section(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
