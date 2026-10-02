@@ -81,7 +81,23 @@ describe("ACP diagnostic correlation and error boundaries", () => {
     expect(unicode).not.toMatch(/[\ud800-\udbff]$/);
     const failure = projectAcpFailure(new AcpRpcError(1, "session/prompt", { code: -32055, message: "[open](/private) ![image](https://user:pass@host/path?key=value#fragment)\u202e\n<script>" }));
     expect(failure.message).toContain("\\[open\\]");
-    expect(failure.message).not.toMatch(/https:|user:pass|key=value|\u202e|\n|<script>/);
+    expect(failure.message).not.toMatch(/https:|user:pass|key=value|\u202e|\n/i);
+    expect(failure.message).toContain("\\<script\\>");
+  });
+
+  it.each([
+    "<script>alert(1)</script>",
+    "<SCRIPT>alert(1)</SCRIPT>",
+    '<ScRiPt src="https://example.invalid/payload.js">alert(1)</sCrIpT>',
+  ])("renders script-like diagnostic prose as inert text: %s", (message) => {
+    const failure = projectAcpFailure(new AcpRpcError(1, "session/prompt", { code: -32055, message }));
+    const html = renderToStaticMarkup(createElement(ReactMarkdown, {
+      remarkPlugins: [remarkGfm], children: failure.message,
+    }));
+    const container = document.createElement("div");
+    container.innerHTML = html;
+    expect(container.querySelectorAll("script,a,img,iframe")).toHaveLength(0);
+    expect(container.textContent).toContain("alert(1)");
   });
 
   it("renders diagnostic links and images as inert text with actual GFM", () => {
