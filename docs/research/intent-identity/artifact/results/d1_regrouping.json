@@ -1,0 +1,1076 @@
+{
+  "D1": {
+    "1": {
+      "plans": 1,
+      "cases": 2,
+      "policies": {
+        "G": {
+          "duplicate": 0,
+          "incomplete": 0,
+          "unresolved": 0,
+          "calls": 2
+        },
+        "R": {
+          "duplicate": 0,
+          "incomplete": 0,
+          "unresolved": 0,
+          "calls": 2
+        },
+        "R+": {
+          "duplicate": 0,
+          "incomplete": 0,
+          "unresolved": 0,
+          "calls": 1
+        },
+        "V": {
+          "duplicate": 0,
+          "incomplete": 0,
+          "unresolved": 0,
+          "calls": 1
+        },
+        "Vr": {
+          "duplicate": 0,
+          "incomplete": 0,
+          "unresolved": 0,
+          "calls": 1
+        },
+        "Vr+E": {
+          "duplicate": 0,
+          "incomplete": 0,
+          "unresolved": 0,
+          "calls": 1
+        }
+      },
+      "R_vs_V_vector_disagreements": 0,
+      "Rplus_vs_V_vector_disagreements": 0
+    },
+    "2": {
+      "plans": 4,
+      "cases": 48,
+      "policies": {
+        "G": {
+          "duplicate": 16,
+          "incomplete": 0,
+          "unresolved": 0,
+          "calls": 96
+        },
+        "R": {
+          "duplicate": 0,
+          "incomplete": 0,
+          "unresolved": 0,
+          "calls": 96
+        },
+        "R+": {
+          "duplicate": 0,
+          "incomplete": 0,
+          "unresolved": 0,
+          "calls": 48
+        },
+        "V": {
+          "duplicate": 0,
+          "incomplete": 0,
+          "unresolved": 0,
+          "calls": 48
+        },
+        "Vr": {
+          "duplicate": 0,
+          "incomplete": 0,
+          "unresolved": 0,
+          "calls": 48
+        },
+        "Vr+E": {
+          "duplicate": 0,
+          "incomplete": 0,
+          "unresolved": 0,
+          "calls": 48
+        }
+      },
+      "R_vs_V_vector_disagreements": 0,
+      "Rplus_vs_V_vector_disagreements": 0
+    },
+    "3": {
+      "plans": 24,
+      "cases": 2304,
+      "policies": {
+        "G": {
+          "duplicate": 1308,
+          "incomplete": 0,
+          "unresolved": 0,
+          "calls": 6912
+        },
+        "R": {
+          "duplicate": 0,
+          "incomplete": 0,
+          "unresolved": 0,
+          "calls": 6912
+        },
+        "R+": {
+          "duplicate": 0,
+          "incomplete": 0,
+          "unresolved": 0,
+          "calls": 3456
+        },
+        "V": {
+          "duplicate": 0,
+          "incomplete": 0,
+          "unresolved": 0,
+          "calls": 3456
+        },
+        "Vr": {
+          "duplicate": 0,
+          "incomplete": 0,
+          "unresolved": 0,
+          "calls": 3456
+        },
+        "Vr+E": {
+          "duplicate": 0,
+          "incomplete": 0,
+          "unresolved": 0,
+          "calls": 3456
+        }
+      },
+      "R_vs_V_vector_disagreements": 0,
+      "Rplus_vs_V_vector_disagreements": 0
+    },
+    "4": {
+      "plans": 192,
+      "cases": 184320,
+      "policies": {
+        "G": {
+          "duplicate": 129024,
+          "incomplete": 0,
+          "unresolved": 0,
+          "calls": 737280
+        },
+        "R": {
+          "duplicate": 0,
+          "incomplete": 0,
+          "unresolved": 0,
+          "calls": 737280
+        },
+        "R+": {
+          "duplicate": 0,
+          "incomplete": 0,
+          "unresolved": 0,
+          "calls": 368640
+        },
+        "V": {
+          "duplicate": 0,
+          "incomplete": 0,
+          "unresolved": 0,
+          "calls": 368640
+        },
+        "Vr": {
+          "duplicate": 0,
+          "incomplete": 0,
+          "unresolved": 0,
+          "calls": 368640
+        },
+        "Vr+E": {
+          "duplicate": 0,
+          "incomplete": 0,
+          "unresolved": 0,
+          "calls": 368640
+        }
+      },
+      "R_vs_V_vector_disagreements": 0,
+      "Rplus_vs_V_vector_disagreements": 0
+    },
+    "total_cases": 186674
+  },
+  "D1_lostack": {
+    "1": {
+      "plans": 1,
+      "cases": 2,
+      "policies": {
+        "G": {
+          "duplicate": 0,
+          "incomplete": 0,
+          "unresolved": 0,
+          "calls": 2
+        },
+        "R": {
+          "duplicate": 0,
+          "incomplete": 0,
+          "unresolved": 0,
+          "calls": 2
+        },
+        "R+": {
+          "duplicate": 0,
+          "incomplete": 0,
+          "unresolved": 0,
+          "calls": 2
+        },
+        "V": {
+          "duplicate": 0,
+          "incomplete": 0,
+          "unresolved": 0,
+          "calls": 2
+        },
+        "Vr": {
+          "duplicate": 0,
+          "incomplete": 0,
+          "unresolved": 0,
+          "calls": 2
+        },
+        "Vr+E": {
+          "duplicate": 0,
+          "incomplete": 0,
+          "unresolved": 0,
+          "calls": 2
+        }
+      },
+      "R_vs_V_vector_disagreements": 0,
+      "Rplus_vs_V_vector_disagreements": 0
+    },
+    "2": {
+      "plans": 4,
+      "cases": 48,
+      "policies": {
+        "G": {
+          "duplicate": 16,
+          "incomplete": 0,
+          "unresolved": 0,
+          "calls": 96
+        },
+        "R": {
+          "duplicate": 0,
+          "incomplete": 0,
+          "unresolved": 0,
+          "calls": 96
+        },
+        "R+": {
+          "duplicate": 0,
+          "incomplete": 0,
+          "unresolved": 0,
+          "calls": 80
+        },
+        "V": {
+          "duplicate": 0,
+          "incomplete": 0,
+          "unresolved": 0,
+          "calls": 80
+        },
+        "Vr": {
+          "duplicate": 0,
+          "incomplete": 0,
+          "unresolved": 0,
+          "calls": 80
+        },
+        "Vr+E": {
+          "duplicate": 0,
+          "incomplete": 0,
+          "unresolved": 0,
+          "calls": 80
+        }
+      },
+      "R_vs_V_vector_disagreements": 0,
+      "Rplus_vs_V_vector_disagreements": 0
+    },
+    "3": {
+      "plans": 24,
+      "cases": 2304,
+      "policies": {
+        "G": {
+          "duplicate": 1308,
+          "incomplete": 0,
+          "unresolved": 0,
+          "calls": 6912
+        },
+        "R": {
+          "duplicate": 0,
+          "incomplete": 0,
+          "unresolved": 0,
+          "calls": 6912
+        },
+        "R+": {
+          "duplicate": 0,
+          "incomplete": 0,
+          "unresolved": 0,
+          "calls": 5184
+        },
+        "V": {
+          "duplicate": 0,
+          "incomplete": 0,
+          "unresolved": 0,
+          "calls": 5184
+        },
+        "Vr": {
+          "duplicate": 0,
+          "incomplete": 0,
+          "unresolved": 0,
+          "calls": 5184
+        },
+        "Vr+E": {
+          "duplicate": 0,
+          "incomplete": 0,
+          "unresolved": 0,
+          "calls": 5184
+        }
+      },
+      "R_vs_V_vector_disagreements": 0,
+      "Rplus_vs_V_vector_disagreements": 0
+    },
+    "4": {
+      "plans": 192,
+      "cases": 184320,
+      "policies": {
+        "G": {
+          "duplicate": 129024,
+          "incomplete": 0,
+          "unresolved": 0,
+          "calls": 737280
+        },
+        "R": {
+          "duplicate": 0,
+          "incomplete": 0,
+          "unresolved": 0,
+          "calls": 737280
+        },
+        "R+": {
+          "duplicate": 0,
+          "incomplete": 0,
+          "unresolved": 0,
+          "calls": 516096
+        },
+        "V": {
+          "duplicate": 0,
+          "incomplete": 0,
+          "unresolved": 0,
+          "calls": 516096
+        },
+        "Vr": {
+          "duplicate": 0,
+          "incomplete": 0,
+          "unresolved": 0,
+          "calls": 516096
+        },
+        "Vr+E": {
+          "duplicate": 0,
+          "incomplete": 0,
+          "unresolved": 0,
+          "calls": 516096
+        }
+      },
+      "R_vs_V_vector_disagreements": 0,
+      "Rplus_vs_V_vector_disagreements": 0
+    },
+    "total_cases": 186674
+  },
+  "D1_reserved": {
+    "1": {
+      "plans": 1,
+      "cases": 2,
+      "policies": {
+        "G": {
+          "duplicate": 0,
+          "incomplete": 0,
+          "unresolved": 0,
+          "calls": 2
+        },
+        "R": {
+          "duplicate": 0,
+          "incomplete": 0,
+          "unresolved": 0,
+          "calls": 2
+        },
+        "R+": {
+          "duplicate": 0,
+          "incomplete": 0,
+          "unresolved": 0,
+          "calls": 2
+        },
+        "V": {
+          "duplicate": 0,
+          "incomplete": 0,
+          "unresolved": 0,
+          "calls": 2
+        },
+        "Vr": {
+          "duplicate": 0,
+          "incomplete": 0,
+          "unresolved": 0,
+          "calls": 2
+        },
+        "Vr+E": {
+          "duplicate": 0,
+          "incomplete": 0,
+          "unresolved": 0,
+          "calls": 2
+        }
+      },
+      "R_vs_V_vector_disagreements": 0,
+      "Rplus_vs_V_vector_disagreements": 0
+    },
+    "2": {
+      "plans": 4,
+      "cases": 48,
+      "policies": {
+        "G": {
+          "duplicate": 8,
+          "incomplete": 0,
+          "unresolved": 0,
+          "calls": 96
+        },
+        "R": {
+          "duplicate": 0,
+          "incomplete": 0,
+          "unresolved": 0,
+          "calls": 96
+        },
+        "R+": {
+          "duplicate": 0,
+          "incomplete": 0,
+          "unresolved": 0,
+          "calls": 80
+        },
+        "V": {
+          "duplicate": 0,
+          "incomplete": 0,
+          "unresolved": 0,
+          "calls": 80
+        },
+        "Vr": {
+          "duplicate": 0,
+          "incomplete": 0,
+          "unresolved": 0,
+          "calls": 80
+        },
+        "Vr+E": {
+          "duplicate": 0,
+          "incomplete": 0,
+          "unresolved": 0,
+          "calls": 80
+        }
+      },
+      "R_vs_V_vector_disagreements": 0,
+      "Rplus_vs_V_vector_disagreements": 0
+    },
+    "3": {
+      "plans": 24,
+      "cases": 2304,
+      "policies": {
+        "G": {
+          "duplicate": 852,
+          "incomplete": 0,
+          "unresolved": 0,
+          "calls": 6912
+        },
+        "R": {
+          "duplicate": 0,
+          "incomplete": 0,
+          "unresolved": 0,
+          "calls": 6912
+        },
+        "R+": {
+          "duplicate": 0,
+          "incomplete": 0,
+          "unresolved": 0,
+          "calls": 5184
+        },
+        "V": {
+          "duplicate": 0,
+          "incomplete": 0,
+          "unresolved": 0,
+          "calls": 5184
+        },
+        "Vr": {
+          "duplicate": 0,
+          "incomplete": 0,
+          "unresolved": 0,
+          "calls": 5184
+        },
+        "Vr+E": {
+          "duplicate": 0,
+          "incomplete": 0,
+          "unresolved": 0,
+          "calls": 5184
+        }
+      },
+      "R_vs_V_vector_disagreements": 0,
+      "Rplus_vs_V_vector_disagreements": 0
+    },
+    "4": {
+      "plans": 192,
+      "cases": 184320,
+      "policies": {
+        "G": {
+          "duplicate": 94944,
+          "incomplete": 0,
+          "unresolved": 0,
+          "calls": 737280
+        },
+        "R": {
+          "duplicate": 0,
+          "incomplete": 0,
+          "unresolved": 0,
+          "calls": 737280
+        },
+        "R+": {
+          "duplicate": 0,
+          "incomplete": 0,
+          "unresolved": 0,
+          "calls": 516096
+        },
+        "V": {
+          "duplicate": 0,
+          "incomplete": 0,
+          "unresolved": 0,
+          "calls": 516096
+        },
+        "Vr": {
+          "duplicate": 0,
+          "incomplete": 0,
+          "unresolved": 0,
+          "calls": 516096
+        },
+        "Vr+E": {
+          "duplicate": 0,
+          "incomplete": 0,
+          "unresolved": 0,
+          "calls": 516096
+        }
+      },
+      "R_vs_V_vector_disagreements": 0,
+      "Rplus_vs_V_vector_disagreements": 0
+    },
+    "total_cases": 186674
+  },
+  "D1_TTL_done": {
+    "1": {
+      "plans": 1,
+      "cases": 2,
+      "policies": {
+        "G": {
+          "duplicate": 1,
+          "incomplete": 0,
+          "unresolved": 0,
+          "calls": 2
+        },
+        "R": {
+          "duplicate": 1,
+          "incomplete": 0,
+          "unresolved": 0,
+          "calls": 2
+        },
+        "R+": {
+          "duplicate": 0,
+          "incomplete": 0,
+          "unresolved": 0,
+          "calls": 1
+        },
+        "V": {
+          "duplicate": 0,
+          "incomplete": 0,
+          "unresolved": 0,
+          "calls": 1
+        },
+        "Vr": {
+          "duplicate": 0,
+          "incomplete": 0,
+          "unresolved": 0,
+          "calls": 1
+        },
+        "Vr+E": {
+          "duplicate": 0,
+          "incomplete": 0,
+          "unresolved": 0,
+          "calls": 1
+        }
+      },
+      "R_vs_V_vector_disagreements": 1,
+      "Rplus_vs_V_vector_disagreements": 0
+    },
+    "2": {
+      "plans": 4,
+      "cases": 48,
+      "policies": {
+        "G": {
+          "duplicate": 32,
+          "incomplete": 0,
+          "unresolved": 0,
+          "calls": 96
+        },
+        "R": {
+          "duplicate": 32,
+          "incomplete": 0,
+          "unresolved": 0,
+          "calls": 96
+        },
+        "R+": {
+          "duplicate": 0,
+          "incomplete": 0,
+          "unresolved": 0,
+          "calls": 48
+        },
+        "V": {
+          "duplicate": 0,
+          "incomplete": 0,
+          "unresolved": 0,
+          "calls": 48
+        },
+        "Vr": {
+          "duplicate": 0,
+          "incomplete": 0,
+          "unresolved": 0,
+          "calls": 48
+        },
+        "Vr+E": {
+          "duplicate": 0,
+          "incomplete": 0,
+          "unresolved": 0,
+          "calls": 48
+        }
+      },
+      "R_vs_V_vector_disagreements": 32,
+      "Rplus_vs_V_vector_disagreements": 0
+    },
+    "3": {
+      "plans": 24,
+      "cases": 2304,
+      "policies": {
+        "G": {
+          "duplicate": 1728,
+          "incomplete": 0,
+          "unresolved": 0,
+          "calls": 6912
+        },
+        "R": {
+          "duplicate": 1728,
+          "incomplete": 0,
+          "unresolved": 0,
+          "calls": 6912
+        },
+        "R+": {
+          "duplicate": 0,
+          "incomplete": 0,
+          "unresolved": 0,
+          "calls": 3456
+        },
+        "V": {
+          "duplicate": 0,
+          "incomplete": 0,
+          "unresolved": 0,
+          "calls": 3456
+        },
+        "Vr": {
+          "duplicate": 0,
+          "incomplete": 0,
+          "unresolved": 0,
+          "calls": 3456
+        },
+        "Vr+E": {
+          "duplicate": 0,
+          "incomplete": 0,
+          "unresolved": 0,
+          "calls": 3456
+        }
+      },
+      "R_vs_V_vector_disagreements": 1728,
+      "Rplus_vs_V_vector_disagreements": 0
+    },
+    "4": {
+      "plans": 192,
+      "cases": 184320,
+      "policies": {
+        "G": {
+          "duplicate": 147456,
+          "incomplete": 0,
+          "unresolved": 0,
+          "calls": 737280
+        },
+        "R": {
+          "duplicate": 147456,
+          "incomplete": 0,
+          "unresolved": 0,
+          "calls": 737280
+        },
+        "R+": {
+          "duplicate": 0,
+          "incomplete": 0,
+          "unresolved": 0,
+          "calls": 368640
+        },
+        "V": {
+          "duplicate": 0,
+          "incomplete": 0,
+          "unresolved": 0,
+          "calls": 368640
+        },
+        "Vr": {
+          "duplicate": 0,
+          "incomplete": 0,
+          "unresolved": 0,
+          "calls": 368640
+        },
+        "Vr+E": {
+          "duplicate": 0,
+          "incomplete": 0,
+          "unresolved": 0,
+          "calls": 368640
+        }
+      },
+      "R_vs_V_vector_disagreements": 147456,
+      "Rplus_vs_V_vector_disagreements": 0
+    },
+    "total_cases": 186674
+  },
+  "D1_TTL_lostack": {
+    "1": {
+      "plans": 1,
+      "cases": 2,
+      "policies": {
+        "G": {
+          "duplicate": 1,
+          "incomplete": 0,
+          "unresolved": 0,
+          "calls": 2
+        },
+        "R": {
+          "duplicate": 1,
+          "incomplete": 0,
+          "unresolved": 0,
+          "calls": 2
+        },
+        "R+": {
+          "duplicate": 1,
+          "incomplete": 0,
+          "unresolved": 0,
+          "calls": 2
+        },
+        "V": {
+          "duplicate": 1,
+          "incomplete": 0,
+          "unresolved": 0,
+          "calls": 2
+        },
+        "Vr": {
+          "duplicate": 0,
+          "incomplete": 0,
+          "unresolved": 1,
+          "calls": 1
+        },
+        "Vr+E": {
+          "duplicate": 0,
+          "incomplete": 0,
+          "unresolved": 0,
+          "calls": 2
+        }
+      },
+      "R_vs_V_vector_disagreements": 0,
+      "Rplus_vs_V_vector_disagreements": 0
+    },
+    "2": {
+      "plans": 4,
+      "cases": 48,
+      "policies": {
+        "G": {
+          "duplicate": 32,
+          "incomplete": 0,
+          "unresolved": 0,
+          "calls": 96
+        },
+        "R": {
+          "duplicate": 32,
+          "incomplete": 0,
+          "unresolved": 0,
+          "calls": 96
+        },
+        "R+": {
+          "duplicate": 32,
+          "incomplete": 0,
+          "unresolved": 0,
+          "calls": 80
+        },
+        "V": {
+          "duplicate": 32,
+          "incomplete": 0,
+          "unresolved": 0,
+          "calls": 80
+        },
+        "Vr": {
+          "duplicate": 0,
+          "incomplete": 0,
+          "unresolved": 32,
+          "calls": 48
+        },
+        "Vr+E": {
+          "duplicate": 0,
+          "incomplete": 0,
+          "unresolved": 0,
+          "calls": 80
+        }
+      },
+      "R_vs_V_vector_disagreements": 16,
+      "Rplus_vs_V_vector_disagreements": 0
+    },
+    "3": {
+      "plans": 24,
+      "cases": 2304,
+      "policies": {
+        "G": {
+          "duplicate": 1728,
+          "incomplete": 0,
+          "unresolved": 0,
+          "calls": 6912
+        },
+        "R": {
+          "duplicate": 1728,
+          "incomplete": 0,
+          "unresolved": 0,
+          "calls": 6912
+        },
+        "R+": {
+          "duplicate": 1728,
+          "incomplete": 0,
+          "unresolved": 0,
+          "calls": 5184
+        },
+        "V": {
+          "duplicate": 1728,
+          "incomplete": 0,
+          "unresolved": 0,
+          "calls": 5184
+        },
+        "Vr": {
+          "duplicate": 0,
+          "incomplete": 0,
+          "unresolved": 1728,
+          "calls": 3456
+        },
+        "Vr+E": {
+          "duplicate": 0,
+          "incomplete": 0,
+          "unresolved": 0,
+          "calls": 5184
+        }
+      },
+      "R_vs_V_vector_disagreements": 1152,
+      "Rplus_vs_V_vector_disagreements": 0
+    },
+    "4": {
+      "plans": 192,
+      "cases": 184320,
+      "policies": {
+        "G": {
+          "duplicate": 147456,
+          "incomplete": 0,
+          "unresolved": 0,
+          "calls": 737280
+        },
+        "R": {
+          "duplicate": 147456,
+          "incomplete": 0,
+          "unresolved": 0,
+          "calls": 737280
+        },
+        "R+": {
+          "duplicate": 147456,
+          "incomplete": 0,
+          "unresolved": 0,
+          "calls": 516096
+        },
+        "V": {
+          "duplicate": 147456,
+          "incomplete": 0,
+          "unresolved": 0,
+          "calls": 516096
+        },
+        "Vr": {
+          "duplicate": 0,
+          "incomplete": 0,
+          "unresolved": 147456,
+          "calls": 368640
+        },
+        "Vr+E": {
+          "duplicate": 0,
+          "incomplete": 0,
+          "unresolved": 0,
+          "calls": 516096
+        }
+      },
+      "R_vs_V_vector_disagreements": 110592,
+      "Rplus_vs_V_vector_disagreements": 0
+    },
+    "total_cases": 186674
+  },
+  "D1_TTL_reserved": {
+    "1": {
+      "plans": 1,
+      "cases": 2,
+      "policies": {
+        "G": {
+          "duplicate": 0,
+          "incomplete": 0,
+          "unresolved": 0,
+          "calls": 2
+        },
+        "R": {
+          "duplicate": 0,
+          "incomplete": 0,
+          "unresolved": 0,
+          "calls": 2
+        },
+        "R+": {
+          "duplicate": 0,
+          "incomplete": 0,
+          "unresolved": 0,
+          "calls": 2
+        },
+        "V": {
+          "duplicate": 0,
+          "incomplete": 0,
+          "unresolved": 0,
+          "calls": 2
+        },
+        "Vr": {
+          "duplicate": 0,
+          "incomplete": 1,
+          "unresolved": 1,
+          "calls": 1
+        },
+        "Vr+E": {
+          "duplicate": 0,
+          "incomplete": 1,
+          "unresolved": 1,
+          "calls": 2
+        }
+      },
+      "R_vs_V_vector_disagreements": 0,
+      "Rplus_vs_V_vector_disagreements": 0
+    },
+    "2": {
+      "plans": 4,
+      "cases": 48,
+      "policies": {
+        "G": {
+          "duplicate": 16,
+          "incomplete": 0,
+          "unresolved": 0,
+          "calls": 96
+        },
+        "R": {
+          "duplicate": 16,
+          "incomplete": 0,
+          "unresolved": 0,
+          "calls": 96
+        },
+        "R+": {
+          "duplicate": 0,
+          "incomplete": 0,
+          "unresolved": 0,
+          "calls": 80
+        },
+        "V": {
+          "duplicate": 0,
+          "incomplete": 0,
+          "unresolved": 0,
+          "calls": 80
+        },
+        "Vr": {
+          "duplicate": 0,
+          "incomplete": 32,
+          "unresolved": 32,
+          "calls": 48
+        },
+        "Vr+E": {
+          "duplicate": 0,
+          "incomplete": 32,
+          "unresolved": 32,
+          "calls": 80
+        }
+      },
+      "R_vs_V_vector_disagreements": 16,
+      "Rplus_vs_V_vector_disagreements": 0
+    },
+    "3": {
+      "plans": 24,
+      "cases": 2304,
+      "policies": {
+        "G": {
+          "duplicate": 1152,
+          "incomplete": 0,
+          "unresolved": 0,
+          "calls": 6912
+        },
+        "R": {
+          "duplicate": 1152,
+          "incomplete": 0,
+          "unresolved": 0,
+          "calls": 6912
+        },
+        "R+": {
+          "duplicate": 0,
+          "incomplete": 0,
+          "unresolved": 0,
+          "calls": 5184
+        },
+        "V": {
+          "duplicate": 0,
+          "incomplete": 0,
+          "unresolved": 0,
+          "calls": 5184
+        },
+        "Vr": {
+          "duplicate": 0,
+          "incomplete": 1728,
+          "unresolved": 1728,
+          "calls": 3456
+        },
+        "Vr+E": {
+          "duplicate": 0,
+          "incomplete": 1728,
+          "unresolved": 1728,
+          "calls": 5184
+        }
+      },
+      "R_vs_V_vector_disagreements": 1152,
+      "Rplus_vs_V_vector_disagreements": 0
+    },
+    "4": {
+      "plans": 192,
+      "cases": 184320,
+      "policies": {
+        "G": {
+          "duplicate": 110592,
+          "incomplete": 0,
+          "unresolved": 0,
+          "calls": 737280
+        },
+        "R": {
+          "duplicate": 110592,
+          "incomplete": 0,
+          "unresolved": 0,
+          "calls": 737280
+        },
+        "R+": {
+          "duplicate": 0,
+          "incomplete": 0,
+          "unresolved": 0,
+          "calls": 516096
+        },
+        "V": {
+          "duplicate": 0,
+          "incomplete": 0,
+          "unresolved": 0,
+          "calls": 516096
+        },
+        "Vr": {
+          "duplicate": 0,
+          "incomplete": 147456,
+          "unresolved": 147456,
+          "calls": 368640
+        },
+        "Vr+E": {
+          "duplicate": 0,
+          "incomplete": 147456,
+          "unresolved": 147456,
+          "calls": 516096
+        }
+      },
+      "R_vs_V_vector_disagreements": 110592,
+      "Rplus_vs_V_vector_disagreements": 0
+    },
+    "total_cases": 186674
+  }
+}
