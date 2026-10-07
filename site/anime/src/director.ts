@@ -11,7 +11,7 @@ type Beat = { act: ActName; at: number; glyph: string; rot: number; mode: "major
 
 const BEATS: Beat[] = [
   { act: "intrusion", at: 0.22, glyph: "ワァッ", rot: -8, mode: "micro", sfx: "whoosh" },
-  { act: "clash", at: 0.3, glyph: "ズバッ", rot: -6, mode: "major", sfx: "impact" },
+  { act: "clash", at: 0.5, glyph: "ズバッ", rot: -6, mode: "major", sfx: "impact" },
   { act: "observe", at: 0.18, glyph: "ピタッ", rot: 4, mode: "quiet", sfx: "tick" },
   { act: "neko", at: 0.42, glyph: "トンッ", rot: 6, mode: "micro", sfx: "slash" },
   { act: "kakoi", at: 0.7, glyph: "囲", rot: 0, mode: "major", sfx: "sub" },
@@ -22,7 +22,6 @@ const RULES = [0.36, 0.5, 0.62, 0.74, 0.86];
 
 const clamp01 = (v: number) => Math.min(1, Math.max(0, v));
 const lerp = (a: number, b: number, t: number) => a + (b - a) * t;
-const ramp = (p: number, a: number, b: number) => clamp01((p - a) / (b - a));
 
 export async function start(): Promise<void> {
   const lenis = new Lenis({ autoRaf: false, lerp: 0.085, smoothWheel: true, anchors: true, respectReducedMotion: false });
@@ -108,11 +107,11 @@ export async function start(): Promise<void> {
       cam("intrusion", lerp(1.28, 1.16, p), lerp(-6, 2, p), lerp(2, -2, p));
     },
     clash(p) {
-      const hit = p >= 0.28 && p < 0.62;
-      impact.classList.toggle("is-in", hit || p >= 0.62);
-      impact.style.opacity = p >= 0.28 ? "1" : "0";
-      cam("clash", hit ? 1.08 : lerp(1.32, 1.14, p), hit ? 0 : lerp(6, -4, p), 0);
-      const gates = [0.48, 0.58, 0.68];
+      const hit = p >= 0.5;
+      impact.classList.toggle("is-in", hit);
+      impact.style.opacity = hit ? "1" : "0";
+      cam("clash", hit ? 1.08 : lerp(1.32, 1.16, p), hit ? 0 : lerp(6, -2, p), 0);
+      const gates = [0.52, 0.64, 0.76];
       panels.forEach((panel, i) => panel.classList.toggle("is-in", p >= gates[i]));
     },
     observe(p) {
@@ -121,14 +120,14 @@ export async function start(): Promise<void> {
     },
     neko(p) {
       cam("neko", lerp(1.26, 1.12, p), lerp(-4, 3, p), 0);
-      const second = p >= 0.55;
-      nekoLine.style.opacity = second ? "0" : "1";
-      nekoNext.style.opacity = second ? "1" : "0";
+      const second = p >= 0.42;
+      nekoLine.hidden = second;
+      nekoNext.hidden = !second;
     },
     kakoi(p) {
       cam("kakoi", lerp(1.2, 1.08, p), 0, lerp(2, 0, p));
-      let idx = p >= 0.34 ? 0 : -1;
-      if (idx === 0) for (let i = 0; i < RULES.length; i++) if (p >= RULES[i]) idx = i;
+      let idx = 0;
+      for (let i = 0; i < RULES.length; i++) if (p >= RULES[i]) idx = i;
       rules.forEach((rule, i) => {
         rule.classList.toggle("is-now", i === idx);
         rule.classList.toggle("is-debris", i < idx && i >= 0);
@@ -137,9 +136,9 @@ export async function start(): Promise<void> {
     still() {
       cam("still", 1.12, 0, 0);
     },
-    return(p) {
+    return() {
       const colo = document.getElementById("colo") as HTMLElement;
-      colo.style.opacity = p < 0.72 ? "1" : String(lerp(1, 0.2, ramp(p, 0.72, 1)));
+      colo.style.opacity = "1";
     },
   };
 
@@ -189,7 +188,7 @@ export async function start(): Promise<void> {
     battle.draw(now, vel);
     if (!fx.holding) shade.style.opacity = "0";
 
-    const paper = act.id === "still" || (act.id === "kakoi" && act.p >= 0.34);
+    const paper = act.id === "still" || act.id === "kakoi";
     document.documentElement.classList.toggle("on-paper", paper);
     theme.content = paper ? "#F3EEE3" : "#0B0B0D";
     actLabel.textContent = act.label;

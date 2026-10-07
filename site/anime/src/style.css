@@ -267,13 +267,13 @@ html.is-idle #drift-cut { animation: twitch 1.6s steps(2, end) infinite; }
   z-index: 5;
 }
 .is-motion #act-awaken { height: 260vh; }
-.is-motion #act-intrusion { height: 300vh; }
-.is-motion #act-clash { height: 460vh; }
-.is-motion #act-observe { height: 240vh; }
+.is-motion #act-intrusion { height: 260vh; }
+.is-motion #act-clash { height: 400vh; }
+.is-motion #act-observe { height: 250vh; }
 .is-motion #act-neko { height: 300vh; }
-.is-motion #act-kakoi { height: 480vh; }
-.is-motion #act-still { height: 240vh; }
-.is-motion #act-return { height: 260vh; }
+.is-motion #act-kakoi { height: 380vh; }
+.is-motion #act-still { height: 220vh; }
+.is-motion #act-return { height: 330vh; }
 
 .is-motion .splash { position: absolute; inset: -8%; }
 .is-motion .splash img {
@@ -322,6 +322,7 @@ html.is-smear .splash img { filter: contrast(1.08); }
   right: 0;
   margin: 0;
 }
+.is-motion #act-neko .copy h2[hidden] { display: none; }
 .is-motion .copy--mid { bottom: auto; top: 16vh; }
 .is-motion .panels { position: absolute; inset: 0; z-index: 4; }
 .is-motion .panel {
@@ -436,13 +437,13 @@ html.on-paper .brand-mark path:first-child { fill: #2a2928; }
   .sheets { grid-template-columns: 1fr; }
   .fighter { width: min(70vw, 280px); }
   .is-motion #act-awaken { height: 220vh; }
-  .is-motion #act-intrusion { height: 240vh; }
-  .is-motion #act-clash { height: 360vh; }
+  .is-motion #act-intrusion { height: 220vh; }
+  .is-motion #act-clash { height: 340vh; }
   .is-motion #act-observe { height: 200vh; }
   .is-motion #act-neko { height: 240vh; }
-  .is-motion #act-kakoi { height: 360vh; }
-  .is-motion #act-still { height: 200vh; }
-  .is-motion #act-return { height: 220vh; }
+  .is-motion #act-kakoi { height: 320vh; }
+  .is-motion #act-still { height: 180vh; }
+  .is-motion #act-return { height: 280vh; }
 }
 
 @media (prefers-reduced-motion: reduce) {

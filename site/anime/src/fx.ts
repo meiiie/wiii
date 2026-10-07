@@ -95,7 +95,7 @@ export class StageFX {
       const a = (i / n) * Math.PI * 2;
       const inner = 30 + (i % 4) * 18;
       const outer = inner + 90 + amount * 260 * ((i * 5) % 4) / 4;
-      ctx.strokeStyle = i % 9 === 0 ? "rgba(225,6,0,0.85)" : `rgba(245,240,230,${0.12 + amount * 0.2})`;
+      ctx.strokeStyle = i % 9 === 0 ? "rgba(224,38,31,0.85)" : `rgba(245,240,230,${0.12 + amount * 0.2})`;
       ctx.lineWidth = i % 5 === 0 ? 2 : 1;
       ctx.beginPath();
       ctx.moveTo(x + Math.cos(a) * inner, y + Math.sin(a) * inner);
@@ -153,7 +153,7 @@ export class StageFX {
       const a = (i / count) * Math.PI * 2;
       const len = 90 + ((i * 47) % 180);
       const inner = 6 + (i % 5) * 10;
-      ctx.strokeStyle = i % 8 === 0 && red > 0 ? "rgba(225,6,0,0.95)" : "rgba(245,240,230,0.92)";
+      ctx.strokeStyle = i % 8 === 0 && red > 0 ? "rgba(224,38,31,0.95)" : "rgba(245,240,230,0.92)";
       ctx.lineWidth = i % 4 === 0 ? 2.5 : 1;
       ctx.beginPath();
       ctx.moveTo(x + Math.cos(a) * inner, y + Math.sin(a) * inner);
