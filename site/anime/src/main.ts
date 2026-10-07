@@ -1,7 +1,6 @@
-import "@fontsource-variable/inter/wght.css";
+import "@fontsource/anton/latin-400.css";
 import "@fontsource/dm-mono/400.css";
 import "@fontsource/instrument-sans/400.css";
-import "@fontsource/instrument-sans/500.css";
 import "@fontsource/instrument-serif/400.css";
 import "@fontsource/instrument-serif/400-italic.css";
 import "./style.css";
@@ -16,7 +15,7 @@ function paintGrain(): void {
   if (!ctx) return;
   const image = ctx.createImageData(140, 140);
   for (let i = 0; i < image.data.length; i += 4) {
-    const n = 150 + Math.random() * 105;
+    const n = 140 + Math.random() * 115;
     image.data[i] = n;
     image.data[i + 1] = n;
     image.data[i + 2] = n;

@@ -1,10 +1,9 @@
-# Wiii — Cause and Effect
+# Wiii — The battle
 
-A long-scroll showcase for [Wiii](https://github.com/meiiie/wiii), served at
-[anime.holilihu.online](https://anime.holilihu.online/). The product web app
-keeps `wiii.holilihu.online`. The art direction, beat sheet, and motion rules
-are in [ART_DIRECTION.md](ART_DIRECTION.md). Deploy steps are in
-[DEPLOY.md](DEPLOY.md).
+A long-scroll battle for [Wiii](https://github.com/meiiie/wiii), served at
+[anime.holilihu.online](https://anime.holilihu.online/). Wiii fights Drift.
+The product web app keeps `wiii.holilihu.online`. The art direction is in
+[ART_DIRECTION.md](ART_DIRECTION.md). Deploy steps are in [DEPLOY.md](DEPLOY.md).
 
 ```bash
 npm ci

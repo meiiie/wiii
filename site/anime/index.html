@@ -3,20 +3,20 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Wiii — Cause and Effect</title>
+    <title>Wiii — The battle</title>
     <meta
       name="description"
-      content="Wiii is a local-first desktop workspace for working with Neko. A single spark is the cause of every motion on this page."
+      content="Wiii, the logo made human, fights Drift, an automation that changes everything without asking. A local-first desktop workspace for working with Neko."
     />
-    <meta name="theme-color" content="#07080C" id="theme-color" />
+    <meta name="theme-color" content="#0B0B0D" id="theme-color" />
     <meta name="color-scheme" content="dark" />
     <link rel="canonical" href="https://anime.holilihu.online/" />
     <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
-    <link rel="preload" href="/fonts/dela-subset.woff2" as="font" type="font/woff2" crossorigin />
-    <meta property="og:title" content="Wiii — Cause and Effect" />
+    <link rel="preload" href="/art/kf01_awaken-768.webp" as="image" type="image/webp" />
+    <meta property="og:title" content="Wiii — The battle" />
     <meta
       property="og:description"
-      content="A local-first desktop workspace for working with Neko. One spark, and everything it causes."
+      content="One spark. Wiii closes the ring. Drift does not get the cursor."
     />
     <meta property="og:type" content="website" />
     <meta property="og:url" content="https://anime.holilihu.online/" />
@@ -24,349 +24,228 @@
     <meta property="og:image:width" content="1200" />
     <meta property="og:image:height" content="630" />
     <meta name="twitter:card" content="summary_large_image" />
-    <meta name="twitter:title" content="Wiii — Cause and Effect" />
-    <meta
-      name="twitter:description"
-      content="A local-first desktop workspace for working with Neko. One spark, and everything it causes."
-    />
+    <meta name="twitter:title" content="Wiii — The battle" />
+    <meta name="twitter:description" content="One spark. Wiii closes the ring. Drift does not get the cursor." />
     <meta name="twitter:image" content="https://anime.holilihu.online/og.png" />
-    <script type="application/ld+json">
-      {
-        "@context": "https://schema.org",
-        "@type": "WebSite",
-        "name": "Wiii",
-        "url": "https://anime.holilihu.online/",
-        "description": "A local-first desktop workspace for working with Neko.",
-        "publisher": { "@type": "Organization", "name": "The Wiii Lab" }
-      }
-    </script>
   </head>
   <body>
     <a class="skip" href="#content">Skip to content</a>
+    <p id="strike-live" class="sr" aria-live="polite"></p>
     <div id="world">
-      <canvas id="gl" aria-hidden="true"></canvas>
-      <canvas id="stroke" aria-hidden="true"></canvas>
-      <div id="shock" aria-hidden="true"></div>
-      <div id="blade" aria-hidden="true"></div>
+      <canvas id="wash" aria-hidden="true"></canvas>
       <canvas id="fxc" aria-hidden="true"></canvas>
-      <canvas id="motes" aria-hidden="true"></canvas>
       <div id="shade" aria-hidden="true"></div>
       <div id="flash" aria-hidden="true"></div>
-      <div id="chroma" aria-hidden="true"></div>
       <div id="grain" aria-hidden="true"></div>
       <div id="glyph" aria-hidden="true"></div>
-      <div id="trail" aria-hidden="true"><i></i><i></i><i></i></div>
-      <div id="spark" aria-hidden="true"></div>
+      <div id="spark" class="motion-only" aria-hidden="true"></div>
+      <div id="ghosts" class="motion-only" aria-hidden="true"><i></i><i></i><i></i></div>
+      <img
+        id="wiii-cut"
+        class="fighter motion-only"
+        src="/art/cut-wiii-420.webp"
+        srcset="/art/cut-wiii-420.webp 420w, /art/cut-wiii-720.webp 720w"
+        sizes="42vw"
+        width="733"
+        height="679"
+        alt="Wiii, full figure, cream hair and charcoal scarf, cut out for the fight."
+      />
+      <img
+        id="drift-cut"
+        class="fighter motion-only"
+        src="/art/cut-drift-360.webp"
+        srcset="/art/cut-drift-360.webp 360w, /art/cut-drift-640.webp 640w"
+        sizes="38vw"
+        width="516"
+        height="702"
+        alt="Drift, full figure, white cracked mask and cursor-arms, cut out for the fight."
+      />
 
       <header class="chrome">
-        <a class="brand" href="#act-spark">
-          <img
-            id="brand-mark"
-            src="/brand/neko-peek-mark-on-dark.svg"
-            width="36"
-            height="36"
-            alt=""
-          />
+        <a class="brand" href="#act-awaken">
+          <svg class="brand-mark" viewBox="0 0 256 256" role="img" aria-label="Neko Peek">
+            <path fill="#2A2928" d="M28 148C20 104 43 70 82 57c38-13 91-10 125 16 28 22 37 60 25 94-14 42-53 62-105 61-54-1-91-30-99-80Z"/>
+            <path fill="#F5F0E6" d="M61 133c-7-22-6-53 1-77 5-18 18-25 34-15 21-11 49-14 76-8 10-18 28-18 37 1 10 21 12 52 4 78-8 26-36 42-72 43-36 1-70-7-80-22Z"/>
+            <path fill="#454241" d="M31 136c31 23 72 38 117 41 33 2 61-7 84-29 3 24-7 47-29 62-23 16-59 22-100 16-43-6-71-31-77-63-2-10 0-19 5-27Z"/>
+            <g id="neko-eyes">
+              <ellipse cx="111" cy="103" rx="10" ry="15" fill="#2A2928"/>
+              <ellipse cx="157" cy="100" rx="10" ry="15" fill="#2A2928"/>
+            </g>
+          </svg>
           <span>Wiii</span>
         </a>
-        <p class="readout" aria-hidden="true">
-          <span id="act-label">01 Spark</span>
-          <span id="frame-label">F 0001</span>
-        </p>
+        <p class="readout" aria-hidden="true"><span id="act-label">00 Awaken</span><span id="frame-label">F 0001</span></p>
       </header>
 
-      <nav class="reel" aria-label="Acts">
-        <a href="#act-spark">01 Spark</a>
-        <a href="#act-title">02 Title</a>
-        <a href="#act-work">03 Work</a>
-        <a href="#act-neko">04 Neko</a>
-        <a href="#act-kakoi">05 Kakoi</a>
-        <a href="#act-still">06 Still</a>
-        <a href="#act-credits">07 Return</a>
+      <nav class="stamps" aria-label="Acts">
+        <a href="#act-awaken" aria-label="Awaken">00</a>
+        <a href="#act-intrusion" aria-label="Intrusion">01</a>
+        <a href="#act-clash" aria-label="Clash">02</a>
+        <a href="#act-observe" aria-label="Observe">03</a>
+        <a href="#act-neko" aria-label="Neko">04</a>
+        <a href="#act-kakoi" aria-label="Kakoi">05</a>
+        <a href="#act-still" aria-label="Still">06</a>
+        <a href="#act-return" aria-label="Return">07</a>
       </nav>
+      <button id="sound" type="button" aria-pressed="false"><span aria-hidden="true"></span> Sound off</button>
+      <p class="how motion-only">Click to strike. Hold, then release, to dash.</p>
 
       <main id="content">
-        <section class="act act--ink" id="act-spark" data-act="spark">
+        <section class="act act--ink" id="act-awaken" data-act="awaken">
           <div class="act__pin">
-            <div class="act__shake">
-              <div class="corners motion-only" aria-hidden="true"><i></i><i></i><i></i><i></i></div>
-              <p class="cue motion-only" id="cue">0.00 — spark at rest</p>
-              <div class="fold motion-only" id="fold" aria-hidden="true"></div>
-              <div class="lockup" id="lockup">
-                <img
-                  src="/brand/neko-peek-mark-on-dark.svg"
-                  width="168"
-                  height="168"
-                  alt=""
-                />
-                <span class="lockup__name">Wiii</span>
-              </div>
-              <p class="cold-static static-only">
-                A spark at rest. The flight that follows is the cause of the
-                mark, the work, and the return to this same point.
-              </p>
-              <ol class="sheet motion-only" id="sheet">
-                <li data-from="0">0.00 spark at rest</li>
-                <li data-from="0.08">1.25 flight traces tail</li>
-                <li data-from="0.30">2.50 fold wraps</li>
-                <li data-from="0.48">3.58 cat + W</li>
-                <li data-from="0.70">5.35 impact</li>
-                <li data-from="0.80">5.75 shockwave</li>
-              </ol>
+            <figure class="splash">
+              <picture>
+                <source type="image/avif" srcset="/art/kf01_awaken-768.avif 768w, /art/kf01_awaken-1280.avif 1280w" sizes="100vw" />
+                <source type="image/webp" srcset="/art/kf01_awaken-480.webp 480w, /art/kf01_awaken-768.webp 768w, /art/kf01_awaken-1280.webp 1280w" sizes="100vw" />
+                <img src="/art/kf01_awaken-768.webp" width="1280" height="720" alt="Wiii in profile, cream hair and cat-ear tufts, a spark lighting in his dark eye against black." />
+              </picture>
+            </figure>
+            <p class="tate" lang="ja">覚醒</p>
+            <div class="copy copy--low">
+              <p class="kicker">00 — The spark</p>
+              <h1>The spark is your cursor.</h1>
+              <p>Wiii is a local-first desktop workspace for working with Neko. You decide what it can access and change.</p>
             </div>
           </div>
         </section>
 
-        <section class="act act--ink" id="act-title" data-act="title">
+        <section class="act act--ink" id="act-intrusion" data-act="intrusion">
           <div class="act__pin">
-            <div class="act__shake title-layout">
-              <div class="sweep motion-only" id="sweep" aria-hidden="true"></div>
-              <p class="title-kanji motion-only" aria-hidden="true">着</p>
-              <div class="title-copy">
-                <p class="eyebrow">02 — The Wiii Lab</p>
-                <h1 class="hero-name" id="hero-name"><span class="slice">W</span><span class="slice">i</span><span class="slice">i</span><span class="slice">i</span></h1>
-                <p class="hero-dek">A workspace<br />for you and Neko.</p>
-                <p class="hero-sub">One spark. Everything after it is a consequence.</p>
-                <p class="meta-row">
-                  <span>Local-first</span>
-                  <span>Desktop</span>
-                  <span>You decide what it can change</span>
-                </p>
-              </div>
-              <p class="tate" lang="ja">原因と結果</p>
+            <figure class="splash">
+              <picture>
+                <source type="image/avif" srcset="/art/kf02_intrusion-768.avif 768w, /art/kf02_intrusion-1280.avif 1280w" sizes="100vw" />
+                <source type="image/webp" srcset="/art/kf02_intrusion-480.webp 480w, /art/kf02_intrusion-768.webp 768w, /art/kf02_intrusion-1280.webp 1280w" sizes="100vw" />
+                <img src="/art/kf02_intrusion-768.webp" width="1280" height="720" alt="Drift, masked, reaches red cursor-fingers into floating pages while Wiii stands small in the dark." loading="lazy" />
+              </picture>
+            </figure>
+            <p class="tate" lang="ja">侵入</p>
+            <div class="copy">
+              <p class="kicker threat">01 — Drift</p>
+              <h2 class="threat">It changes everything without asking.</h2>
+              <p>A local project does not require a Wiii Service account. You decide what the agent can access and change. Model providers may require their own account.</p>
             </div>
           </div>
         </section>
 
-        <section class="act act--ink" id="act-work" data-act="work">
+        <section class="act act--ink" id="act-clash" data-act="clash">
           <div class="act__pin">
-            <div class="act__shake work-layout" id="work-layout">
-              <header class="work-head static-only">
-                <p class="eyebrow">03 — Work</p>
-                <h2>The work stays in the folder.</h2>
-              </header>
-              <div class="manga" id="manga">
-                <svg class="manga__ink" viewBox="0 0 1000 640" preserveAspectRatio="none" aria-hidden="true">
-                  <defs>
-                    <pattern id="ht" width="9" height="9" patternUnits="userSpaceOnUse">
-                      <circle cx="1.6" cy="1.6" r="1.25" fill="#F5F0E6" />
-                    </pattern>
-                    <filter id="ink" x="-6%" y="-6%" width="112%" height="112%">
-                      <feTurbulence type="turbulence" baseFrequency="0.045" numOctaves="2" seed="4" result="n" />
-                      <feDisplacementMap in="SourceGraphic" in2="n" scale="14" />
-                    </filter>
-                  </defs>
-                  <g filter="url(#ink)" stroke="#F5F0E6" stroke-linejoin="round" stroke-linecap="round">
-                    <path id="poly-a" fill="url(#ht)" stroke-width="16" d="M46 86 L168 24 L292 58 L470 18 L548 96 L512 214 L486 352 L318 390 L92 412 L18 286 Z" />
-                    <path id="poly-b" fill="url(#ht)" stroke-width="14" d="M612 96 L742 38 L888 28 L972 84 L944 176 L902 286 L748 312 L628 248 L598 168 Z" />
-                    <path id="poly-c" fill="url(#ht)" stroke-width="18" d="M32 470 L210 418 L468 436 L702 404 L930 452 L962 548 L860 612 L420 598 L70 616 L18 540 Z" />
-                  </g>
-                </svg>
-                <p class="cut" id="cut-a"><strong>The work</strong><em>Choose a folder.</em></p>
-                <p class="cut" id="cut-b"><strong>stays</strong><em>Reopen the work.</em></p>
-                <p class="cut" id="cut-c"><strong>in the folder.</strong><em>Công cụ beside the talk.</em></p>
-                <p class="freeze" id="freeze">Observation is not control.</p>
-              </div>
+            <figure class="splash">
+              <picture>
+                <source type="image/avif" srcset="/art/kf03_clash-768.avif 768w, /art/kf03_clash-1280.avif 1280w" sizes="100vw" />
+                <source type="image/webp" srcset="/art/kf03_clash-480.webp 480w, /art/kf03_clash-768.webp 768w, /art/kf03_clash-1280.webp 1280w" sizes="100vw" />
+                <img src="/art/kf03_clash-768.webp" width="1280" height="720" alt="Wiii dashes in, scarf trailing, as Drift's cursor-arms fill the black behind him." loading="lazy" />
+              </picture>
+            </figure>
+            <img id="impact-plate" class="impact-plate" src="/art/kf04_impact-768.webp" srcset="/art/kf04_impact-480.webp 480w, /art/kf04_impact-768.webp 768w, /art/kf04_impact-1280.webp 1280w" sizes="100vw" width="1280" height="720" alt="Inverted impact frame: Wiii's fist meets Drift's mask in a red burst and white speed lines." />
+            <p class="tate" lang="ja">衝突</p>
+            <div class="copy copy--mid">
+              <p class="kicker">02 — The work</p>
+              <h2>The work stays in the folder.</h2>
+            </div>
+            <div class="panels" id="clash-panels">
+              <p class="panel"><strong>Project</strong><em>Choose a folder.</em></p>
+              <p class="panel"><strong>Session</strong><em>The sessions that belong to it.</em></p>
+              <p class="panel"><strong>Tools</strong><em>Công cụ beside the conversation.</em></p>
             </div>
           </div>
         </section>
 
-        <section class="act act--paper" id="act-neko" data-act="neko">
+        <section class="act act--ink" id="act-observe" data-act="observe">
           <div class="act__pin">
-            <div class="act__shake neko-layout">
-              <div class="neko-intro" id="neko-intro">
-                <p class="eyebrow">04 — Neko</p>
-                <h2>One companion.</h2>
-                <p class="lead">
-                  A capable little companion that protects the work around you.
-                  The graphite tail wraps the ivory cat like a workspace. Neko
-                  peeks over it.
-                </p>
-              </div>
-              <div class="pose-row static-only">
-                <article>
-                  <svg class="pose" viewBox="0 0 256 256" role="img" aria-label="Neko Peek"><use href="#pose-peek" /></svg>
-                  <h3>Peek</h3>
-                  <p>Present, listening, ready.</p>
-                </article>
-                <article>
-                  <svg class="pose" viewBox="0 0 256 256" role="img" aria-label="Neko Mochi"><use href="#pose-mochi" /></svg>
-                  <h3>Mochi</h3>
-                  <p>Comfortable, complete, available.</p>
-                </article>
-                <article>
-                  <svg class="pose" viewBox="0 0 256 256" role="img" aria-label="Neko Nap"><use href="#pose-nap" /></svg>
-                  <h3>Nap</h3>
-                  <p>Resting, without disappearing.</p>
-                </article>
-                <article>
-                  <svg class="pose" viewBox="0 0 256 256" role="img" aria-label="Neko Tilt">
-                    <g transform="rotate(-7 128 132)"><use href="#pose-peek" /></g>
-                    <circle cx="214" cy="42" r="8" fill="#BBDDF2" />
-                  </svg>
-                  <h3>Tilt</h3>
-                  <p>Curious, checking, needs attention.</p>
-                </article>
-              </div>
-              <div class="neko-crack motion-only" id="neko-crack" aria-hidden="true"></div>
-              <div class="neko-stage motion-only" id="neko-stage">
-                <canvas id="dust" aria-hidden="true"></canvas>
-                <div class="ghost" id="ghost-a"></div>
-                <div class="ghost" id="ghost-b"></div>
-                <div class="neko-flyer" id="neko-flyer">
-                  <svg class="pose-live" data-pose="peek" viewBox="0 0 256 256" role="img" aria-label="Neko Peek"><use href="#pose-peek" /></svg>
-                  <svg class="pose-live" data-pose="mochi" viewBox="0 0 256 256" role="img" aria-label="Neko Mochi" hidden><use href="#pose-mochi" /></svg>
-                  <svg class="pose-live" data-pose="nap" viewBox="0 0 256 256" role="img" aria-label="Neko Nap" hidden><use href="#pose-nap" /></svg>
-                  <svg class="pose-live" data-pose="tilt" viewBox="0 0 256 256" role="img" aria-label="Neko Tilt" hidden>
-                    <g transform="rotate(-7 128 132)"><use href="#pose-peek" /></g>
-                    <circle cx="214" cy="42" r="8" fill="#BBDDF2" />
-                  </svg>
-                </div>
-                <p class="pose-caption" id="pose-caption">Peek. Present, listening, ready.</p>
-              </div>
-              <p class="neko-note static-only">
-                Four poses of the same Neko, not four agents. Neko Core is the
-                default for new local work. If Neko is unavailable, Wiii does
-                not silently substitute another installed agent.
-              </p>
-              <template id="smear-sheet">
-                <svg class="smear" data-smear="0" viewBox="-70 -10 430 300" aria-hidden="true"><g transform="matrix(1.7,0.18,-0.04,0.58,8,70)"><use href="#pose-peek" /></g></svg>
-                <svg class="smear" data-smear="1" viewBox="-70 -10 430 300" aria-hidden="true"><g transform="matrix(2.05,-0.22,0.06,0.46,-8,90)"><use href="#pose-peek" /></g></svg>
-                <svg class="smear" data-smear="2" viewBox="-70 -10 430 300" aria-hidden="true"><g transform="matrix(1.42,0.08,0.02,0.78,18,36)"><use href="#pose-peek" /></g></svg>
-              </template>
+            <figure class="splash">
+              <picture>
+                <source type="image/avif" srcset="/art/kf05_observe-768.avif 768w, /art/kf05_observe-1280.avif 1280w" sizes="100vw" />
+                <source type="image/webp" srcset="/art/kf05_observe-480.webp 480w, /art/kf05_observe-768.webp 768w, /art/kf05_observe-1280.webp 1280w" sizes="100vw" />
+                <img src="/art/kf05_observe-768.webp" width="1280" height="720" alt="Time stops. Wiii stands calm while Drift's cursor-arms freeze inches from him." loading="lazy" />
+              </picture>
+            </figure>
+            <div class="halftone" aria-hidden="true"></div>
+            <p class="tate" lang="ja">観測</p>
+            <div class="copy copy--center">
+              <h2>Observation is not control.</h2>
+            </div>
+          </div>
+        </section>
+
+        <section class="act act--ink" id="act-neko" data-act="neko">
+          <div class="act__pin">
+            <figure class="splash">
+              <picture>
+                <source type="image/avif" srcset="/art/kf06_neko_burst-768.avif 768w, /art/kf06_neko_burst-1280.avif 1280w" sizes="100vw" />
+                <source type="image/webp" srcset="/art/kf06_neko_burst-480.webp 480w, /art/kf06_neko_burst-768.webp 768w, /art/kf06_neko_burst-1280.webp 1280w" sizes="100vw" />
+                <img src="/art/kf06_neko_burst-768.webp" width="1280" height="720" alt="Neko, the small cream cat, bursts from the scarf and snaps one of Drift's cursor-arms away." loading="lazy" />
+              </picture>
+            </figure>
+            <p class="tate" lang="ja">猫</p>
+            <div class="copy copy--center">
+              <h2 id="neko-line">Taking control waits. It does not undo what already left.</h2>
+              <h2 id="neko-next">An interrupted action is not automatically repeated when its outcome is unknown.</h2>
             </div>
           </div>
         </section>
 
         <section class="act act--ink" id="act-kakoi" data-act="kakoi">
           <div class="act__pin">
-            <div class="act__shake kakoi-layout">
-              <canvas id="ring" aria-hidden="true"></canvas>
-              <div class="kakoi-disc" id="kakoi-disc" aria-hidden="true"></div>
-              <div class="domain" id="domain">
-                <p class="domain-lead static-only">The tail closes around the work you chose to open.</p>
-                <p class="rule" id="rule-0">A project folder, and the sessions that belong to it.</p>
-                <p class="rule" id="rule-1">Tools in view, beside the conversation.</p>
-                <p class="rule" id="rule-2">A missing harness is not a failed check. Look in Tổng quan → Quản lý harness.</p>
-                <p class="rule" id="rule-3">An interrupted action is not automatically repeated when its outcome is unknown.</p>
-                <p class="rule" id="rule-4">Computer is optional. Wiii Service is optional. Neither is required to begin.</p>
-              </div>
+            <figure class="splash">
+              <picture>
+                <source type="image/avif" srcset="/art/kf07_kakoi-768.avif 768w, /art/kf07_kakoi-1280.avif 1280w" sizes="100vw" />
+                <source type="image/webp" srcset="/art/kf07_kakoi-480.webp 480w, /art/kf07_kakoi-768.webp 768w, /art/kf07_kakoi-1280.webp 1280w" sizes="100vw" />
+                <img src="/art/kf07_kakoi-768.webp" width="1280" height="720" alt="The charcoal scarf becomes a brushed ring. Inside, the world is cream. Drift is locked outside. The mark 囲 sits behind Wiii." loading="lazy" />
+              </picture>
+            </figure>
+            <p class="tate" lang="ja">囲</p>
+            <div class="domain" id="domain">
+              <p class="rule">A project folder, and the sessions that belong to it.</p>
+              <p class="rule">Tools in view, beside the conversation.</p>
+              <p class="rule">A missing harness is not a failed check. Look in Tổng quan → Quản lý harness.</p>
+              <p class="rule">An interrupted action is not automatically repeated when its outcome is unknown.</p>
+              <p class="rule">Computer is optional. Wiii Service is optional. Neither is required to begin.</p>
             </div>
           </div>
         </section>
 
         <section class="act act--paper" id="act-still" data-act="still">
           <div class="act__pin">
-            <div class="act__shake still-layout">
-              <p class="eyebrow">06 — Ma <span lang="ja">間</span></p>
-              <div class="still-arc motion-only" id="still-arc" aria-hidden="true"></div>
-              <div class="still-stack" id="still-stack">
-                <h2 class="still-line">Observation is not control.</h2>
-                <p class="still-line">An interrupted action is not automatically repeated when its outcome is unknown.</p>
-                <p class="still-line">Taking control waits. It does not undo what already left.</p>
-              </div>
+            <figure class="splash">
+              <picture>
+                <source type="image/avif" srcset="/art/kf08_still-768.avif 768w, /art/kf08_still-1280.avif 1280w" sizes="100vw" />
+                <source type="image/webp" srcset="/art/kf08_still-480.webp 480w, /art/kf08_still-768.webp 768w, /art/kf08_still-1280.webp 1280w" sizes="100vw" />
+                <img src="/art/kf08_still-768.webp" width="1280" height="720" alt="Wiii from behind on white paper, mask shards on the ground, one small spark in his hand." loading="lazy" />
+              </picture>
+            </figure>
+            <div class="ghost-ring" aria-hidden="true"></div>
+            <p class="tate" lang="ja">間</p>
+            <div class="copy copy--center">
+              <h2>Computer is optional. Wiii Service is optional. Neither is required to begin.</h2>
             </div>
           </div>
         </section>
 
-        <footer class="act act--paper" id="act-credits" data-act="credits">
+        <section class="act act--paper" id="act-return" data-act="return">
           <div class="act__pin">
-            <div class="act__shake credits-layout">
-              <div class="iris motion-only" id="iris" aria-hidden="true"></div>
-              <div class="colo" id="colo">
-                <img
-                  class="colo-mark"
-                  src="/brand/neko-peek-wordmark.svg"
-                  width="340"
-                  height="128"
-                  alt="Wiii with Neko Peek"
-                />
-                <p class="eyebrow">07 — Return</p>
-                <h2>The last point of light is the first.</h2>
-                <div class="colo-grid">
-                  <p>Built by <strong>The Wiii Lab</strong>.</p>
-                  <p>
-                    The core product is AGPL-3.0-only. A separate commercial
-                    license is available. Code under <span class="mono">sdk/</span>
-                    is Apache-2.0. These licenses do not grant rights to the
-                    Wiii name or branding.
-                  </p>
-                  <p>
-                    The latest published release is <strong>Wiii 1.3.0</strong>,
-                    Windows x64, explicitly unsigned, tag
-                    <span class="mono">wiii-v1.3.0</span>. It includes the
-                    installer, a SHA-256 sidecar, and a release manifest.
-                    Linux and macOS do not have a public installer in this
-                    release. Checksums verify downloaded bytes, not publisher
-                    identity.
-                  </p>
-                  <p>
-                    Neko Core is installed and configured separately. A version
-                    number in the repository is not, by itself, a release.
-                  </p>
-                  <p>Choose a project folder and configure the model through Neko Core. Conversations stay with that folder.</p>
-                  <p>A local project does not require a Wiii Service account. Vietnamese is the primary interface language.</p>
-                  <p>Neko Core is the default. If Neko is unavailable, Wiii does not silently substitute another agent.</p>
-                  <p>A missing harness is not a failed check. Look in Tổng quan → Quản lý harness.</p>
-                  <p>Taking control cancels Wiii-owned queued input and waits. It does not undo an email already sent.</p>
-                  <p>Computer is optional and experimental. Only granted project folders belong in it.</p>
-                </div>
-                <ul class="colo-links">
-                  <li><a href="https://github.com/meiiie/wiii">GitHub</a></li>
-                  <li><a href="https://github.com/meiiie/wiii/releases">Releases</a></li>
-                  <li><a href="https://github.com/meiiie/wiii/issues">Issues</a></li>
-                  <li><a href="https://neko.holilihu.online/">Neko Core</a></li>
-                  <li>
-                    <a href="https://github.com/meiiie/wiii/blob/main/docs/releases/WIII_WINDOWS_QUICK_START.md">Windows guide</a>
-                  </li>
-                </ul>
-                <p class="fine">
-                  Brief high-contrast frames mark the cuts. With reduced motion,
-                  the same words stand still. Sound is off until you ask for it,
-                  and it is synthesized in the browser. No trackers.
-                </p>
+            <div class="return-ink" aria-hidden="true"></div>
+            <div class="colo" id="colo">
+              <p class="tate" lang="ja">還</p>
+              <p class="kicker">07 — Return</p>
+              <h2>The spark goes back to the cursor.</h2>
+              <div class="colo-grid">
+                <p>Built by <strong>The Wiii Lab</strong>.</p>
+                <p>The core product is AGPL-3.0-only. A separate commercial license is available. <span class="mono">sdk/</span> is Apache-2.0. The licenses do not grant the Wiii name.</p>
+                <p>Latest published release: Wiii 1.3.0, Windows x64 unsigned installer, tag <span class="mono">wiii-v1.3.0</span>, with SHA-256 and a release manifest. Linux and macOS have no public installer in that release. Checksums verify bytes, not publisher identity.</p>
+                <p>Vietnamese is the primary interface language. Neko Core is installed separately.</p>
+                <p>Computer is an experimental persistent Linux desktop through Docker Desktop, on the same user workstation. It is not a sandbox.</p>
               </div>
-              <p class="end-cue" id="end-cue">0.00 — spark at rest</p>
-              <a class="again" id="again" href="#act-spark">From the spark</a>
+              <figure class="sheets">
+                <img src="/art/sheet_wiii-768.webp" srcset="/art/sheet_wiii-480.webp 480w, /art/sheet_wiii-768.webp 768w, /art/sheet_wiii-1280.webp 1280w" sizes="40vw" width="1280" height="720" alt="Character sheet of Wiii: cream hair with cat-ear tufts, charcoal scarf as a ring, and the small cream cat." loading="lazy" />
+                <img src="/art/sheet_drift-768.webp" srcset="/art/sheet_drift-480.webp 480w, /art/sheet_drift-768.webp 768w, /art/sheet_drift-1280.webp 1280w" sizes="40vw" width="1280" height="720" alt="Character sheet of Drift: white mask with a red crack, many arms, red cursor-bar fingertips, coat dissolving into pixels." loading="lazy" />
+              </figure>
+              <p><a class="repo" href="https://github.com/meiiie/wiii">github.com/meiiie/wiii</a></p>
+              <p class="fine">Original characters © HoLiLiHu</p>
             </div>
           </div>
-        </footer>
+        </section>
       </main>
     </div>
-
-    <button type="button" id="sound" aria-pressed="false">
-      <span class="sound__dot" aria-hidden="true"></span>
-      Sound off
-    </button>
-
-    <svg class="sprite" aria-hidden="true">
-      <symbol id="pose-peek" viewBox="0 0 256 256">
-        <path fill="#2A2928" d="M28 148C20 104 43 70 82 57c38-13 91-10 125 16 28 22 37 60 25 94-14 42-53 62-105 61-54-1-91-30-99-80Z" />
-        <path fill="#F5F0E6" d="M61 133c-7-22-6-53 1-77 5-18 18-25 34-15 21-11 49-14 76-8 10-18 28-18 37 1 10 21 12 52 4 78-8 26-36 42-72 43-36 1-70-7-80-22Z" />
-        <path fill="#454241" d="M31 136c31 23 72 38 117 41 33 2 61-7 84-29 3 24-7 47-29 62-23 16-59 22-100 16-43-6-71-31-77-63-2-10 0-19 5-27Z" />
-        <ellipse cx="111" cy="103" rx="10" ry="15" fill="#2A2928" />
-        <ellipse cx="157" cy="100" rx="10" ry="15" fill="#2A2928" />
-      </symbol>
-      <symbol id="pose-mochi" viewBox="0 0 256 256">
-        <path fill="#2A2928" d="M28 148C20 104 43 70 82 57c38-13 91-10 125 16 28 22 37 60 25 94-14 42-53 62-105 61-54-1-91-30-99-80Z" />
-        <path fill="#454241" d="M31 136c31 23 72 38 117 41 33 2 61-7 84-29 3 24-7 47-29 62-23 16-59 22-100 16-43-6-71-31-77-63-2-10 0-19 5-27Z" />
-        <g transform="translate(0 8)">
-          <path fill="#F5F0E6" d="M61 133c-7-22-6-53 1-77 5-18 18-25 34-15 21-11 49-14 76-8 10-18 28-18 37 1 10 21 12 52 4 78-8 26-36 42-72 43-36 1-70-7-80-22Z" />
-          <ellipse cx="111" cy="112" rx="10" ry="14" fill="#2A2928" />
-          <ellipse cx="157" cy="109" rx="10" ry="14" fill="#2A2928" />
-        </g>
-      </symbol>
-      <symbol id="pose-nap" viewBox="0 0 256 256">
-        <path fill="#2A2928" d="M28 148C20 104 43 70 82 57c38-13 91-10 125 16 28 22 37 60 25 94-14 42-53 62-105 61-54-1-91-30-99-80Z" />
-        <path fill="#454241" d="M31 136c31 23 72 38 117 41 33 2 61-7 84-29 3 24-7 47-29 62-23 16-59 22-100 16-43-6-71-31-77-63-2-10 0-19 5-27Z" />
-        <g transform="translate(0 18)">
-          <path fill="#F5F0E6" d="M61 133c-7-22-6-53 1-77 5-18 18-25 34-15 21-11 49-14 76-8 10-18 28-18 37 1 10 21 12 52 4 78-8 26-36 42-72 43-36 1-70-7-80-22Z" />
-          <ellipse cx="111" cy="116" rx="11" ry="4.5" fill="#2A2928" />
-          <ellipse cx="157" cy="113" rx="11" ry="4.5" fill="#2A2928" />
-        </g>
-      </symbol>
-    </svg>
-
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>
