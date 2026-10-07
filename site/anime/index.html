@@ -141,9 +141,9 @@
         <section class="act act--ink" id="act-work" data-act="work">
           <div class="act__pin">
             <div class="act__shake work-layout" id="work-layout">
-              <header class="work-head" id="work-head">
+              <header class="work-head static-only">
                 <p class="eyebrow">03 — Work</p>
-                <h2 id="work-title"><span class="a">The work stays</span><span class="b">in the folder.</span></h2>
+                <h2>The work stays in the folder.</h2>
               </header>
               <div class="manga" id="manga">
                 <svg class="manga__ink" viewBox="0 0 1000 640" preserveAspectRatio="none" aria-hidden="true">
@@ -162,19 +162,11 @@
                     <path id="poly-c" fill="url(#ht)" stroke-width="18" d="M32 470 L210 418 L468 436 L702 404 L930 452 L962 548 L860 612 L420 598 L70 616 L18 540 Z" />
                   </g>
                 </svg>
-                <p class="cut" id="cut-a"><strong>Project.</strong> Choose a folder.</p>
-                <p class="cut" id="cut-b"><strong>Session.</strong> Reopen the work.</p>
-                <p class="cut" id="cut-c"><strong>Công cụ.</strong> Tools beside the talk.</p>
+                <p class="cut" id="cut-a"><strong>The work</strong><em>Choose a folder.</em></p>
+                <p class="cut" id="cut-b"><strong>stays</strong><em>Reopen the work.</em></p>
+                <p class="cut" id="cut-c"><strong>in the folder.</strong><em>Công cụ beside the talk.</em></p>
                 <p class="freeze" id="freeze">Observation is not control.</p>
               </div>
-              <p class="work-foot" id="work-foot">
-                Choose a project folder and configure the model through Neko
-                Core. Conversations stay with that folder. Files, changes,
-                browser, terminal, and the optional Computer sit beside the
-                conversation. A local project does not require a Wiii Service
-                account. Model providers may require their own account.
-                Vietnamese is the primary interface language.
-              </p>
             </div>
           </div>
         </section>
@@ -216,11 +208,11 @@
                   <p>Curious, checking, needs attention.</p>
                 </article>
               </div>
+              <div class="neko-crack motion-only" id="neko-crack" aria-hidden="true"></div>
               <div class="neko-stage motion-only" id="neko-stage">
                 <canvas id="dust" aria-hidden="true"></canvas>
-                <img class="ghost" src="/brand/neko-peek-mark.svg" alt="" />
-                <img class="ghost" src="/brand/neko-peek-mark.svg" alt="" />
-                <img class="ghost" src="/brand/neko-peek-mark.svg" alt="" />
+                <div class="ghost" id="ghost-a"></div>
+                <div class="ghost" id="ghost-b"></div>
                 <div class="neko-flyer" id="neko-flyer">
                   <svg class="pose-live" data-pose="peek" viewBox="0 0 256 256" role="img" aria-label="Neko Peek"><use href="#pose-peek" /></svg>
                   <svg class="pose-live" data-pose="mochi" viewBox="0 0 256 256" role="img" aria-label="Neko Mochi" hidden><use href="#pose-mochi" /></svg>
@@ -229,14 +221,19 @@
                     <g transform="rotate(-7 128 132)"><use href="#pose-peek" /></g>
                     <circle cx="214" cy="42" r="8" fill="#BBDDF2" />
                   </svg>
-                  <p class="pose-caption" id="pose-caption">Peek</p>
                 </div>
+                <p class="pose-caption" id="pose-caption">Peek. Present, listening, ready.</p>
               </div>
-              <p class="neko-note" id="neko-note">
+              <p class="neko-note static-only">
                 Four poses of the same Neko, not four agents. Neko Core is the
                 default for new local work. If Neko is unavailable, Wiii does
                 not silently substitute another installed agent.
               </p>
+              <template id="smear-sheet">
+                <svg class="smear" data-smear="0" viewBox="-70 -10 430 300" aria-hidden="true"><g transform="matrix(1.7,0.18,-0.04,0.58,8,70)"><use href="#pose-peek" /></g></svg>
+                <svg class="smear" data-smear="1" viewBox="-70 -10 430 300" aria-hidden="true"><g transform="matrix(2.05,-0.22,0.06,0.46,-8,90)"><use href="#pose-peek" /></g></svg>
+                <svg class="smear" data-smear="2" viewBox="-70 -10 430 300" aria-hidden="true"><g transform="matrix(1.42,0.08,0.02,0.78,18,36)"><use href="#pose-peek" /></g></svg>
+              </template>
             </div>
           </div>
         </section>
@@ -244,26 +241,15 @@
         <section class="act act--ink" id="act-kakoi" data-act="kakoi">
           <div class="act__pin">
             <div class="act__shake kakoi-layout">
+              <canvas id="ring" aria-hidden="true"></canvas>
               <div class="kakoi-disc" id="kakoi-disc" aria-hidden="true"></div>
-              <div class="kakoi-mark" id="kakoi-mark">
-                <img src="/brand/neko-peek-mark.svg" width="148" height="148" alt="" />
-              </div>
-              <div class="kakoi-copy" id="kakoi-copy">
-                <div class="kakoi-title">
-                  <p class="kakoi-kanji" lang="ja" aria-hidden="true">囲</p>
-                  <div>
-                    <p class="eyebrow">05 — Kakoi</p>
-                    <h2>The wrap.</h2>
-                  </div>
-                </div>
-                <p class="lead">The tail closes around the work you chose to open.</p>
-                <ol class="rules" id="rules">
-                  <li><span>01</span>A project folder, and the sessions that belong to it.</li>
-                  <li><span>02</span>Tools in view, beside the conversation.</li>
-                  <li><span>03</span>A missing harness is not a failed check. Look in Tổng quan → Quản lý harness.</li>
-                  <li><span>04</span>An interrupted action is not repeated when its outcome is unknown.</li>
-                  <li><span>05</span>Computer is optional. Wiii Service is optional. Neither is required to begin.</li>
-                </ol>
+              <div class="domain" id="domain">
+                <p class="domain-lead static-only">The tail closes around the work you chose to open.</p>
+                <p class="rule" id="rule-0">A project folder, and the sessions that belong to it.</p>
+                <p class="rule" id="rule-1">Tools in view, beside the conversation.</p>
+                <p class="rule" id="rule-2">A missing harness is not a failed check. Look in Tổng quan → Quản lý harness.</p>
+                <p class="rule" id="rule-3">An interrupted action is not automatically repeated when its outcome is unknown.</p>
+                <p class="rule" id="rule-4">Computer is optional. Wiii Service is optional. Neither is required to begin.</p>
               </div>
             </div>
           </div>
@@ -273,25 +259,11 @@
           <div class="act__pin">
             <div class="act__shake still-layout">
               <p class="eyebrow">06 — Ma <span lang="ja">間</span></p>
+              <div class="still-arc motion-only" id="still-arc" aria-hidden="true"></div>
               <div class="still-stack" id="still-stack">
                 <h2 class="still-line">Observation is not control.</h2>
-                <p class="still-line">An outcome you cannot see is not a success.</p>
+                <p class="still-line">An interrupted action is not automatically repeated when its outcome is unknown.</p>
                 <p class="still-line">Taking control waits. It does not undo what already left.</p>
-              </div>
-              <div class="still-note" id="still-note">
-                <p>
-                  Taking control cancels Wiii-owned queued input and waits for
-                  active input and held-key cleanup before the handoff.
-                  It does not undo an email already sent, and it does not stop
-                  every independent program inside the desktop. Unconfirmed
-                  cleanup stays blocked.
-                </p>
-                <p>
-                  Computer is a persistent Linux desktop through Docker Desktop,
-                  with its own browser profile. Your host profile is not copied.
-                  It is optional, experimental, and a same-user workstation.
-                  Only explicitly granted project folders belong in it.
-                </p>
               </div>
             </div>
           </div>
@@ -332,6 +304,12 @@
                     Neko Core is installed and configured separately. A version
                     number in the repository is not, by itself, a release.
                   </p>
+                  <p>Choose a project folder and configure the model through Neko Core. Conversations stay with that folder.</p>
+                  <p>A local project does not require a Wiii Service account. Vietnamese is the primary interface language.</p>
+                  <p>Neko Core is the default. If Neko is unavailable, Wiii does not silently substitute another agent.</p>
+                  <p>A missing harness is not a failed check. Look in Tổng quan → Quản lý harness.</p>
+                  <p>Taking control cancels Wiii-owned queued input and waits. It does not undo an email already sent.</p>
+                  <p>Computer is optional and experimental. Only granted project folders belong in it.</p>
                 </div>
                 <ul class="colo-links">
                   <li><a href="https://github.com/meiiie/wiii">GitHub</a></li>

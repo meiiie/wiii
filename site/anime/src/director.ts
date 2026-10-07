@@ -71,16 +71,28 @@ const BEATS: Beat[] = [
   { act: "neko", at: 0.68, glyph: "ピタッ", rot: -4, mode: "micro", sfx: "tick" },
   { act: "neko", at: 0.8, glyph: "トンッ", rot: 5, mode: "micro", sfx: "tick" },
   { act: "kakoi", at: 0.06, glyph: "ワァッ", rot: -7, mode: "micro", sfx: "open" },
-  { act: "kakoi", at: 0.48, glyph: "", rot: 0, mode: "micro", sfx: "impact" },
-  { act: "kakoi", at: 0.56, glyph: "", rot: 0, mode: "micro", sfx: "impact" },
-  { act: "kakoi", at: 0.64, glyph: "", rot: 0, mode: "micro", sfx: "impact" },
-  { act: "kakoi", at: 0.72, glyph: "", rot: 0, mode: "micro", sfx: "impact" },
-  { act: "kakoi", at: 0.8, glyph: "", rot: 0, mode: "micro", sfx: "impact" },
-  { act: "kakoi", at: 0.9, glyph: "囲", rot: 0, mode: "major", sfx: "sub" },
+  { act: "kakoi", at: 0.5, glyph: "", rot: 0, mode: "micro", sfx: "impact" },
+  { act: "kakoi", at: 0.62, glyph: "", rot: 0, mode: "micro", sfx: "impact" },
+  { act: "kakoi", at: 0.74, glyph: "", rot: 0, mode: "micro", sfx: "impact" },
+  { act: "kakoi", at: 0.84, glyph: "", rot: 0, mode: "micro", sfx: "impact" },
+  { act: "kakoi", at: 0.92, glyph: "", rot: 0, mode: "micro", sfx: "impact" },
+  { act: "kakoi", at: 0.97, glyph: "囲", rot: 0, mode: "major", sfx: "sub" },
   { act: "still", at: 0.74, glyph: "ピタッ", rot: 4, mode: "quiet", sfx: "tick" },
 ];
 
-const RULE_AT = [0.48, 0.56, 0.64, 0.72, 0.8];
+const RULE_AT = [0.5, 0.62, 0.74, 0.84, 0.92];
+const DEBRIS = [
+  { l: "1.6%", t: "14%", r: -3 },
+  { l: "82%", t: "12%", r: 3 },
+  { l: "1.6%", t: "42%", r: 2 },
+  { l: "80%", t: "68%", r: -2 },
+];
+const POSE_LINE: Record<string, string> = {
+  peek: "Peek. Present, listening, ready.",
+  mochi: "Mochi. Comfortable, complete, available.",
+  nap: "Nap. Resting, without disappearing.",
+  tilt: "Tilt. Curious, checking, needs attention.",
+};
 
 const clamp01 = (v: number) => Math.min(1, Math.max(0, v));
 const lerp = (a: number, b: number, t: number) => a + (b - a) * t;
@@ -165,23 +177,21 @@ export async function start(): Promise<void> {
   const cuts = ["cut-a", "cut-b", "cut-c"].map((id) => document.getElementById(id) as HTMLElement);
   const freeze = document.getElementById("freeze") as HTMLElement;
   const workLayout = document.getElementById("work-layout") as HTMLElement;
-  const workTitle = document.getElementById("work-title") as HTMLElement;
-  const workFoot = document.getElementById("work-foot") as HTMLElement;
-  const nekoIntro = document.getElementById("neko-intro") as HTMLElement;
-  const nekoNote = document.getElementById("neko-note") as HTMLElement;
+  const nekoCrack = document.getElementById("neko-crack") as HTMLElement;
   const nekoFlyer = document.getElementById("neko-flyer") as HTMLElement;
-  const poseLives = [...document.querySelectorAll<SVGElement>(".pose-live")];
+  const poseLives = [...document.querySelectorAll<SVGElement>("#neko-flyer .pose-live")];
   const poseCaption = document.getElementById("pose-caption") as HTMLElement;
   const ghosts = [...document.querySelectorAll<HTMLElement>(".ghost")];
   const dustCanvas = document.getElementById("dust") as HTMLCanvasElement;
   const dustCtx = dustCanvas.getContext("2d");
   const kakoiDisc = document.getElementById("kakoi-disc") as HTMLElement;
-  const kakoiMark = document.getElementById("kakoi-mark") as HTMLElement;
-  const kakoiCopy = document.getElementById("kakoi-copy") as HTMLElement;
-  const kakoiLead = kakoiCopy.querySelector(".lead") as HTMLElement;
-  const rules = [...document.querySelectorAll<HTMLElement>("#rules li")];
+  const rules = [...document.querySelectorAll<HTMLElement>(".rule")];
+  const ringCanvas = document.getElementById("ring") as HTMLCanvasElement;
+  const ringCtx = ringCanvas.getContext("2d");
+  const stillArc = document.getElementById("still-arc") as HTMLElement;
+  const smearSheet = document.getElementById("smear-sheet") as HTMLTemplateElement;
+  for (const host of [nekoFlyer, ...ghosts]) host.prepend(smearSheet.content.cloneNode(true));
   const stillLines = [...document.querySelectorAll<HTMLElement>("#still-stack .still-line")];
-  const stillNote = document.getElementById("still-note") as HTMLElement;
   const colo = document.getElementById("colo") as HTMLElement;
   const iris = document.getElementById("iris") as HTMLElement;
   const again = document.getElementById("again") as HTMLElement;
@@ -272,6 +282,7 @@ export async function start(): Promise<void> {
   let dust: Dust[] = [];
   let dustClock = 0;
   let dustLive = false;
+  let impactDrawn = false;
   const specks = Array.from({ length: 20 }, () => ({
     x: Math.random(),
     y: Math.random(),
@@ -283,13 +294,14 @@ export async function start(): Promise<void> {
 
   const resizeCanvases = () => {
     const dpr = Math.min(window.devicePixelRatio || 1, 1.5);
-    for (const canvas of [strokeCanvas, dustCanvas, moteCanvas]) {
+    for (const canvas of [strokeCanvas, dustCanvas, moteCanvas, ringCanvas]) {
       canvas.width = Math.floor(window.innerWidth * dpr);
       canvas.height = Math.floor(window.innerHeight * dpr);
     }
     strokeCtx?.setTransform(dpr, 0, 0, dpr, 0, 0);
     dustCtx?.setTransform(dpr, 0, 0, dpr, 0, 0);
     moteCtx?.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ringCtx?.setTransform(dpr, 0, 0, dpr, 0, 0);
   };
 
   const resize = () => {
@@ -326,44 +338,53 @@ export async function start(): Promise<void> {
     }
   };
 
+  const ringRadius = () => Math.min(window.innerWidth, window.innerHeight) * (mobile() ? 0.47 : 0.46);
+
   const drawRing = (amount: number) => {
-    if (!strokeCtx) return;
+    if (!ringCtx) return;
     const w = window.innerWidth;
     const h = window.innerHeight;
-    strokeCtx.clearRect(0, 0, w, h);
+    ringCtx.clearRect(0, 0, w, h);
     if (amount <= 0.001) return;
     const cx = w * 0.5;
-    const cy = h * 0.46;
-    const radius = Math.min(w, h) * (mobile() ? 0.34 : 0.38);
-    const steps = 96;
+    const cy = h * 0.5;
+    const radius = ringRadius();
+    const steps = 100;
     const n = Math.max(2, Math.floor(steps * amount));
-    strokeCtx.lineCap = "round";
+    ringCtx.lineCap = "round";
     for (let i = 1; i <= n; i++) {
       const u = i / steps;
-      if (u > 0.84 && i % 4 === 0) continue;
+      if (u > 0.86 && i % 4 === 0) continue;
       const a0 = -Math.PI / 2 + ((i - 1) / steps) * Math.PI * 2;
       const a1 = -Math.PI / 2 + (i / steps) * Math.PI * 2;
-      const width = u > 0.72 ? lerp(18, 1.1, (u - 0.72) / 0.28) : 4 + Math.sin(u * Math.PI) * 14;
-      strokeCtx.strokeStyle = u > 0.88 ? "rgba(245,240,230,0.45)" : "rgba(245,240,230,0.96)";
-      strokeCtx.lineWidth = width;
-      strokeCtx.beginPath();
-      strokeCtx.moveTo(cx + Math.cos(a0) * radius, cy + Math.sin(a0) * radius);
-      strokeCtx.lineTo(cx + Math.cos(a1) * radius, cy + Math.sin(a1) * radius);
-      strokeCtx.stroke();
+      const width = u > 0.74 ? lerp(28, 1.4, (u - 0.74) / 0.26) : 8 + Math.sin(u * Math.PI) * 18;
+      ringCtx.strokeStyle = u > 0.9 ? "rgba(245,240,230,0.45)" : "rgba(245,240,230,0.96)";
+      ringCtx.lineWidth = width;
+      ringCtx.beginPath();
+      ringCtx.moveTo(cx + Math.cos(a0) * radius, cy + Math.sin(a0) * radius);
+      ringCtx.lineTo(cx + Math.cos(a1) * radius, cy + Math.sin(a1) * radius);
+      ringCtx.stroke();
     }
   };
 
   const ringTip = (amount: number): Pt => {
-    const w = window.innerWidth;
-    const h = window.innerHeight;
-    const radius = Math.min(w, h) * (mobile() ? 0.34 : 0.38);
+    const radius = ringRadius();
     const a = -Math.PI / 2 + clamp01(amount) * Math.PI * 2;
-    return { x: w * 0.5 + Math.cos(a) * radius, y: h * 0.46 + Math.sin(a) * radius };
+    return {
+      x: window.innerWidth * 0.5 + Math.cos(a) * radius,
+      y: window.innerHeight * 0.5 + Math.sin(a) * radius,
+    };
   };
 
-  const placeFlyer = (el: HTMLElement, pt: Pt, smear: number, alpha: number) => {
+  const placeFlyer = (el: HTMLElement, pt: Pt, alpha: number) => {
     el.style.opacity = String(alpha);
-    el.style.transform = `translate(${pt.x}px, ${pt.y}px) translate(-50%, -50%) scaleX(${smear})`;
+    el.style.transform = `translate(${pt.x}px, ${pt.y}px) translate(-50%, -50%)`;
+  };
+
+  const showSmear = (host: HTMLElement, frame: number | null) => {
+    host.querySelectorAll<SVGElement>(".smear").forEach((el) => {
+      el.toggleAttribute("hidden", frame === null || el.dataset.smear !== String(frame));
+    });
   };
 
   const render: Record<ActId, (p: number) => void> = {
@@ -444,24 +465,29 @@ export async function start(): Promise<void> {
       glCanvas.style.opacity = "1";
     },
     work(p) {
+      const whole = p < 0.14;
       const frozen = p >= 0.58 && p < 0.9;
       passage = frozen || p > 0.9 ? "fluid" : "action";
       clearStroke();
-      const gates = mobile() ? [0.1, 0.26, 0.42] : [0.12, 0.28, 0.44];
-      manga.classList.toggle("is-a", p >= gates[0]);
-      manga.classList.toggle("is-b", p >= gates[1]);
-      manga.classList.toggle("is-c", p >= gates[2]);
-      cuts.forEach((cut, i) => {
-        const show = mobile()
-          ? p >= gates[i] && p < (i === cuts.length - 1 ? 0.58 : gates[i + 1])
-          : p >= gates[i] && p < 0.58;
-        cut.classList.toggle("is-in", show);
-      });
-      freeze.classList.toggle("is-in", p >= 0.58);
-      workLayout.classList.toggle("is-hold", p >= 0.58);
-      workTitle.classList.toggle("is-sliced", p >= 0.12 && p < 0.28);
-      workFoot.classList.toggle("is-in", p >= 0.9);
-      if (p < 0.12) setBlade(1, lerp(8, -30, ramp(p, 0, 0.12)), -18);
+      manga.classList.toggle("is-whole", whole);
+      if (whole) {
+        manga.classList.remove("is-a", "is-b", "is-c");
+        cuts.forEach((cut) => cut.classList.add("is-in"));
+      } else {
+        const gates = [0.14, 0.28, 0.44];
+        manga.classList.toggle("is-a", p >= gates[0]);
+        manga.classList.toggle("is-b", p >= gates[1]);
+        manga.classList.toggle("is-c", p >= gates[2]);
+        cuts.forEach((cut, i) => {
+          const show = mobile()
+            ? p >= gates[i] && p < (i === cuts.length - 1 ? 0.58 : gates[i + 1])
+            : p >= gates[i] && p < 0.58;
+          cut.classList.toggle("is-in", show);
+        });
+      }
+      freeze.classList.toggle("is-in", frozen);
+      workLayout.classList.toggle("is-hold", frozen);
+      if (p < 0.14) setBlade(1, lerp(18, -36, ramp(p, 0, 0.14)), -18);
       else if (p > 0.9) setBlade(onTwos(ramp(p, 0.9, 1), 3), lerp(48, -8, ramp(p, 0.9, 1)), -8);
       else setBlade(0, 0, 0);
       shockAmt = 0;
@@ -473,50 +499,62 @@ export async function start(): Promise<void> {
     neko(p) {
       passage = p < 0.46 ? "action" : "fluid";
       clearStroke();
-      const open = onTwos(ramp(p, 0, 0.1), 3);
-      nekoPin.style.clipPath = open >= 1 ? "none" : `inset(0 ${(1 - open) * 100}% 0 0)`;
-      setBlade(open >= 1 ? 0 : 1, lerp(0, -110, open), -8);
-      nekoIntro.classList.toggle("is-gone", p >= 0.08);
+      nekoPin.style.clipPath = "none";
+      nekoCrack.classList.toggle("is-on", p < 0.16);
+      if (p < 0.12) setBlade(1 - ramp(p, 0, 0.12), lerp(10, -48, ramp(p, 0, 0.12)), -8);
+      else setBlade(0, 0, 0);
       const w = window.innerWidth;
       const h = window.innerHeight;
-      const from = { x: w * (mobile() ? 0.08 : -0.02), y: h * 0.62 };
-      const ctrl = { x: w * 0.72, y: h * 0.08 };
-      const land = { x: w * (mobile() ? 0.5 : 0.56), y: h * (mobile() ? 0.48 : 0.52) };
+      const from = { x: w * (mobile() ? -0.12 : -0.08), y: h * 0.62 };
+      const ctrl = { x: w * 0.78, y: h * 0.08 };
+      const land = { x: w * 0.5, y: h * 0.42 };
       const t = onTwos(ramp(p, 0.08, 0.42), 7);
-      const pos = p < 0.08 ? from : quad(from, ctrl, land, t);
-      const smear = t > 0 && t < 1 ? 1.42 : 1;
+      const flying = p >= 0.08 && t < 1;
+      const pos = p < 0.08 ? from : flying ? quad(from, ctrl, land, t) : land;
       nekoFlyer.classList.toggle("is-live", p >= 0.08);
-      placeFlyer(nekoFlyer, pos, smear, p >= 0.08 ? 1 : 0);
+      placeFlyer(nekoFlyer, pos, p >= 0.08 ? 1 : 0);
+      const frame = flying ? Math.floor(t * 3) % 3 : null;
+      showSmear(nekoFlyer, frame);
+      if (frame !== null) {
+        for (const live of poseLives) live.setAttribute("hidden", "");
+      }
       ghosts.forEach((ghost, i) => {
-        const gt = t - (i + 1) * (1 / 7);
-        if (gt <= 0 || t >= 1) {
+        const gt = t - (i + 1) / 7;
+        if (!flying || gt <= 0) {
           ghost.style.opacity = "0";
+          showSmear(ghost, null);
           return;
         }
-        placeFlyer(ghost, quad(from, ctrl, land, gt), 1.2, 0.34 - i * 0.08);
+        placeFlyer(ghost, quad(from, ctrl, land, Math.max(0, gt)), 0.36 - i * 0.1);
+        showSmear(ghost, Math.floor(gt * 3) % 3);
       });
       let pose = "peek";
       if (p >= 0.8) pose = "tilt";
       else if (p >= 0.68) pose = "nap";
       else if (p >= 0.56) pose = "mochi";
-      if (pose !== poseNow) {
+      if (p >= 0.42 && pose !== poseNow) {
         poseNow = pose;
         nekoFlyer.classList.add("is-squash");
         window.setTimeout(() => nekoFlyer.classList.remove("is-squash"), 120);
       }
-      for (const live of poseLives) {
-        if (live.dataset.pose === pose) live.removeAttribute("hidden");
-        else live.setAttribute("hidden", "");
+      if (frame === null && p >= 0.42) {
+        for (const live of poseLives) {
+          if (live.dataset.pose === pose) live.removeAttribute("hidden");
+          else live.setAttribute("hidden", "");
+        }
+        const line = POSE_LINE[pose];
+        if (poseCaption.textContent !== line) poseCaption.textContent = line;
+        poseCaption.style.opacity = "1";
+      } else {
+        poseCaption.style.opacity = "0";
       }
-      poseCaption.textContent = pose[0].toUpperCase() + pose.slice(1);
-      poseCaption.style.opacity = p >= 0.42 ? "1" : "0";
       if (p >= 0.42 && !dustLive) {
         dustLive = true;
         dust = Array.from({ length: 16 }, (_, i) => {
           const a = Math.PI + (i / 16) * Math.PI;
           return {
             x: land.x,
-            y: land.y + 70,
+            y: land.y + 80,
             vx: Math.cos(a) * (1.4 + (i % 4)),
             vy: -0.4 - (i % 3) * 0.3,
             life: 1,
@@ -524,8 +562,7 @@ export async function start(): Promise<void> {
         });
       }
       if (p < 0.3) dustLive = false;
-      nekoNote.classList.toggle("is-in", p >= 0.88);
-      target = p < 0.46 ? pos : { x: land.x + 120, y: land.y - 40 };
+      target = p < 0.46 ? pos : { x: land.x, y: land.y - Math.min(120, h * 0.16) };
       shockAmt = 0;
       stillAmt = 0;
       radialAmt = 0;
@@ -534,35 +571,41 @@ export async function start(): Promise<void> {
     kakoi(p) {
       const grow = onTwos(ramp(p, 0.05, 0.42), 16);
       passage = p < 0.92 ? "action" : "fluid";
+      clearStroke();
       drawRing(grow);
       setBlade(0, 0, 0);
       nekoPin.style.clipPath = "none";
-      kakoiMark.style.opacity = p < 0.06 ? "1" : "0";
       const open = grow >= 0.94;
+      const diameter = ringRadius() * 2;
+      kakoiDisc.style.width = `${diameter}px`;
+      kakoiDisc.style.height = `${diameter}px`;
       kakoiDisc.style.opacity = open ? "1" : "0";
-      kakoiDisc.style.transform = `translate(-50%, -50%) scale(${lerp(0.15, 1.22, grow)})`;
-      kakoiCopy.style.opacity = open ? "1" : "0";
-      if (mobile()) kakoiLead.style.opacity = p >= 0.48 ? "0" : "1";
+      kakoiDisc.style.transform = "translate(-50%, -50%)";
+      let idx = -1;
+      for (let i = 0; i < RULE_AT.length; i++) if (p >= RULE_AT[i]) idx = i;
+      const phone = mobile();
       rules.forEach((rule, i) => {
-        const local = ramp(p, RULE_AT[i], RULE_AT[i] + 0.04);
-        const step = local <= 0 ? 0 : local < 0.5 ? 1 : 2;
-        const current = RULE_AT.filter((at) => p >= at).length - 1;
-        rule.style.opacity = mobile() ? (i === current ? "1" : "0") : step === 0 ? "0" : "1";
-        const x = step === 1 ? -12 : 0;
-        rule.style.transform = `translate3d(${step === 0 ? 40 : x}px, 0, 0)`;
-      });
-      let aim = ringTip(grow);
-      if (grow >= 1) {
-        const idx = RULE_AT.filter((at) => p >= at).length - 1;
-        if (idx >= 0 && rules[idx]) {
-          const rect = rules[idx].getBoundingClientRect();
-          aim = { x: rect.left + 8, y: rect.top + rect.height * 0.5 };
+        rule.classList.remove("is-now", "is-debris");
+        rule.style.left = "";
+        rule.style.top = "";
+        rule.style.transform = "";
+        if (i === idx) rule.classList.add("is-now");
+        else if (i < idx && !phone) {
+          const spot = DEBRIS[i] ?? DEBRIS[DEBRIS.length - 1];
+          rule.classList.add("is-debris");
+          rule.style.left = spot.l;
+          rule.style.top = spot.t;
+          rule.style.transform = `rotate(${spot.r}deg)`;
         }
+      });
+      const radius = ringRadius();
+      let aim = ringTip(grow);
+      if (idx >= 0) {
+        aim = { x: window.innerWidth * 0.5, y: window.innerHeight * 0.5 - radius + 22 };
       }
-      if (p >= 0.9) aim = { x: window.innerWidth * 0.5, y: window.innerHeight * 0.46 };
       target = aim;
       shockAmt = 0;
-      stillAmt = p >= 0.92 ? 1 : 0;
+      stillAmt = p >= 0.92 ? 0.45 : 0;
       radialAmt = 0;
       glCanvas.style.opacity = "1";
     },
@@ -570,15 +613,16 @@ export async function start(): Promise<void> {
       passage = "fluid";
       clearStroke();
       setBlade(0, 0, 0);
+      nekoPin.style.clipPath = "none";
+      stillArc.classList.toggle("is-on", p < 0.18);
       const cutsAt = [0, 0.74, 0.84];
-      let shown = 0;
-      for (let i = 0; i < cutsAt.length; i++) if (p >= cutsAt[i]) shown = i;
+      let lineOn = 0;
+      for (let i = 0; i < cutsAt.length; i++) if (p >= cutsAt[i]) lineOn = i;
       stillLines.forEach((line, i) => {
-        line.style.opacity = i === shown ? "1" : "0";
+        line.style.opacity = i === lineOn ? "1" : "0";
         line.style.transform = "none";
       });
-      stillNote.classList.toggle("is-in", p >= 0.9);
-      target = { x: Math.max(80, window.innerWidth * 0.14), y: window.innerHeight * 0.58 };
+      target = { x: window.innerWidth * 0.5, y: window.innerHeight * 0.42 };
       shockAmt = 0;
       stillAmt = 1;
       radialAmt = 0;
@@ -742,10 +786,9 @@ export async function start(): Promise<void> {
       bit.style.transform = `translate(${prevMark.x}px, ${prevMark.y}px) rotate(${prevMark.a}rad)`;
     });
 
-    const kakoiOpen = act.id === "kakoi" && act.p > 0.4;
     const paperChrome =
-      act.id === "neko" || act.id === "still" || kakoiOpen || (act.id === "credits" && act.p < 0.55);
-    const paperSpark = paperChrome || act.id === "kakoi";
+      act.id === "neko" || act.id === "still" || (act.id === "credits" && act.p < 0.55);
+    const paperSpark = paperChrome || (act.id === "kakoi" && act.p > 0.42);
     spark.classList.toggle("on-paper", paperSpark);
     document.documentElement.classList.toggle("on-paper", paperChrome);
     const nextMark = paperChrome ? "/brand/neko-peek-mark.svg" : "/brand/neko-peek-mark-on-dark.svg";
@@ -781,7 +824,6 @@ export async function start(): Promise<void> {
       if (shakeStep >= shakeFrames.length) shakeStep = -1;
     }
 
-    fx.fade();
     const scrollMax = Math.max(1, document.documentElement.scrollHeight - window.innerHeight);
     const globalP = lenis.animatedScroll / scrollMax;
     const vel = Math.min(1, Math.abs(lenis.velocity) / 1400);
@@ -790,8 +832,24 @@ export async function start(): Promise<void> {
       (act.id === "work" && act.p >= 0.58 && act.p < 0.9) ||
       (act.id === "kakoi" && act.p > 0.91);
     const flying = act.id === "spark" && act.p > 0.08 && act.p < 0.5;
-    if (!quietPicture && (flying || (vel > 0.18 && passage === "action"))) fx.streaks(flying ? 0.7 : vel);
-    if (radialAmt > 0.02) fx.radial(x, y, radialAmt);
+    const impactWindow = radialAmt > 0.02;
+    if (!impactWindow) impactDrawn = false;
+    if (!fx.holding) {
+      if (impactWindow) {
+        if (!impactDrawn) {
+          fx.clear();
+          fx.radial(x, y, radialAmt);
+          impactDrawn = true;
+        }
+      } else if (vel < 0.08 && !flying) {
+        fx.clear();
+      } else {
+        fx.fade();
+        if (!quietPicture && (flying || (vel > 0.18 && passage === "action"))) {
+          fx.streaks(flying ? 0.55 : vel);
+        }
+      }
+    }
     drawDust(now, act.id === "neko" && dustLive);
 
     if (glOn) {

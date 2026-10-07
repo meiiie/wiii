@@ -108,10 +108,11 @@ Behind it, the name is set huge, with 原因と結果 set vertically.
 
 ### 03 Work — rising action
 
-The blade cuts the frame into manga panels. Borders are brush paths, not
-boxes. Each panel is one line, and it appears on the frame the spark crosses
-it. Then the spread freezes: a paper still, halftone, "Observation is not
-control." The scroll keeps moving. The picture holds. シーン.
+The act opens on the intact title, the blade still across it. The blade then
+splits that title into the panels: the pieces of the headline are the panels.
+Borders are brush paths, not boxes. Each panel is one line. Then the spread
+freezes: a paper still, halftone, "Observation is not control." The scroll
+keeps moving. The picture holds. シーン.
 
 | Panel | Fact on the page | Causal job |
 | --- | --- | --- |
@@ -128,9 +129,11 @@ the hold, not set as card body copy.
 
 ### 04 Neko
 
-Paper. The previous cut launches the official mark along an arc: smear,
-afterimages, landing dust, then a quiet pose. Pose changes are cuts, each
-with its own small hit:
+Paper, full bleed. The opening frame keeps the blade as an ink crack. The
+previous cut launches the official mark along an arc. Flight is two or three
+drawn in-betweens of the official peek paths, held on twos, plus two ghosts.
+No scaleX smear. Landing dust, then one pose and one caption line. Pose
+changes are cuts, each with its own small hit:
 
 - Peek — present, listening, ready
 - Mochi — comfortable, complete, available
@@ -145,10 +148,14 @@ another installed agent when Neko is unavailable.
 
 ### 05 Kakoi — climax
 
-The strongest moment. The screen goes to ink. 囲 draws itself as one
-calligraphic stroke, thick, then dry at the end. When the stroke closes, the
-world inside the ring inverts to paper. Rules slam one at a time, each with
-its own hit. Then one full-screen white flash, a sub drop, and silence.
+The strongest moment, and it must still look like a domain when the scroll
+stops. The screen stays ink. The ring is dominant and full-bleed, drawn as
+one calligraphic stroke. When the stroke closes, the world inside the ring
+inverts to paper and holds. One rule is huge and centered. Previous rules sit
+outside the ring as small complete phrases, not a numbered list and not
+mid-glyph slices. Phone: the ring alone, then one rule at full width. The
+seal is a white frame (~80ms), a black plate held to ~620ms, then the drawing.
+That hold is not a third flash. Then a sub drop, and silence.
 
 - Project and session, reopened rather than recreated
 - Tools beside the conversation
@@ -162,18 +169,17 @@ its own hit. Then one full-screen white flash, a sub drop, and silence.
 
 ### 06 Still — denouement
 
-Two or three seconds of almost nothing. One sentence holds while the scroll
-continues. Ink specks drift. The spark breathes. The page does not trap the
-scrollbar. Later sentences cut in only after that hold:
+The one calm frame. It opens with the ghost of the ring, then one sentence
+holds while the scroll continues. Ink specks drift. The spark breathes. No
+second essay under the line. Later sentences replace the first; they do not
+accumulate:
 
 1. Observation is not control.
-2. An outcome you cannot see is not a success.
-3. Taking control waits. It does not undo what already left. The full boundary
-   (queued input, sent mail, independent programs, blocked cleanup, Computer)
-   is the small type under that line.
+2. An interrupted action is not automatically repeated when its outcome is unknown.
+3. Taking control waits. It does not undo what already left.
 
-ピタッ on the settle. Small type for the rest of the boundary: only granted
-folders belong in the Computer; unconfirmed cleanup stays blocked.
+ピタッ on the settle. The rest of the boundary (queued input, sent mail,
+granted folders, Computer) is one line each in the Return footer.
 
 **Handoff:** the spark, now cocoa on paper, opens a well of ink. The well
 grows until the paper is gone.

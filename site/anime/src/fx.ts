@@ -38,6 +38,11 @@ export class StageFX {
     ctx.globalCompositeOperation = "source-over";
   }
 
+  clear(): void {
+    if (this.holding) return;
+    this.ctx?.clearRect(0, 0, this.w, this.h);
+  }
+
   /**
    * A major strike is two full-screen inversions (white, then black), then a
    * held drawing. A second major inside 1.1s is downgraded so the page stays
@@ -124,10 +129,12 @@ export class StageFX {
       this.shade.style.opacity = "1";
       root.classList.remove("is-chroma");
     }, 80);
+    // Two flashes, then a black plate long enough to survive a fast scroll
+    // and video compression. The plate is a hold, not another flash.
     this.later(() => {
       this.shade.style.opacity = "0";
       this.holding = false;
-    }, 170);
+    }, 620);
   }
 
   private later(fn: () => void, ms: number): void {
