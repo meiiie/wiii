@@ -11,10 +11,10 @@ type Beat = { act: ActName; at: number; glyph: string; rot: number; mode: "major
 
 const BEATS: Beat[] = [
   { act: "intrusion", at: 0.22, glyph: "ワァッ", rot: -8, mode: "micro", sfx: "whoosh" },
-  { act: "clash", at: 0.5, glyph: "ズバッ", rot: -6, mode: "major", sfx: "impact" },
+  { act: "clash", at: 0.46, glyph: "ズバッ", rot: -6, mode: "major", sfx: "impact" },
   { act: "observe", at: 0.18, glyph: "ピタッ", rot: 4, mode: "quiet", sfx: "tick" },
-  { act: "neko", at: 0.42, glyph: "トンッ", rot: 6, mode: "micro", sfx: "slash" },
-  { act: "kakoi", at: 0.7, glyph: "囲", rot: 0, mode: "major", sfx: "sub" },
+  { act: "neko", at: 0.46, glyph: "トンッ", rot: 6, mode: "micro", sfx: "slash" },
+  { act: "kakoi", at: 0.2, glyph: "囲", rot: 0, mode: "major", sfx: "sub" },
   { act: "still", at: 0.12, glyph: "シーン", rot: 0, mode: "quiet", sfx: "quiet" },
 ];
 
@@ -90,14 +90,17 @@ export async function start(): Promise<void> {
   }
 
   let shown = acts[0];
+  let lastAct: ActName = "awaken";
+  const colophon = document.getElementById("colophon") as HTMLElement;
   const queued: { beat: Beat; at: number }[] = [];
   let shook = false;
 
-  const cam = (id: string, scale: number, x: number, y: number) => {
-    const img = document.querySelector<HTMLElement>(`#act-${id} .splash img`);
+  const cam = (id: string, scale: number, x: number, y: number, rot = 0) => {
+    const img = document.querySelector<HTMLElement>(`#act-${id} .splash.burst img, #act-${id} .splash:not(.residue) img`);
     if (!img) return;
-    img.style.transform = `scale(${scale}) translate(${x}%, ${y}%)`;
+    img.style.transform = `scale(${scale}) translate(${x}%, ${y}%) rotate(${rot}deg)`;
   };
+  const quant = (v: number, steps: number) => Math.round(clamp01(v) * steps) / steps;
 
   const render: Record<ActName, (p: number) => void> = {
     awaken(p) {
@@ -107,42 +110,68 @@ export async function start(): Promise<void> {
       cam("intrusion", lerp(1.28, 1.16, p), lerp(-6, 2, p), lerp(2, -2, p));
     },
     clash(p) {
-      const hit = p >= 0.5;
-      impact.classList.toggle("is-in", hit);
-      impact.style.opacity = hit ? "1" : "0";
-      cam("clash", hit ? 1.08 : lerp(1.32, 1.16, p), hit ? 0 : lerp(6, -2, p), 0);
-      const gates = [0.52, 0.64, 0.76];
-      panels.forEach((panel, i) => panel.classList.toggle("is-in", p >= gates[i]));
+      const el = document.getElementById("act-clash") as HTMLElement;
+      const invert = p >= 0.42 && p < 0.52;
+      const shatter = p >= 0.52 && p < 0.64;
+      const hold = p >= 0.64;
+      el.classList.toggle("is-invert", invert);
+      el.classList.toggle("is-shatter", shatter);
+      el.classList.toggle("is-hold", hold);
+      impact.style.opacity = invert || hold ? "1" : "0";
+      cam("clash", hold || shatter ? 1.06 : lerp(1.34, 1.16, p), hold ? 0 : lerp(6, -2, p), 0);
+      panels.forEach((panel) => panel.classList.toggle("is-in", hold));
     },
     observe(p) {
       cam("observe", lerp(1.22, 1.12, p), lerp(4, 0, p), 0);
       document.getElementById("act-observe")?.classList.toggle("is-hold", p > 0.12);
     },
     neko(p) {
-      cam("neko", lerp(1.26, 1.12, p), lerp(-4, 3, p), 0);
-      const second = p >= 0.42;
-      nekoLine.hidden = second;
-      nekoNext.hidden = !second;
+      const el = document.getElementById("act-neko") as HTMLElement;
+      const burst = p >= 0.46;
+      el.classList.toggle("is-residue", !burst);
+      nekoLine.hidden = burst;
+      nekoNext.hidden = !burst;
+      if (burst) {
+        const q = quant((p - 0.46) / 0.54, 7);
+        cam("neko", lerp(1.06, 1.2, q), lerp(2, -1, q), lerp(0, -2, q), lerp(-1.2, 1.8, q));
+      }
     },
     kakoi(p) {
-      cam("kakoi", lerp(1.2, 1.08, p), 0, lerp(2, 0, p));
+      const el = document.getElementById("act-kakoi") as HTMLElement;
+      const open = p >= 0.16;
+      el.classList.toggle("is-residue", !open);
+      if (open) {
+        const q = quant((p - 0.16) / 0.84, 8);
+        cam("kakoi", lerp(1.08, 1.24, q), lerp(1, -1, q), lerp(2, -2, q), lerp(1.1, -1.6, q));
+      }
       let idx = 0;
       for (let i = 0; i < RULES.length; i++) if (p >= RULES[i]) idx = i;
       rules.forEach((rule, i) => {
-        rule.classList.toggle("is-now", i === idx);
-        rule.classList.toggle("is-debris", i < idx && i >= 0);
+        rule.classList.toggle("is-now", open && i === idx);
+        rule.classList.toggle("is-debris", open && i < idx);
       });
     },
     still() {
-      cam("still", 1.12, 0, 0);
+      cam("still", 1.1, 8, 1);
     },
     return() {
-      const colo = document.getElementById("colo") as HTMLElement;
-      colo.style.opacity = "1";
+      cam("return", 1.14, 10, 0);
     },
   };
 
   const draw = (now: number) => {
+    const viewingColo = window.scrollY + 24 >= colophon.offsetTop;
+    document.documentElement.classList.toggle("is-colophon", viewingColo);
+    if (viewingColo) {
+      for (const item of acts) item.el.classList.remove("is-cover");
+      document.documentElement.classList.add("on-paper");
+      theme.content = "#F3EEE3";
+      actLabel.textContent = "07 Return";
+      battle.setAct("return", 1);
+      battle.draw(now, 0);
+      if (!fx.holding) fx.fade();
+      return;
+    }
     const live = acts.filter((item) => item.active);
     if (live.length) shown = live[live.length - 1];
     else {
@@ -151,6 +180,10 @@ export async function start(): Promise<void> {
     }
     const act = shown;
     for (const item of acts) item.el.classList.toggle("is-cover", item === act);
+    if (act.id !== lastAct) {
+      if (!fx.holding) fx.clear();
+      lastAct = act.id;
+    }
     render[act.id](act.p);
     battle.setAct(act.id, act.p);
 
@@ -186,9 +219,12 @@ export async function start(): Promise<void> {
     const vel = Math.min(1, Math.abs(lenis.velocity) / 1400);
     document.documentElement.classList.toggle("is-smear", vel > 0.22);
     battle.draw(now, vel);
-    if (!fx.holding) shade.style.opacity = "0";
+    if (!fx.holding) {
+      shade.style.opacity = "0";
+      fx.fade();
+    }
 
-    const paper = act.id === "still" || act.id === "kakoi";
+    const paper = act.id === "still" || act.id === "kakoi" || act.id === "return";
     document.documentElement.classList.toggle("on-paper", paper);
     theme.content = paper ? "#F3EEE3" : "#0B0B0D";
     actLabel.textContent = act.label;

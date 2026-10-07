@@ -56,10 +56,11 @@
         src="/art/cut-drift-360.webp"
         srcset="/art/cut-drift-360.webp 360w, /art/cut-drift-640.webp 640w"
         sizes="38vw"
-        width="516"
-        height="702"
+        width="640"
+        height="871"
         alt="Drift, full figure, white cracked mask and cursor-arms, cut out for the fight."
       />
+      <div id="drift-arms" class="motion-only" aria-hidden="true"></div>
 
       <header class="chrome">
         <a class="brand" href="#act-awaken">
@@ -101,7 +102,7 @@
               </picture>
             </figure>
             <p class="tate" lang="ja">覚醒</p>
-            <div class="copy copy--low">
+            <div class="plate plate--awaken">
               <p class="kicker">00 — The spark</p>
               <h1>The spark is your cursor.</h1>
               <p>Wiii is a local-first desktop workspace for working with Neko. You decide what it can access and change.</p>
@@ -119,9 +120,9 @@
               </picture>
             </figure>
             <p class="tate" lang="ja">侵入</p>
-            <div class="copy">
-              <p class="kicker threat">01 — Drift</p>
-              <h2 class="threat">It changes everything without asking.</h2>
+            <div class="plate plate--intrusion plate--threat">
+              <p class="kicker">01 — Drift</p>
+              <h2>It changes everything without asking.</h2>
               <p>A local project does not require a Wiii Service account. You decide what the agent can access and change. Model providers may require their own account.</p>
             </div>
           </div>
@@ -136,9 +137,12 @@
                 <img src="/art/kf03_clash-768.webp" width="1280" height="720" alt="Wiii dashes in, scarf trailing, as Drift's cursor-arms fill the black behind him." loading="lazy" />
               </picture>
             </figure>
-            <img id="impact-plate" class="impact-plate" src="/art/kf04_impact-768.webp" srcset="/art/kf04_impact-480.webp 480w, /art/kf04_impact-768.webp 768w, /art/kf04_impact-1280.webp 1280w" sizes="100vw" width="1280" height="720" alt="Inverted impact frame: Wiii's fist meets Drift's mask in a red burst and white speed lines." />
+            <div class="impact-seq" id="impact-seq">
+              <img id="impact-plate" class="impact-plate" src="/art/kf04_impact-768.webp" srcset="/art/kf04_impact-480.webp 480w, /art/kf04_impact-768.webp 768w, /art/kf04_impact-1280.webp 1280w" sizes="100vw" width="1280" height="720" alt="Inverted impact frame: Wiii's fist meets Drift's mask in a red burst and white speed lines." />
+              <div class="shards" id="impact-shards" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i></div>
+            </div>
             <p class="tate" lang="ja">衝突</p>
-            <div class="copy copy--mid">
+            <div class="plate plate--clash">
               <p class="kicker">02 — The work</p>
               <h2>The work stays in the folder.</h2>
             </div>
@@ -161,7 +165,7 @@
             </figure>
             <div class="halftone" aria-hidden="true"></div>
             <p class="tate" lang="ja">観測</p>
-            <div class="copy copy--center">
+            <div class="plate plate--observe">
               <h2>Observation is not control.</h2>
             </div>
           </div>
@@ -169,7 +173,14 @@
 
         <section class="act act--ink" id="act-neko" data-act="neko">
           <div class="act__pin">
-            <figure class="splash">
+            <figure class="splash residue" id="neko-residue">
+              <picture>
+                <source type="image/avif" srcset="/art/kf05_observe-768.avif 768w, /art/kf05_observe-1280.avif 1280w" sizes="100vw" />
+                <source type="image/webp" srcset="/art/kf05_observe-480.webp 480w, /art/kf05_observe-768.webp 768w, /art/kf05_observe-1280.webp 1280w" sizes="100vw" />
+                <img src="/art/kf05_observe-768.webp" width="1280" height="720" alt="The freeze holds. Drift's arms are still inches away, the moment before Neko moves." loading="lazy" />
+              </picture>
+            </figure>
+            <figure class="splash burst">
               <picture>
                 <source type="image/avif" srcset="/art/kf06_neko_burst-768.avif 768w, /art/kf06_neko_burst-1280.avif 1280w" sizes="100vw" />
                 <source type="image/webp" srcset="/art/kf06_neko_burst-480.webp 480w, /art/kf06_neko_burst-768.webp 768w, /art/kf06_neko_burst-1280.webp 1280w" sizes="100vw" />
@@ -177,16 +188,27 @@
               </picture>
             </figure>
             <p class="tate" lang="ja">猫</p>
-            <div class="copy copy--center">
-              <h2 id="neko-line">Taking control waits. It does not undo what already left.</h2>
-              <h2 id="neko-next">An interrupted action is not automatically repeated when its outcome is unknown.</h2>
+            <div class="plate plate--neko" id="neko-line">
+              <h2>Taking control waits.</h2>
+              <p>It does not undo what already left.</p>
+            </div>
+            <div class="plate plate--neko-next" id="neko-next">
+              <h2>An interrupted action</h2>
+              <p>is not automatically repeated when its outcome is unknown.</p>
             </div>
           </div>
         </section>
 
         <section class="act act--ink" id="act-kakoi" data-act="kakoi">
           <div class="act__pin">
-            <figure class="splash">
+            <figure class="splash residue" id="kakoi-residue">
+              <picture>
+                <source type="image/avif" srcset="/art/kf06_neko_burst-768.avif 768w, /art/kf06_neko_burst-1280.avif 1280w" sizes="100vw" />
+                <source type="image/webp" srcset="/art/kf06_neko_burst-480.webp 480w, /art/kf06_neko_burst-768.webp 768w, /art/kf06_neko_burst-1280.webp 1280w" sizes="100vw" />
+                <img src="/art/kf06_neko_burst-768.webp" width="1280" height="720" alt="Residue of the Neko burst, held for a cut before the ring closes." loading="lazy" />
+              </picture>
+            </figure>
+            <figure class="splash burst">
               <picture>
                 <source type="image/avif" srcset="/art/kf07_kakoi-768.avif 768w, /art/kf07_kakoi-1280.avif 1280w" sizes="100vw" />
                 <source type="image/webp" srcset="/art/kf07_kakoi-480.webp 480w, /art/kf07_kakoi-768.webp 768w, /art/kf07_kakoi-1280.webp 1280w" sizes="100vw" />
@@ -215,35 +237,42 @@
             </figure>
             <div class="ghost-ring" aria-hidden="true"></div>
             <p class="tate" lang="ja">間</p>
-            <div class="copy copy--center">
-              <h2>Computer is optional. Wiii Service is optional. Neither is required to begin.</h2>
+            <div class="plate plate--still plate--paper">
+              <h2>Computer is optional.</h2>
+              <p>Wiii Service is optional. Neither is required to begin.</p>
             </div>
           </div>
         </section>
 
         <section class="act act--paper" id="act-return" data-act="return">
           <div class="act__pin">
-            <div class="return-ink" aria-hidden="true"></div>
-            <div class="colo" id="colo">
-              <p class="tate" lang="ja">還</p>
-              <p class="kicker">07 — Return</p>
+            <figure class="splash">
+              <picture>
+                <source type="image/avif" srcset="/art/kf08_still-768.avif 768w, /art/kf08_still-1280.avif 1280w" sizes="100vw" />
+                <source type="image/webp" srcset="/art/kf08_still-480.webp 480w, /art/kf08_still-768.webp 768w, /art/kf08_still-1280.webp 1280w" sizes="100vw" />
+                <img src="/art/kf08_still-768.webp" width="1280" height="720" alt="Wiii from behind, Neko beside him, the spark small in an open hand." loading="lazy" />
+              </picture>
+            </figure>
+            <p class="tate" lang="ja">還</p>
+            <div class="plate plate--return plate--paper">
               <h2>The spark goes back to the cursor.</h2>
-              <div class="colo-grid">
-                <p>Built by <strong>The Wiii Lab</strong>.</p>
-                <p>The core product is AGPL-3.0-only. A separate commercial license is available. <span class="mono">sdk/</span> is Apache-2.0. The licenses do not grant the Wiii name.</p>
-                <p>Latest published release: Wiii 1.3.0, Windows x64 unsigned installer, tag <span class="mono">wiii-v1.3.0</span>, with SHA-256 and a release manifest. Linux and macOS have no public installer in that release. Checksums verify bytes, not publisher identity.</p>
-                <p>Vietnamese is the primary interface language. Neko Core is installed separately.</p>
-                <p>Computer is an experimental persistent Linux desktop through Docker Desktop, on the same user workstation. It is not a sandbox.</p>
-              </div>
-              <figure class="sheets">
-                <img src="/art/sheet_wiii-768.webp" srcset="/art/sheet_wiii-480.webp 480w, /art/sheet_wiii-768.webp 768w, /art/sheet_wiii-1280.webp 1280w" sizes="40vw" width="1280" height="720" alt="Character sheet of Wiii: cream hair with cat-ear tufts, charcoal scarf as a ring, and the small cream cat." loading="lazy" />
-                <img src="/art/sheet_drift-768.webp" srcset="/art/sheet_drift-480.webp 480w, /art/sheet_drift-768.webp 768w, /art/sheet_drift-1280.webp 1280w" sizes="40vw" width="1280" height="720" alt="Character sheet of Drift: white mask with a red crack, many arms, red cursor-bar fingertips, coat dissolving into pixels." loading="lazy" />
-              </figure>
-              <p><a class="repo" href="https://github.com/meiiie/wiii">github.com/meiiie/wiii</a></p>
-              <p class="fine">Original characters © HoLiLiHu</p>
+              <p class="links">
+                <a href="https://github.com/meiiie/wiii">github.com/meiiie/wiii</a>
+                <a href="https://holilihu.online">holilihu.online</a>
+              </p>
             </div>
           </div>
         </section>
+        <footer class="colophon" id="colophon">
+          <div class="cols">
+            <p>Built by <a href="https://holilihu.online">HoLiLiHu</a>.</p>
+            <p>The core product is AGPL-3.0-only. A separate commercial license is available. <span class="mono">sdk/</span> is Apache-2.0. The licenses do not grant the Wiii name.</p>
+            <p>Latest published release: Wiii 1.3.0, Windows x64 unsigned installer, tag <span class="mono">wiii-v1.3.0</span>, with SHA-256 and a release manifest. Linux and macOS have no public installer in that release. Checksums verify bytes, not publisher identity.</p>
+            <p>Vietnamese is the primary interface language. Neko Core is installed separately.</p>
+            <p>Computer is an experimental persistent Linux desktop through Docker Desktop, on the same user workstation. It is not a sandbox.</p>
+            <p class="fine">Original characters © HoLiLiHu</p>
+          </div>
+        </footer>
       </main>
     </div>
     <script type="module" src="/src/main.ts"></script>

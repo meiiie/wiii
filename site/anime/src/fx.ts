@@ -6,6 +6,7 @@ export class StageFX {
   private h = 1;
   private timers: number[] = [];
   private lastFull = -1e9;
+  private cool = 0;
   /** While true, the director must not overwrite the inversion frames. */
   holding = false;
 
@@ -29,7 +30,7 @@ export class StageFX {
   }
 
   fade(): void {
-    if (this.holding) return;
+    if (this.holding || performance.now() < this.cool) return;
     const ctx = this.ctx;
     if (!ctx) return;
     ctx.globalCompositeOperation = "destination-out";
@@ -53,6 +54,7 @@ export class StageFX {
     let resolved: HitMode = mode;
     if (mode === "major" && now - this.lastFull < 1100) resolved = "micro";
     this.paintGlyph(x, y, text, rot, resolved);
+    this.cool = now + (resolved === "major" ? 0 : 320);
     if (resolved === "major") {
       this.lastFull = now;
       this.invert(x, y);

@@ -41,6 +41,25 @@ export function mountBattle(sfx: Sfx, onWord: (text: string, x: number, y: numbe
   const drift = document.getElementById("drift-cut") as HTMLElement;
   const wiii = document.getElementById("wiii-cut") as HTMLElement;
   const live = document.getElementById("strike-live");
+  const armsRoot = document.getElementById("drift-arms") as HTMLElement;
+  const ARMS = [
+    { src: "/art/drift-arm-0.webp", w: 244, h: 387, ox: 0.8156, oy: 0.1189, rest: 2.0156 },
+    { src: "/art/drift-arm-1.webp", w: 291, h: 520, ox: 0.8454, oy: 0.0865, rest: 1.9812 },
+    { src: "/art/drift-arm-2.webp", w: 320, h: 498, ox: 0.1406, oy: 0.0924, rest: 1.0808 },
+    { src: "/art/drift-arm-3.webp", w: 252, h: 583, ox: 0.1667, oy: 0.0755, rest: 1.2634 },
+    { src: "/art/drift-arm-4.webp", w: 349, h: 365, ox: 0.1347, oy: 0.1288, rest: 0.7563 },
+  ];
+  const armEls = ARMS.map((arm) => {
+    const img = document.createElement("img");
+    img.src = arm.src;
+    img.alt = "";
+    img.width = arm.w;
+    img.height = arm.h;
+    armsRoot.appendChild(img);
+    return img;
+  });
+  let frozenAngles: number[] | null = null;
+  let finisherUntil = 0;
   const tips: Pt[] = [];
   const trail: Pt[] = [];
   const marks = new Map<ActName, Mark[]>();
@@ -149,11 +168,18 @@ export function mountBattle(sfx: Sfx, onWord: (text: string, x: number, y: numbe
 
   const strike = (pt: Pt, dash = false) => {
     const now = performance.now();
+    const hit = hitDrift(pt);
+    if (now < finisherUntil) {
+      splash(pt, hit, true);
+      return;
+    }
     combo = combo.filter((t) => now - t < 680);
     combo.push(now);
     const finisher = combo.length >= 3;
-    if (finisher) combo = [];
-    const hit = hitDrift(pt);
+    if (finisher) {
+      combo = [];
+      finisherUntil = now + 760;
+    }
     splash(pt, hit, finisher || dash);
     root.classList.add("is-tap");
     window.setTimeout(() => root.classList.remove("is-tap"), finisher ? 180 : 90);
@@ -215,25 +241,34 @@ export function mountBattle(sfx: Sfx, onWord: (text: string, x: number, y: numbe
   window.addEventListener("wheel", note, { passive: true });
   window.addEventListener("keydown", note);
 
-  const drawFingers = (pts: Pt[]) => {
-    if (!ctx) return;
-    const a = anchor();
-    ctx.lineCap = "round";
-    pts.forEach((tip, i) => {
-      const wobble = act === "observe" ? 0 : Math.sin(performance.now() / 180 + i) * 6;
-      ctx.strokeStyle = "rgba(11,11,13,0.85)";
-      ctx.lineWidth = 7;
-      ctx.beginPath();
-      ctx.moveTo(a.x, a.y);
-      ctx.quadraticCurveTo((a.x + tip.x) / 2 + wobble, (a.y + tip.y) / 2 - 40, tip.x, tip.y);
-      ctx.stroke();
-      ctx.strokeStyle = "#2A2928";
-      ctx.lineWidth = 3;
-      ctx.stroke();
-      ctx.fillStyle = "#E0261F";
-      ctx.fillRect(tip.x - 3, tip.y - 16, 7, 22);
-      ctx.fillStyle = "rgba(224,38,31,0.35)";
-      ctx.fillRect(tip.x + 6, tip.y - 10, 4, 14);
+  const placeArms = () => {
+    const rect = drift.getBoundingClientRect();
+    const show = chasing() && Number(drift.style.opacity) > 0.2 && rect.width > 8;
+    drift.classList.toggle("is-armed", show);
+    const sx = rect.left + (318 / 640) * rect.width;
+    const sy = rect.top + (250 / 871) * rect.height;
+    if (act !== "observe") frozenAngles = null;
+    armEls.forEach((img, i) => {
+      const arm = ARMS[i];
+      if (!show) {
+        img.style.opacity = "0";
+        return;
+      }
+      const aw = (arm.w / 640) * rect.width;
+      const ah = (arm.h / 871) * rect.height;
+      let ang = Math.atan2(pointer.y - sy, pointer.x - sx) - arm.rest;
+      if (act === "observe") {
+        if (!frozenAngles) frozenAngles = [];
+        if (frozenAngles[i] == null) frozenAngles[i] = ang;
+        ang = frozenAngles[i];
+      }
+      img.style.opacity = "1";
+      img.style.width = `${aw}px`;
+      img.style.height = `${ah}px`;
+      img.style.left = `${sx}px`;
+      img.style.top = `${sy}px`;
+      img.style.transformOrigin = `${arm.ox * aw}px ${arm.oy * ah}px`;
+      img.style.transform = `translate(${-arm.ox * aw}px, ${-arm.oy * ah}px) rotate(${ang}rad)`;
     });
   };
 
@@ -322,8 +357,8 @@ export function mountBattle(sfx: Sfx, onWord: (text: string, x: number, y: numbe
       progress = p;
       const freed = id === "kakoi" || id === "still" || id === "return";
       root.classList.toggle("is-freed", freed);
-      wiii.style.opacity = id === "clash" && p < 0.34 ? "1" : id === "return" && p > 0.55 ? "0.9" : "0";
-      drift.style.opacity = id === "intrusion" ? "1" : id === "clash" && p < 0.28 ? "0.9" : id === "neko" && p < 0.55 ? "0.75" : "0";
+      wiii.style.opacity = id === "clash" && p < 0.42 ? "1" : "0";
+      drift.style.opacity = id === "intrusion" ? "1" : id === "clash" && p < 0.42 ? "0.92" : id === "neko" && p < 0.46 ? "0.85" : "0";
       if (id === "clash" && p < 0.34) {
         wiii.style.transform = `translate(${-18 + p * 90}vw, 8vh)`;
       } else if (id === "return") {
@@ -341,7 +376,7 @@ export function mountBattle(sfx: Sfx, onWord: (text: string, x: number, y: numbe
       if (ctx) {
         ctx.clearRect(0, 0, window.innerWidth, window.innerHeight);
         drawSpeed(vel);
-        drawFingers(pts);
+        placeArms();
         drawMarks();
         drawShed();
         drawSpecks(now);
@@ -362,7 +397,7 @@ export function mountBattle(sfx: Sfx, onWord: (text: string, x: number, y: numbe
           ghost.style.transform = `translate(${src.x + (i - 1) * 80}px, ${src.y - 40}px) rotate(${20 * (i - 1)}deg)`;
           return;
         }
-        ghost.style.opacity = chasing() ? String(0.55 - i * 0.12) : "0";
+        ghost.style.opacity = chasing() ? String(0.26 - i * 0.06) : "0";
         ghost.style.transform = `translate(${src.x + 10}px, ${src.y + 8}px)`;
       });
       if (performance.now() < hitUntil) drift.classList.add("is-hit");
