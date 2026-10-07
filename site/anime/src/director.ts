@@ -253,6 +253,7 @@ export async function start(): Promise<void> {
   const springX = new Spring(window.innerWidth * 0.5);
   const springY = new Spring(window.innerHeight * 0.48);
   let target: Pt = { x: springX.x, y: springY.x };
+  let shown = acts[0];
   let passage: Passage = "fluid";
   let lastPassage: Passage = "fluid";
   let shockAmt = 0;
@@ -271,12 +272,13 @@ export async function start(): Promise<void> {
   let dust: Dust[] = [];
   let dustClock = 0;
   let dustLive = false;
-  const specks = Array.from({ length: 26 }, () => ({
+  const specks = Array.from({ length: 20 }, () => ({
     x: Math.random(),
     y: Math.random(),
-    s: 1 + Math.random() * 2.4,
-    v: 0.012 + Math.random() * 0.02,
+    s: 5 + Math.random() * 11,
+    v: 0.006 + Math.random() * 0.012,
     phase: Math.random() * Math.PI * 2,
+    squash: 0.35 + Math.random() * 1.3,
   }));
 
   const resizeCanvases = () => {
@@ -482,7 +484,7 @@ export async function start(): Promise<void> {
       const land = { x: w * (mobile() ? 0.5 : 0.56), y: h * (mobile() ? 0.48 : 0.52) };
       const t = onTwos(ramp(p, 0.08, 0.42), 7);
       const pos = p < 0.08 ? from : quad(from, ctrl, land, t);
-      const smear = t > 0 && t < 1 ? 1.85 : 1;
+      const smear = t > 0 && t < 1 ? 1.42 : 1;
       nekoFlyer.classList.toggle("is-live", p >= 0.08);
       placeFlyer(nekoFlyer, pos, smear, p >= 0.08 ? 1 : 0);
       ghosts.forEach((ghost, i) => {
@@ -491,7 +493,7 @@ export async function start(): Promise<void> {
           ghost.style.opacity = "0";
           return;
         }
-        placeFlyer(ghost, quad(from, ctrl, land, gt), 1.7, 0.38 - i * 0.1);
+        placeFlyer(ghost, quad(from, ctrl, land, gt), 1.2, 0.34 - i * 0.08);
       });
       let pose = "peek";
       if (p >= 0.8) pose = "tilt";
@@ -629,8 +631,13 @@ export async function start(): Promise<void> {
     const t = now / 1000;
     for (const speck of specks) {
       const y = (speck.y + t * speck.v) % 1;
-      moteCtx.globalAlpha = 0.28 + 0.22 * Math.sin(t * 0.7 + speck.phase);
-      moteCtx.fillRect(speck.x * window.innerWidth, y * window.innerHeight, speck.s, speck.s * 1.6);
+      moteCtx.globalAlpha = 0.45 + 0.35 * Math.sin(t * 0.6 + speck.phase);
+      moteCtx.fillRect(
+        speck.x * window.innerWidth,
+        y * window.innerHeight,
+        speck.s * speck.squash,
+        speck.s,
+      );
     }
     moteCtx.globalAlpha = 1;
   };
@@ -658,10 +665,19 @@ export async function start(): Promise<void> {
   };
 
   const draw = (now: number) => {
-    const live = acts.filter((act) => act.active);
-    const act = live[live.length - 1] ?? acts[0];
+    const live = acts.filter((item) => item.active);
+    if (live.length) shown = live[live.length - 1];
+    else {
+      const y = window.scrollY + 8;
+      for (const item of acts) if (item.el.offsetTop <= y) shown = item;
+    }
+    const act = shown;
     const prev = act.prev;
     render[act.id](act.p);
+    target = {
+      x: Math.min(window.innerWidth - 12, Math.max(12, target.x)),
+      y: Math.min(window.innerHeight - 12, Math.max(12, target.y)),
+    };
 
     let x: number;
     let y: number;
