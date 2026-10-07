@@ -5,7 +5,7 @@ The custom domain route is already in `wrangler.toml`:
 
 ```toml
 routes = [
-  { pattern = "wiii.holilihu.online", custom_domain = true }
+  { pattern = "anime.holilihu.online", custom_domain = true }
 ]
 ```
 
@@ -28,7 +28,8 @@ through the asset binding and adds the headers in `worker/index.js`.
 
 The dry run bundles the worker without publishing. Deploy needs a Cloudflare
 API token that can upload this worker and attach the custom domain
-`wiii.holilihu.online`. This repository does not store that token.
+`anime.holilihu.online`. This repository does not store that token.
+`wiii.holilihu.online` is the Wiii web app and must not be attached here.
 
 ## Local preview
 
@@ -50,6 +51,6 @@ The custom domain stays attached. There is no database and no migration.
 - No environment variables are required for the site to render.
 - The content-security policy allows only same-origin scripts, styles, images,
   and fonts. Audio is synthesized in the browser.
-- If the custom domain is not yet on the account, attach `wiii.holilihu.online`
+- If the custom domain is not yet on the account, attach `anime.holilihu.online`
   in the Cloudflare dashboard for this worker, then deploy again. The route in
   `wrangler.toml` is the source of truth.

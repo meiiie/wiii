@@ -65,12 +65,15 @@ not redraw it.
 
 ## Motion rules
 
-- The spark is sprung (inertia). Scroll is smoothed. Hits are one-shots when
-  a beat is crossed downward, so they read as cuts rather than scrubs.
-- Fast, then stop, then burst. Plateaus are intentional.
-- Impacts: one white frame (~70ms), a held ink frame with speed lines and a
-  red word (~320ms), a short discrete shake, a chromatic edge. Never more
-  than one flash per beat, and beats are separated by a long scroll.
+- Action is on twos: the spark, the slash, and the ring step. Fluid passages
+  (the title once it has landed, the still, the return) are the only eased
+  motion. Nothing in an action window fades in.
+- A major strike winds up for about 150ms, smears, then inverts the frame
+  twice (white, then black, under 200ms total), holds the speed lines, shakes
+  on a decay, and splits chroma for one or two frames. A second full-screen
+  inversion inside 1.1 seconds is refused, so flashes stay at or under three
+  a second. Smaller cuts are local lines and a word, not another strobe.
+- Red is the impact accent only.
 - Reduced motion: no pin, no shader loop, no flash, no shake. The same words
   in document order, on ink and paper.
 - Neko stays on model. Peek, Mochi, Nap, and Tilt are poses of one companion.
@@ -105,28 +108,29 @@ Behind it, the name is set huge, with 原因と結果 set vertically.
 
 ### 03 Work — rising action
 
-A manga spread, gutters thicker than a UI card, one panel rotated off the grid.
-The blade finishes its cut as the first panel wipes open. ズバッ sits across
-the gutter, not inside a safe padding box.
+The blade cuts the frame into manga panels. Borders are brush paths, not
+boxes. Each panel is one line, and it appears on the frame the spark crosses
+it. Then the spread freezes: a paper still, halftone, "Observation is not
+control." The scroll keeps moving. The picture holds. シーン.
 
 | Panel | Fact on the page | Causal job |
 | --- | --- | --- |
-| Project | Choose a project folder. The model is configured through Neko Core. | First panel border is the shock's leftover edge. |
-| Session | Conversations stay with the folder and can be reopened. | Its top rule continues the previous panel's rule. |
-| Tools | Công cụ: files, changes, browser, terminal, optional Computer. | The gutter is the same stroke, turned vertical. |
-| Still | Observation is not control. | The panel is paper inserted into ink: a frozen frame. シーン. Grain rises. The scroll keeps moving; the picture holds. |
+| Project | Choose a folder. | The first slash. |
+| Session | Reopen the work. | The next slash, a new gutter. |
+| Tools | Công cụ. Tools beside the talk. | The third slash. |
+| Freeze | Observation is not control. | The held frame. |
 
-A local project does not require a Wiii Service account. Vietnamese is the
-primary interface language. Both lines are on the spread, not in a footnote
-invented to fill space.
+The longer facts (Neko Core, the folder, Vietnamese as the primary interface
+language, Wiii Service not required for a local project) are struck in after
+the hold, not set as card body copy.
 
-**Handoff:** the still panel's right edge extends into the blade that cuts
-the next act open.
+**Handoff:** the freeze's edge becomes the blade that releases Neko.
 
 ### 04 Neko
 
-Paper. The blade's cut reveals it. Intro, then a sideways move through four
-poses of the same Neko:
+Paper. The previous cut launches the official mark along an arc: smear,
+afterimages, landing dust, then a quiet pose. Pose changes are cuts, each
+with its own small hit:
 
 - Peek — present, listening, ready
 - Mochi — comfortable, complete, available
@@ -136,14 +140,15 @@ poses of the same Neko:
 Neko Core is the default for new local work. Wiii does not silently substitute
 another installed agent when Neko is unavailable.
 
-**Handoff:** the tail's curl whips into a ring. Crossing into Kakoi, the paper
-outside that ring falls away to ink. ワァッ. The ring is the tail.
+**Handoff:** the landing whips the spark into a ring. The page falls to ink.
+ワァッ. The ring is the tail, drawn, not faded.
 
 ### 05 Kakoi — climax
 
-囲. Inside the ring the surface stays paper: the granted workspace. Outside is
-ink and radial lines. The official mark is in the ring at the start, then yields
-to the rules as the ring grows past the frame:
+The strongest moment. The screen goes to ink. 囲 draws itself as one
+calligraphic stroke, thick, then dry at the end. When the stroke closes, the
+world inside the ring inverts to paper. Rules slam one at a time, each with
+its own hit. Then one full-screen white flash, a sub drop, and silence.
 
 - Project and session, reopened rather than recreated
 - Tools beside the conversation
@@ -153,19 +158,19 @@ to the rules as the ring grows past the frame:
   own browser profile, experimental, a same-user workstation
 - Wiii Service is optional and separate from local desktop work
 
-When the ring swallows the viewport, the picture holds. Ma. The speed lines die.
-
-**Handoff:** being inside the ring *is* the next act. The background does not
-change. Only the voice does.
+**Handoff:** the flash is the cut into stillness. The picture does not fade.
 
 ### 06 Still — denouement
 
-One sentence at a time, enormous, on paper:
+Two or three seconds of almost nothing. One sentence holds while the scroll
+continues. Ink specks drift. The spark breathes. The page does not trap the
+scrollbar. Later sentences cut in only after that hold:
 
 1. Observation is not control.
 2. An outcome you cannot see is not a success.
-3. Taking control cancels Wiii-owned queued input and waits. It does not undo
-   an email already sent, and it does not stop every program inside the desktop.
+3. Taking control waits. It does not undo what already left. The full boundary
+   (queued input, sent mail, independent programs, blocked cleanup, Computer)
+   is the small type under that line.
 
 ピタッ on the settle. Small type for the rest of the boundary: only granted
 folders belong in the Computer; unconfirmed cleanup stays blocked.
@@ -198,7 +203,8 @@ A link, "From the spark", scrolls to the top. The picture already matches.
   paint. Audio is off until the visitor asks, and it is synthesized here.
 - Mobile keeps the chain: stacked beats instead of a sideways track, same
   impacts, shorter pins.
-- The worker is `wiii-anime-site`, custom domain `wiii.holilihu.online`.
+- The worker is `wiii-anime-site`, custom domain `anime.holilihu.online`.
+  `wiii.holilihu.online` is the product web app and is not this page.
 
 ## Self-critique bar
 

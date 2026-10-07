@@ -1,4 +1,4 @@
-type Kind = "spark" | "flight" | "wrap" | "impact" | "slash" | "open" | "tick" | "quiet";
+type Kind = "spark" | "flight" | "wrap" | "impact" | "slash" | "open" | "tick" | "quiet" | "whoosh" | "sub";
 
 export class Sfx {
   private ctx: AudioContext | null = null;
@@ -42,8 +42,12 @@ export class Sfx {
       this.tone(140, 0.4, 0.08, "sine");
       return;
     }
-    if (kind === "flight") {
-      this.sweep(500, 1800, 0.35, 0.07);
+    if (kind === "flight" || kind === "whoosh") {
+      this.sweep(kind === "whoosh" ? 220 : 500, kind === "whoosh" ? 1600 : 1800, kind === "whoosh" ? 0.22 : 0.35, kind === "whoosh" ? 0.11 : 0.07);
+      return;
+    }
+    if (kind === "sub") {
+      this.drop();
       return;
     }
     if (kind === "wrap") {
@@ -94,6 +98,24 @@ export class Sfx {
     gain.connect(this.master);
     src.start(now);
     src.stop(now + dur);
+  }
+
+  private drop(): void {
+    if (!this.ctx || !this.master) return;
+    const osc = this.ctx.createOscillator();
+    const gain = this.ctx.createGain();
+    osc.type = "sine";
+    const now = this.ctx.currentTime;
+    osc.frequency.setValueAtTime(72, now);
+    osc.frequency.exponentialRampToValueAtTime(32, now + 0.62);
+    gain.gain.setValueAtTime(0.0001, now);
+    gain.gain.exponentialRampToValueAtTime(0.5, now + 0.03);
+    gain.gain.exponentialRampToValueAtTime(0.0001, now + 1.15);
+    osc.connect(gain);
+    gain.connect(this.master);
+    osc.start(now);
+    osc.stop(now + 1.2);
+    this.burst(80, 0.55, 0.18, 0.2);
   }
 
   private sweep(from: number, to: number, dur: number, peak: number): void {

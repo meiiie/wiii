@@ -10,6 +10,8 @@ gsap.registerPlugin(ScrollTrigger);
 type ActId = "spark" | "title" | "work" | "neko" | "kakoi" | "still" | "credits";
 type Pt = { x: number; y: number };
 type Cubic = [Pt, Pt, Pt, Pt];
+type Passage = "action" | "fluid";
+type SfxKind = "flight" | "wrap" | "impact" | "slash" | "quiet" | "open" | "tick" | "whoosh" | "sub";
 
 type Act = {
   id: ActId;
@@ -27,8 +29,11 @@ type Beat = {
   glyph: string;
   rot: number;
   mode: HitMode;
-  sfx: "flight" | "wrap" | "impact" | "slash" | "quiet" | "open" | "tick";
+  sfx: SfxKind;
 };
+
+type Mark = { x: number; y: number; a: number };
+type Dust = { x: number; y: number; vx: number; vy: number; life: number };
 
 const FLIGHT: Cubic[] = [
   [
@@ -52,20 +57,35 @@ const FLIGHT: Cubic[] = [
 ];
 
 const BEATS: Beat[] = [
-  { act: "spark", at: 0.16, glyph: "シュンッ", rot: -16, mode: "soft", sfx: "flight" },
-  { act: "spark", at: 0.36, glyph: "クルリ", rot: 9, mode: "soft", sfx: "wrap" },
-  { act: "spark", at: 0.76, glyph: "トンッ", rot: -12, mode: "hit", sfx: "impact" },
-  { act: "work", at: 0.18, glyph: "ズバッ", rot: -14, mode: "slash", sfx: "slash" },
-  { act: "work", at: 0.68, glyph: "シーン", rot: 0, mode: "quiet", sfx: "quiet" },
-  { act: "kakoi", at: 0.06, glyph: "ワァッ", rot: -7, mode: "hit", sfx: "open" },
-  { act: "still", at: 0.6, glyph: "ピタッ", rot: 5, mode: "soft", sfx: "tick" },
+  { act: "spark", at: 0.16, glyph: "シュンッ", rot: -16, mode: "micro", sfx: "whoosh" },
+  { act: "spark", at: 0.36, glyph: "クルリ", rot: 9, mode: "micro", sfx: "wrap" },
+  { act: "spark", at: 0.76, glyph: "トンッ", rot: -12, mode: "major", sfx: "impact" },
+  { act: "title", at: 0.06, glyph: "", rot: 0, mode: "micro", sfx: "whoosh" },
+  { act: "work", at: 0.12, glyph: "ズバッ", rot: -18, mode: "major", sfx: "slash" },
+  { act: "work", at: 0.28, glyph: "ズバッ", rot: 11, mode: "micro", sfx: "slash" },
+  { act: "work", at: 0.44, glyph: "ズバッ", rot: -8, mode: "micro", sfx: "slash" },
+  { act: "work", at: 0.6, glyph: "シーン", rot: 0, mode: "quiet", sfx: "quiet" },
+  { act: "neko", at: 0.08, glyph: "シュンッ", rot: -22, mode: "micro", sfx: "whoosh" },
+  { act: "neko", at: 0.42, glyph: "トンッ", rot: 6, mode: "micro", sfx: "impact" },
+  { act: "neko", at: 0.56, glyph: "クルリ", rot: 8, mode: "micro", sfx: "tick" },
+  { act: "neko", at: 0.68, glyph: "ピタッ", rot: -4, mode: "micro", sfx: "tick" },
+  { act: "neko", at: 0.8, glyph: "トンッ", rot: 5, mode: "micro", sfx: "tick" },
+  { act: "kakoi", at: 0.06, glyph: "ワァッ", rot: -7, mode: "micro", sfx: "open" },
+  { act: "kakoi", at: 0.48, glyph: "", rot: 0, mode: "micro", sfx: "impact" },
+  { act: "kakoi", at: 0.56, glyph: "", rot: 0, mode: "micro", sfx: "impact" },
+  { act: "kakoi", at: 0.64, glyph: "", rot: 0, mode: "micro", sfx: "impact" },
+  { act: "kakoi", at: 0.72, glyph: "", rot: 0, mode: "micro", sfx: "impact" },
+  { act: "kakoi", at: 0.8, glyph: "", rot: 0, mode: "micro", sfx: "impact" },
+  { act: "kakoi", at: 0.9, glyph: "囲", rot: 0, mode: "major", sfx: "sub" },
+  { act: "still", at: 0.74, glyph: "ピタッ", rot: 4, mode: "quiet", sfx: "tick" },
 ];
+
+const RULE_AT = [0.48, 0.56, 0.64, 0.72, 0.8];
 
 const clamp01 = (v: number) => Math.min(1, Math.max(0, v));
 const lerp = (a: number, b: number, t: number) => a + (b - a) * t;
 const ramp = (p: number, a: number, b: number) => clamp01((p - a) / (b - a));
-const easeOut = (t: number) => 1 - (1 - clamp01(t)) ** 3;
-const easeIn = (t: number) => clamp01(t) ** 3;
+const onTwos = (t: number, steps: number) => Math.floor(clamp01(t) * steps) / steps;
 const easeInOut = (t: number) => {
   const x = clamp01(t);
   return x < 0.5 ? 4 * x * x * x : 1 - ((-2 * x + 2) ** 3) / 2;
@@ -94,6 +114,14 @@ function along(points: Pt[], t: number): Pt {
   return {
     x: lerp(points[i].x, points[i + 1].x, local),
     y: lerp(points[i].y, points[i + 1].y, local),
+  };
+}
+
+function quad(a: Pt, c: Pt, b: Pt, t: number): Pt {
+  const u = 1 - t;
+  return {
+    x: u * u * a.x + 2 * u * t * c.x + t * t * b.x,
+    y: u * u * a.y + 2 * u * t * c.y + t * t * b.y,
   };
 }
 
@@ -130,24 +158,34 @@ export async function start(): Promise<void> {
   const cue = document.getElementById("cue") as HTMLElement;
   const sheetItems = [...document.querySelectorAll<HTMLElement>("#sheet li")];
   const heroName = document.getElementById("hero-name") as HTMLElement;
+  const slices = [...heroName.querySelectorAll<HTMLElement>(".slice")];
   const sweep = document.getElementById("sweep") as HTMLElement;
-  const panels = [...document.querySelectorAll<HTMLElement>(".panel")];
-  const sfxCut = document.getElementById("sfx-cut") as HTMLElement;
+  const titleBlock = document.querySelector(".title-copy") as HTMLElement;
+  const manga = document.getElementById("manga") as HTMLElement;
+  const cuts = ["cut-a", "cut-b", "cut-c"].map((id) => document.getElementById(id) as HTMLElement);
+  const freeze = document.getElementById("freeze") as HTMLElement;
+  const workLayout = document.getElementById("work-layout") as HTMLElement;
+  const workTitle = document.getElementById("work-title") as HTMLElement;
   const workFoot = document.getElementById("work-foot") as HTMLElement;
   const nekoIntro = document.getElementById("neko-intro") as HTMLElement;
-  const nekoTrack = document.getElementById("neko-track") as HTMLElement;
   const nekoNote = document.getElementById("neko-note") as HTMLElement;
-  const poseCards = [...document.querySelectorAll<HTMLElement>(".pose-card")];
+  const nekoFlyer = document.getElementById("neko-flyer") as HTMLElement;
+  const poseLives = [...document.querySelectorAll<SVGElement>(".pose-live")];
+  const poseCaption = document.getElementById("pose-caption") as HTMLElement;
+  const ghosts = [...document.querySelectorAll<HTMLElement>(".ghost")];
+  const dustCanvas = document.getElementById("dust") as HTMLCanvasElement;
+  const dustCtx = dustCanvas.getContext("2d");
   const kakoiDisc = document.getElementById("kakoi-disc") as HTMLElement;
   const kakoiMark = document.getElementById("kakoi-mark") as HTMLElement;
   const kakoiCopy = document.getElementById("kakoi-copy") as HTMLElement;
+  const kakoiLead = kakoiCopy.querySelector(".lead") as HTMLElement;
   const rules = [...document.querySelectorAll<HTMLElement>("#rules li")];
   const stillLines = [...document.querySelectorAll<HTMLElement>("#still-stack .still-line")];
   const stillNote = document.getElementById("still-note") as HTMLElement;
   const colo = document.getElementById("colo") as HTMLElement;
   const iris = document.getElementById("iris") as HTMLElement;
-      const again = document.getElementById("again") as HTMLElement;
-      const endCue = document.getElementById("end-cue") as HTMLElement;
+  const again = document.getElementById("again") as HTMLElement;
+  const endCue = document.getElementById("end-cue") as HTMLElement;
   const shock = document.getElementById("shock") as HTMLElement;
   const actLabel = document.getElementById("act-label") as HTMLElement;
   const frameLabel = document.getElementById("frame-label") as HTMLElement;
@@ -157,7 +195,11 @@ export async function start(): Promise<void> {
   const glCanvas = document.getElementById("gl") as HTMLCanvasElement;
   const strokeCanvas = document.getElementById("stroke") as HTMLCanvasElement;
   const strokeCtx = strokeCanvas.getContext("2d");
+  const moteCanvas = document.getElementById("motes") as HTMLCanvasElement;
+  const moteCtx = moteCanvas.getContext("2d");
+  const trailBits = [...document.querySelectorAll<HTMLElement>("#trail i")];
   const nekoPin = document.querySelector("#act-neko .act__pin") as HTMLElement;
+  const shade = document.getElementById("shade") as HTMLElement;
 
   const ink = new InkField(glCanvas);
   const glOn = ink.mount();
@@ -165,7 +207,7 @@ export async function start(): Promise<void> {
   const fx = new StageFX(
     document.getElementById("fxc") as HTMLCanvasElement,
     document.getElementById("flash") as HTMLElement,
-    document.getElementById("shade") as HTMLElement,
+    shade,
     document.getElementById("glyph") as HTMLElement,
     document.getElementById("grain") as HTMLElement,
   );
@@ -211,22 +253,47 @@ export async function start(): Promise<void> {
   const springX = new Spring(window.innerWidth * 0.5);
   const springY = new Spring(window.innerHeight * 0.48);
   let target: Pt = { x: springX.x, y: springY.x };
+  let passage: Passage = "fluid";
+  let lastPassage: Passage = "fluid";
   let shockAmt = 0;
   let shockScale = 0;
   let stillAmt = 0;
   let radialAmt = 0;
   let heldFrame: number | null = null;
-  const shakeFrames = [10, -8, 6, -4, 2, -1, 0];
+  let shakeFrames = [8, -5, 3, -1, 0];
+  let shakeEvery = 48;
   let shakeStep = -1;
   let shakeClock = 0;
+  let stepBucket = -1;
+  const trail: Mark[] = [];
+  const queued: { beat: Beat; at: number }[] = [];
+  let poseNow = "peek";
+  let dust: Dust[] = [];
+  let dustClock = 0;
+  let dustLive = false;
+  const specks = Array.from({ length: 26 }, () => ({
+    x: Math.random(),
+    y: Math.random(),
+    s: 1 + Math.random() * 2.4,
+    v: 0.012 + Math.random() * 0.02,
+    phase: Math.random() * Math.PI * 2,
+  }));
+
+  const resizeCanvases = () => {
+    const dpr = Math.min(window.devicePixelRatio || 1, 1.5);
+    for (const canvas of [strokeCanvas, dustCanvas, moteCanvas]) {
+      canvas.width = Math.floor(window.innerWidth * dpr);
+      canvas.height = Math.floor(window.innerHeight * dpr);
+    }
+    strokeCtx?.setTransform(dpr, 0, 0, dpr, 0, 0);
+    dustCtx?.setTransform(dpr, 0, 0, dpr, 0, 0);
+    moteCtx?.setTransform(dpr, 0, 0, dpr, 0, 0);
+  };
 
   const resize = () => {
     ink.resize();
     fx.resize();
-    const dpr = Math.min(window.devicePixelRatio || 1, 1.5);
-    strokeCanvas.width = Math.floor(window.innerWidth * dpr);
-    strokeCanvas.height = Math.floor(window.innerHeight * dpr);
-    strokeCtx?.setTransform(dpr, 0, 0, dpr, 0, 0);
+    resizeCanvases();
     ScrollTrigger.refresh();
   };
   resize();
@@ -239,42 +306,72 @@ export async function start(): Promise<void> {
     const w = window.innerWidth;
     const h = window.innerHeight;
     strokeCtx.clearRect(0, 0, w, h);
-    const travel = easeInOut(ramp(p, 0.08, 0.5));
+    const travel = onTwos(ramp(p, 0.08, 0.5), 8);
     if (travel <= 0.001) return;
-    const steps = 72;
+    const steps = 64;
     const n = Math.max(2, Math.floor(steps * travel));
     strokeCtx.lineCap = "round";
-    strokeCtx.strokeStyle = "rgba(245,240,230,0.92)";
+    strokeCtx.strokeStyle = "rgba(245,240,230,0.94)";
     for (let i = 1; i <= n; i++) {
       const a = flightPoint((i - 1) / steps);
       const b = flightPoint(i / steps);
-      const thick = 1.4 + Math.sin((i / steps) * Math.PI) * (i / steps > 0.45 ? 16 : 4);
+      const thick = 1.6 + Math.sin((i / steps) * Math.PI) * (i / steps > 0.45 ? 18 : 5);
       strokeCtx.beginPath();
       strokeCtx.moveTo((a.x / 100) * w, (a.y / 100) * h);
       strokeCtx.lineTo((b.x / 100) * w, (b.y / 100) * h);
       strokeCtx.lineWidth = thick;
       strokeCtx.stroke();
     }
-    if (p > 0.68 && p < 0.82) {
-      const end = flightPoint(1);
-      const name = lockup.querySelector(".lockup__name") as HTMLElement;
-      const dot = pointOf(name, 0.98, 0.22);
-      const t = easeIn(ramp(p, 0.7, 0.8));
+  };
+
+  const drawRing = (amount: number) => {
+    if (!strokeCtx) return;
+    const w = window.innerWidth;
+    const h = window.innerHeight;
+    strokeCtx.clearRect(0, 0, w, h);
+    if (amount <= 0.001) return;
+    const cx = w * 0.5;
+    const cy = h * 0.46;
+    const radius = Math.min(w, h) * (mobile() ? 0.34 : 0.38);
+    const steps = 96;
+    const n = Math.max(2, Math.floor(steps * amount));
+    strokeCtx.lineCap = "round";
+    for (let i = 1; i <= n; i++) {
+      const u = i / steps;
+      if (u > 0.84 && i % 4 === 0) continue;
+      const a0 = -Math.PI / 2 + ((i - 1) / steps) * Math.PI * 2;
+      const a1 = -Math.PI / 2 + (i / steps) * Math.PI * 2;
+      const width = u > 0.72 ? lerp(18, 1.1, (u - 0.72) / 0.28) : 4 + Math.sin(u * Math.PI) * 14;
+      strokeCtx.strokeStyle = u > 0.88 ? "rgba(245,240,230,0.45)" : "rgba(245,240,230,0.96)";
+      strokeCtx.lineWidth = width;
       strokeCtx.beginPath();
-      strokeCtx.moveTo((end.x / 100) * w, (end.y / 100) * h);
-      strokeCtx.lineTo(lerp((end.x / 100) * w, dot.x, t), lerp((end.y / 100) * h, dot.y, t));
-      strokeCtx.lineWidth = 2;
+      strokeCtx.moveTo(cx + Math.cos(a0) * radius, cy + Math.sin(a0) * radius);
+      strokeCtx.lineTo(cx + Math.cos(a1) * radius, cy + Math.sin(a1) * radius);
       strokeCtx.stroke();
     }
   };
 
+  const ringTip = (amount: number): Pt => {
+    const w = window.innerWidth;
+    const h = window.innerHeight;
+    const radius = Math.min(w, h) * (mobile() ? 0.34 : 0.38);
+    const a = -Math.PI / 2 + clamp01(amount) * Math.PI * 2;
+    return { x: w * 0.5 + Math.cos(a) * radius, y: h * 0.46 + Math.sin(a) * radius };
+  };
+
+  const placeFlyer = (el: HTMLElement, pt: Pt, smear: number, alpha: number) => {
+    el.style.opacity = String(alpha);
+    el.style.transform = `translate(${pt.x}px, ${pt.y}px) translate(-50%, -50%) scaleX(${smear})`;
+  };
+
   const render: Record<ActId, (p: number) => void> = {
     spark(p) {
+      passage = p < 0.08 || p > 0.9 ? "fluid" : "action";
       const cues: [number, string][] = [
         [0, "0.00 — spark at rest"],
         [0.08, "1.25 — flight traces the tail"],
         [0.3, "2.50 — the fold wraps"],
-        [0.48, "3.58 — the mark"],
+        [0.5, "3.58 — the mark"],
         [0.7, "5.35 — impact"],
         [0.8, "5.75 — shockwave"],
       ];
@@ -289,171 +386,275 @@ export async function start(): Promise<void> {
           .sort((a, b) => a - b)[0];
         li.classList.toggle("on", p >= from && (next === undefined || p < next));
       }
-      const foldIn = easeOut(ramp(p, 0.32, 0.46));
-      const foldOut = ramp(p, 0.5, 0.66);
-      fold.style.opacity = String(foldIn * (1 - foldOut));
-      fold.style.transform = `translate(-50%, -50%) scale(${0.62 + foldIn * 0.4})`;
-      lockup.style.opacity = String(easeOut(ramp(p, 0.5, 0.64)));
-      lockup.classList.toggle("is-smear", p > 0.7 && p < 0.79);
+      const folded = p >= 0.32 && p < 0.5;
+      fold.style.opacity = folded ? "1" : "0";
+      const foldStep = onTwos(ramp(p, 0.32, 0.48), 3);
+      fold.style.transform = `translate(-50%, -50%) scale(${0.62 + foldStep * 0.38})`;
+      lockup.style.opacity = p >= 0.5 ? "1" : "0";
+      lockup.classList.toggle("is-smear", p >= 0.7 && p < 0.8);
       const end = flightPx(1);
       const dot = pointOf(lockup.querySelector(".lockup__name") as HTMLElement, 0.98, 0.2);
+      const flightT = onTwos(ramp(p, 0.08, 0.5), 8);
       if (p < 0.08) target = flightPx(0);
-      else if (p < 0.5) target = flightPx(easeInOut(ramp(p, 0.08, 0.5)));
+      else if (p < 0.5) target = flightPx(flightT);
       else if (p < 0.7) target = end;
-      else target = mix(end, dot, easeIn(ramp(p, 0.7, 0.8)));
-      shockAmt = ramp(p, 0.8, 0.9);
-      shockScale = ramp(p, 0.8, 1) * 0.85;
+      else target = mix(end, dot, onTwos(ramp(p, 0.7, 0.8), 3));
+      shockAmt = p >= 0.8 ? 1 : 0;
+      shockScale = onTwos(ramp(p, 0.8, 1), 4) * 0.9;
       stillAmt = 0;
-      radialAmt = 0;
+      radialAmt = p >= 0.8 ? 0.85 : 0;
       setBlade(0, 20, -16);
       glCanvas.style.opacity = "1";
       drawStroke(p);
     },
     title(p) {
+      passage = p < 0.32 || p > 0.82 ? "action" : "fluid";
       clearStroke();
-      const sweepT = easeInOut(ramp(p, 0.02, 0.32));
-      sweep.style.opacity = String(sweepT > 0 && sweepT < 1 ? 0.9 : 0);
-      sweep.style.transform = `translateX(${lerp(-40, 120, sweepT)}vw) skewX(-14deg)`;
-      const leave = ramp(p, 0.86, 1);
-      const block = document.querySelector(".title-copy") as HTMLElement;
-      block.style.opacity = String(1 - leave);
-      block.style.transform = `translate3d(${leave * -30}px, ${leave * -12}px, 0)`;
-      const dot = pointOf(heroName, 0.97, 0.18);
-      const exit = { x: window.innerWidth * 0.86, y: window.innerHeight * 0.6 };
-      target = mix(dot, exit, easeIn(ramp(p, 0.84, 1)));
-      shockAmt = 1 - ramp(p, 0.02, 0.28);
-      shockScale = lerp(0.85, 1.6, ramp(p, 0, 0.35));
-      const b = ramp(p, 0.84, 1);
-      setBlade(b, lerp(36, -8, easeInOut(b)), -18);
+      const sweepT = onTwos(ramp(p, 0.02, 0.36), 4);
+      sweep.style.opacity = sweepT > 0 && sweepT < 1 ? "1" : "0";
+      sweep.style.transform = `translateX(${lerp(-46, 130, sweepT)}vw) skewX(-16deg)`;
+      const keys = [-40, 26, -18, 34];
+      if (p < 0.34) {
+        const s = onTwos(ramp(p, 0.04, 0.32), 3);
+        slices.forEach((el, i) => {
+          el.style.transform = `translateY(${(1 - s) * keys[i]}px)`;
+        });
+      } else if (p > 0.84) {
+        const s = onTwos(ramp(p, 0.84, 1), 3);
+        slices.forEach((el, i) => {
+          el.style.transform = `translate(${(i - 1.5) * s * 36}px, ${s * (i % 2 ? 16 : -12)}px)`;
+        });
+      } else {
+        slices.forEach((el) => {
+          el.style.transform = "none";
+        });
+      }
+      titleBlock.style.opacity = p > 0.9 ? "0" : "1";
+      const dot = pointOf(slices[3] ?? heroName, 0.7, 0.12);
+      const exit = { x: window.innerWidth * 0.12, y: window.innerHeight * 0.34 };
+      target = p > 0.84 ? mix(dot, exit, onTwos(ramp(p, 0.84, 1), 3)) : dot;
+      shockAmt = p < 0.2 ? 1 : 0;
+      shockScale = p < 0.28 ? 1.15 : 0;
+      const b = onTwos(ramp(p, 0.86, 1), 3);
+      setBlade(b, lerp(40, -12, b), -18);
       stillAmt = 0;
       radialAmt = 0;
       glCanvas.style.opacity = "1";
     },
     work(p) {
+      const frozen = p >= 0.58 && p < 0.9;
+      passage = frozen || p > 0.9 ? "fluid" : "action";
       clearStroke();
-      const starts = [0.04, 0.2, 0.38, 0.56];
-      panels.forEach((panel, i) => {
-        if (mobile()) {
-          const start = 0.04 + i * 0.22;
-          const inn = easeOut(ramp(p, start, start + 0.1));
-          const out = i === panels.length - 1 ? 0 : ramp(p, start + 0.18, start + 0.24);
-          panel.style.opacity = String(inn * (1 - out));
-          panel.style.clipPath = "none";
-        } else {
-          const e = easeOut(ramp(p, starts[i], starts[i] + 0.1));
-          panel.style.opacity = "1";
-          panel.style.clipPath = `inset(0 ${(1 - e) * 100}% 0 0)`;
-        }
+      const gates = mobile() ? [0.1, 0.26, 0.42] : [0.12, 0.28, 0.44];
+      manga.classList.toggle("is-a", p >= gates[0]);
+      manga.classList.toggle("is-b", p >= gates[1]);
+      manga.classList.toggle("is-c", p >= gates[2]);
+      cuts.forEach((cut, i) => {
+        const show = mobile()
+          ? p >= gates[i] && p < (i === cuts.length - 1 ? 0.58 : gates[i + 1])
+          : p >= gates[i] && p < 0.58;
+        cut.classList.toggle("is-in", show);
       });
-      sfxCut.style.opacity = String(easeOut(ramp(p, 0.22, 0.32)));
-      workFoot.style.opacity = String(easeOut(ramp(p, 0.74, 0.86)));
-      if (p < 0.16) setBlade(1 - ramp(p, 0, 0.16), lerp(-8, -80, ramp(p, 0, 0.16)), -18);
-      else if (p > 0.88) setBlade(ramp(p, 0.88, 1), lerp(42, -6, ramp(p, 0.88, 1)), -8);
+      freeze.classList.toggle("is-in", p >= 0.58);
+      workLayout.classList.toggle("is-hold", p >= 0.58);
+      workTitle.classList.toggle("is-sliced", p >= 0.12 && p < 0.28);
+      workFoot.classList.toggle("is-in", p >= 0.9);
+      if (p < 0.12) setBlade(1, lerp(8, -30, ramp(p, 0, 0.12)), -18);
+      else if (p > 0.9) setBlade(onTwos(ramp(p, 0.9, 1), 3), lerp(48, -8, ramp(p, 0.9, 1)), -8);
       else setBlade(0, 0, 0);
       shockAmt = 0;
-      stillAmt = ramp(p, 0.6, 0.72) * (1 - ramp(p, 0.9, 1));
+      stillAmt = frozen ? 0.35 : 0;
       radialAmt = 0;
       glCanvas.style.opacity = "1";
-      target = workPoint(p);
+      target = workPoint(frozen ? 0.72 : p);
     },
     neko(p) {
+      passage = p < 0.46 ? "action" : "fluid";
       clearStroke();
-      const open = easeOut(ramp(p, 0, 0.12));
-      nekoPin.style.clipPath = open > 0.995 ? "none" : `inset(0 ${(1 - open) * 100}% 0 0)`;
-      setBlade(1 - open, lerp(0, -90, open), -8);
-      nekoIntro.style.opacity = String(1 - ramp(p, 0.08, 0.18));
-      nekoIntro.style.transform = `translate3d(${-ramp(p, 0.08, 0.2) * 28}px, 0, 0)`;
-      nekoTrack.style.opacity = String(ramp(p, 0.12, 0.22));
-      if (mobile()) {
-        nekoTrack.style.transform = "none";
-        poseCards.forEach((card, i) => {
-          const start = 0.18 + i * 0.18;
-          const inn = easeOut(ramp(p, start, start + 0.08));
-          const out = i === poseCards.length - 1 ? 0 : ramp(p, start + 0.14, start + 0.2);
-          card.style.opacity = String(inn * (1 - out));
-        });
-      } else {
-        const card = poseCards[0]?.getBoundingClientRect();
-        const cardW = card?.width || 720;
-        const gap = window.innerWidth * 0.08;
-        const pad = window.innerWidth * 0.12;
-        const stride = cardW + gap;
-        const t = ramp(p, 0.18, 0.92);
-        const last = poseCards.length - 1;
-        const index = t * last;
-        const i = Math.min(last - 1, Math.floor(index));
-        const local = index - i;
-        const hold = local < 0.18 ? 0 : local > 0.82 ? 1 : easeInOut((local - 0.18) / 0.64);
-        const focus = Math.min(last, i + hold);
-        const center = pad + focus * stride + cardW / 2;
-        nekoTrack.style.transform = `translate3d(${-(center - window.innerWidth / 2)}px, 0, 0)`;
-        poseCards.forEach((pose) => {
-          pose.style.opacity = "1";
+      const open = onTwos(ramp(p, 0, 0.1), 3);
+      nekoPin.style.clipPath = open >= 1 ? "none" : `inset(0 ${(1 - open) * 100}% 0 0)`;
+      setBlade(open >= 1 ? 0 : 1, lerp(0, -110, open), -8);
+      nekoIntro.classList.toggle("is-gone", p >= 0.08);
+      const w = window.innerWidth;
+      const h = window.innerHeight;
+      const from = { x: w * (mobile() ? 0.08 : -0.02), y: h * 0.62 };
+      const ctrl = { x: w * 0.72, y: h * 0.08 };
+      const land = { x: w * (mobile() ? 0.5 : 0.56), y: h * (mobile() ? 0.48 : 0.52) };
+      const t = onTwos(ramp(p, 0.08, 0.42), 7);
+      const pos = p < 0.08 ? from : quad(from, ctrl, land, t);
+      const smear = t > 0 && t < 1 ? 1.85 : 1;
+      nekoFlyer.classList.toggle("is-live", p >= 0.08);
+      placeFlyer(nekoFlyer, pos, smear, p >= 0.08 ? 1 : 0);
+      ghosts.forEach((ghost, i) => {
+        const gt = t - (i + 1) * (1 / 7);
+        if (gt <= 0 || t >= 1) {
+          ghost.style.opacity = "0";
+          return;
+        }
+        placeFlyer(ghost, quad(from, ctrl, land, gt), 1.7, 0.38 - i * 0.1);
+      });
+      let pose = "peek";
+      if (p >= 0.8) pose = "tilt";
+      else if (p >= 0.68) pose = "nap";
+      else if (p >= 0.56) pose = "mochi";
+      if (pose !== poseNow) {
+        poseNow = pose;
+        nekoFlyer.classList.add("is-squash");
+        window.setTimeout(() => nekoFlyer.classList.remove("is-squash"), 120);
+      }
+      for (const live of poseLives) {
+        if (live.dataset.pose === pose) live.removeAttribute("hidden");
+        else live.setAttribute("hidden", "");
+      }
+      poseCaption.textContent = pose[0].toUpperCase() + pose.slice(1);
+      poseCaption.style.opacity = p >= 0.42 ? "1" : "0";
+      if (p >= 0.42 && !dustLive) {
+        dustLive = true;
+        dust = Array.from({ length: 16 }, (_, i) => {
+          const a = Math.PI + (i / 16) * Math.PI;
+          return {
+            x: land.x,
+            y: land.y + 70,
+            vx: Math.cos(a) * (1.4 + (i % 4)),
+            vy: -0.4 - (i % 3) * 0.3,
+            life: 1,
+          };
         });
       }
-      nekoNote.style.opacity = String(easeOut(ramp(p, mobile() ? 0.78 : 0.62, mobile() ? 0.9 : 0.76)));
-      const center = { x: window.innerWidth * 0.5, y: window.innerHeight * 0.5 };
-      const ride = { x: lerp(window.innerWidth * 0.28, window.innerWidth * 0.72, p), y: window.innerHeight * 0.58 };
-      target = mix(ride, center, ramp(p, 0.9, 1));
+      if (p < 0.3) dustLive = false;
+      nekoNote.classList.toggle("is-in", p >= 0.88);
+      target = p < 0.46 ? pos : { x: land.x + 120, y: land.y - 40 };
       shockAmt = 0;
       stillAmt = 0;
-      radialAmt = ramp(p, 0.92, 1);
+      radialAmt = 0;
       glCanvas.style.opacity = "0";
     },
     kakoi(p) {
-      clearStroke();
+      const grow = onTwos(ramp(p, 0.05, 0.42), 16);
+      passage = p < 0.92 ? "action" : "fluid";
+      drawRing(grow);
       setBlade(0, 0, 0);
       nekoPin.style.clipPath = "none";
-      const grow = easeInOut(ramp(p, 0.05, 0.58));
-      kakoiDisc.style.transform = `translate(-50%, -50%) scale(${lerp(0.1, 1.28, grow)})`;
-      kakoiMark.style.opacity = String(1 - ramp(p, 0.14, 0.3));
-      kakoiCopy.style.opacity = String(easeOut(ramp(p, 0.26, 0.4)));
+      kakoiMark.style.opacity = p < 0.06 ? "1" : "0";
+      const open = grow >= 0.94;
+      kakoiDisc.style.opacity = open ? "1" : "0";
+      kakoiDisc.style.transform = `translate(-50%, -50%) scale(${lerp(0.15, 1.22, grow)})`;
+      kakoiCopy.style.opacity = open ? "1" : "0";
+      if (mobile()) kakoiLead.style.opacity = p >= 0.48 ? "0" : "1";
       rules.forEach((rule, i) => {
-        const start = 0.34 + i * 0.08;
-        const e = easeOut(ramp(p, start, start + 0.06));
-        rule.style.opacity = String(e);
-        rule.style.transform = `translate3d(${(1 - e) * 22}px, 0, 0)`;
+        const local = ramp(p, RULE_AT[i], RULE_AT[i] + 0.04);
+        const step = local <= 0 ? 0 : local < 0.5 ? 1 : 2;
+        const current = RULE_AT.filter((at) => p >= at).length - 1;
+        rule.style.opacity = mobile() ? (i === current ? "1" : "0") : step === 0 ? "0" : "1";
+        const x = step === 1 ? -12 : 0;
+        rule.style.transform = `translate3d(${step === 0 ? 40 : x}px, 0, 0)`;
       });
-      const center = { x: window.innerWidth * 0.5, y: window.innerHeight * 0.48 };
-      const aside = { x: window.innerWidth * 0.8, y: window.innerHeight * 0.18 };
-      target = mix(center, aside, easeOut(ramp(p, 0.2, 0.38)));
+      let aim = ringTip(grow);
+      if (grow >= 1) {
+        const idx = RULE_AT.filter((at) => p >= at).length - 1;
+        if (idx >= 0 && rules[idx]) {
+          const rect = rules[idx].getBoundingClientRect();
+          aim = { x: rect.left + 8, y: rect.top + rect.height * 0.5 };
+        }
+      }
+      if (p >= 0.9) aim = { x: window.innerWidth * 0.5, y: window.innerHeight * 0.46 };
+      target = aim;
       shockAmt = 0;
-      stillAmt = ramp(p, 0.72, 0.86);
-      radialAmt = Math.max(grow * (1 - ramp(p, 0.55, 0.75)), shockAmt);
+      stillAmt = p >= 0.92 ? 1 : 0;
+      radialAmt = 0;
       glCanvas.style.opacity = "1";
     },
     still(p) {
+      passage = "fluid";
       clearStroke();
       setBlade(0, 0, 0);
-      const slots = [0, 0.3, 0.56];
+      const cutsAt = [0, 0.74, 0.84];
+      let shown = 0;
+      for (let i = 0; i < cutsAt.length; i++) if (p >= cutsAt[i]) shown = i;
       stillLines.forEach((line, i) => {
-        const inn = i === 0 ? 1 : easeOut(ramp(p, slots[i], slots[i] + 0.1));
-        const out = i < stillLines.length - 1 ? ramp(p, slots[i + 1] - 0.02, slots[i + 1] + 0.08) : 0;
-        line.style.opacity = String(inn * (1 - out));
-        line.style.transform = `translate3d(0, ${(1 - inn) * 16}px, 0)`;
+        line.style.opacity = i === shown ? "1" : "0";
+        line.style.transform = "none";
       });
-      stillNote.style.opacity = String(easeOut(ramp(p, 0.7, 0.86)));
-      target = { x: Math.max(72, window.innerWidth * 0.12), y: window.innerHeight * 0.62 };
+      stillNote.classList.toggle("is-in", p >= 0.9);
+      target = { x: Math.max(80, window.innerWidth * 0.14), y: window.innerHeight * 0.58 };
       shockAmt = 0;
-      stillAmt = 0.85;
+      stillAmt = 1;
       radialAmt = 0;
       glCanvas.style.opacity = "0";
     },
     credits(p) {
+      passage = "fluid";
       clearStroke();
       setBlade(0, 0, 0);
-      colo.style.opacity = String(1 - ramp(p, 0.32, 0.52));
+      colo.style.opacity = p >= 0.42 ? "0" : "1";
       const irisP = easeInOut(ramp(p, 0.38, 0.8));
       iris.style.transform = `translate(-50%, -50%) scale(${irisP})`;
-      again.style.opacity = String(ramp(p, 0.74, 0.88));
-      endCue.style.opacity = String(ramp(p, 0.8, 0.92));
-      const from = { x: window.innerWidth * 0.2, y: window.innerHeight * 0.42 };
+      again.style.opacity = p >= 0.78 ? "1" : "0";
+      endCue.style.opacity = p >= 0.82 ? "1" : "0";
+      const from = { x: window.innerWidth * 0.18, y: window.innerHeight * 0.42 };
       target = mix(from, flightPx(0), easeInOut(ramp(p, 0.34, 0.78)));
       shockAmt = 0;
       stillAmt = 0;
       radialAmt = 0;
-      glCanvas.style.opacity = String(ramp(p, 0.45, 0.7));
+      glCanvas.style.opacity = p >= 0.5 ? "1" : "0";
     },
+  };
+
+  const punch = (kind: HitMode) => {
+    if (kind === "quiet") return;
+    shakeStep = 0;
+    shakeClock = performance.now();
+    if (kind === "major") {
+      shakeFrames = [20, 20, -15, -15, 10, 10, -6, -6, 3, -2, 0];
+      shakeEvery = 70;
+      document.documentElement.classList.add("is-hit");
+      window.setTimeout(() => document.documentElement.classList.remove("is-hit"), 420);
+    } else {
+      shakeFrames = [9, -6, 4, -2, 0];
+      shakeEvery = 50;
+    }
+  };
+
+  const fire = (beat: Beat, x: number, y: number) => {
+    const resolved = fx.strike(x, y, beat.glyph, beat.rot, beat.mode);
+    sfx.play(beat.sfx);
+    punch(resolved);
+  };
+
+  const drawMotes = (now: number) => {
+    if (!moteCtx) return;
+    moteCtx.clearRect(0, 0, window.innerWidth, window.innerHeight);
+    const paper = document.documentElement.classList.contains("on-paper");
+    moteCtx.fillStyle = paper ? "#2A2928" : "#F5F0E6";
+    const t = now / 1000;
+    for (const speck of specks) {
+      const y = (speck.y + t * speck.v) % 1;
+      moteCtx.globalAlpha = 0.28 + 0.22 * Math.sin(t * 0.7 + speck.phase);
+      moteCtx.fillRect(speck.x * window.innerWidth, y * window.innerHeight, speck.s, speck.s * 1.6);
+    }
+    moteCtx.globalAlpha = 1;
+  };
+
+  const drawDust = (now: number, active: boolean) => {
+    if (!dustCtx) return;
+    dustCtx.clearRect(0, 0, window.innerWidth, window.innerHeight);
+    if (!active) return;
+    if (now - dustClock > 80) {
+      dustClock = now;
+      for (const bit of dust) {
+        bit.x += bit.vx * 4;
+        bit.y += bit.vy * 4;
+        bit.vy += 0.35;
+        bit.life -= 0.14;
+      }
+    }
+    dustCtx.fillStyle = "#2A2928";
+    for (const bit of dust) {
+      if (bit.life <= 0) continue;
+      dustCtx.globalAlpha = bit.life;
+      dustCtx.fillRect(bit.x, bit.y, 4, 2);
+    }
+    dustCtx.globalAlpha = 1;
   };
 
   const draw = (now: number) => {
@@ -461,52 +662,105 @@ export async function start(): Promise<void> {
     const act = live[live.length - 1] ?? acts[0];
     const prev = act.prev;
     render[act.id](act.p);
+
+    let x: number;
+    let y: number;
+    if (passage === "fluid") {
+      if (lastPassage === "action") {
+        springX.v = 0;
+        springY.v = 0;
+      }
+      x = springX.step(target.x);
+      y = springY.step(target.y);
+    } else {
+      const bucket = Math.floor(now / 83);
+      if (bucket !== stepBucket) {
+        stepBucket = bucket;
+        const dx = target.x - springX.x;
+        const dy = target.y - springY.x;
+        const a = Math.atan2(dy, dx);
+        springX.v = dx;
+        springY.v = dy;
+        springX.x = target.x;
+        springY.x = target.y;
+        trail.unshift({ x: target.x, y: target.y, a });
+        if (trail.length > 4) trail.pop();
+      }
+      x = springX.x;
+      y = springY.x;
+    }
+    lastPassage = passage;
+
     if (act.p > prev && act.p - prev < 0.18) {
       for (const beat of BEATS) {
         if (beat.act !== act.id) continue;
         if (prev < beat.at && act.p >= beat.at) {
-          const x = springX.x;
-          const y = springY.x;
-          fx.hit(x, y, beat.glyph, beat.rot, beat.mode);
-          sfx.play(beat.sfx);
-          if (beat.mode === "hit" || beat.mode === "slash") {
-            document.documentElement.classList.add("is-hit");
-            window.setTimeout(() => document.documentElement.classList.remove("is-hit"), 380);
-            shakeStep = 0;
-            shakeClock = now;
-          }
+          if (beat.mode === "major") {
+            document.documentElement.classList.add("is-wind");
+            queued.push({ beat, at: now + 150 });
+          } else fire(beat, x, y);
         }
+      }
+    }
+    for (let i = queued.length - 1; i >= 0; i--) {
+      if (now >= queued[i].at) {
+        document.documentElement.classList.remove("is-wind");
+        fire(queued[i].beat, springX.x, springY.x);
+        queued.splice(i, 1);
       }
     }
     act.prev = act.p;
 
-    const x = springX.step(target.x);
-    const y = springY.step(target.y);
     const speed = Math.hypot(springX.v, springY.v);
+    const smearing = passage === "action" && speed > 28;
     const angle = Math.atan2(springY.v, springX.v);
-    spark.classList.toggle("is-smear", speed > 10);
-    spark.style.transform = `translate(${x}px, ${y}px) rotate(${speed > 10 ? angle : 0}rad)`;
+    spark.classList.toggle("is-smear", smearing);
+    spark.style.transform = `translate(${x}px, ${y}px) rotate(${smearing ? angle : 0}rad)`;
+    trailBits.forEach((bit, i) => {
+      const prevMark = trail[i + 1];
+      if (!smearing || !prevMark) {
+        bit.style.opacity = "0";
+        return;
+      }
+      bit.style.opacity = String(0.45 - i * 0.12);
+      bit.style.transform = `translate(${prevMark.x}px, ${prevMark.y}px) rotate(${prevMark.a}rad)`;
+    });
 
-    const kakoiInside = act.id === "kakoi" && act.p > 0.46;
+    const kakoiOpen = act.id === "kakoi" && act.p > 0.4;
     const paperChrome =
-      act.id === "neko" || act.id === "still" || kakoiInside || (act.id === "credits" && act.p < 0.62);
+      act.id === "neko" || act.id === "still" || kakoiOpen || (act.id === "credits" && act.p < 0.55);
     const paperSpark = paperChrome || act.id === "kakoi";
     spark.classList.toggle("on-paper", paperSpark);
     document.documentElement.classList.toggle("on-paper", paperChrome);
-    brandMark.src = paperChrome ? "/brand/neko-peek-mark.svg" : "/brand/neko-peek-mark-on-dark.svg";
+    const nextMark = paperChrome ? "/brand/neko-peek-mark.svg" : "/brand/neko-peek-mark-on-dark.svg";
+    if (!brandMark.src.endsWith(nextMark)) brandMark.src = nextMark;
     theme.content = paperChrome ? "#F3EEE4" : "#07080C";
 
-    shock.style.opacity = String(shockAmt);
-    shock.style.transform = `translate(${x}px, ${y}px) scale(${0.12 + shockScale})`;
+    if (act.id === "still") {
+      const breath = 0.55 + 0.45 * (0.5 + 0.5 * Math.sin(now * 0.0008));
+      spark.style.opacity = String(breath);
+      drawMotes(now);
+    } else {
+      spark.style.opacity = "1";
+      moteCtx?.clearRect(0, 0, window.innerWidth, window.innerHeight);
+    }
+
+    shock.style.opacity = shockAmt > 0 ? "1" : "0";
+    shock.style.transform = `translate(${x}px, ${y}px) scale(${0.2 + shockScale})`;
+
+    if (!fx.holding) {
+      const dim = act.id === "kakoi" && act.p < 0.4 ? ramp(act.p, 0.02, 0.16) * 0.55 : 0;
+      shade.style.opacity = String(dim);
+    }
 
     if (shakeStep >= 0) {
-      if (now - shakeClock > 40) {
+      if (now - shakeClock > shakeEvery) {
         shakeClock = now;
         shakeStep += 1;
       }
       const mag = shakeFrames[Math.min(shakeStep, shakeFrames.length - 1)] ?? 0;
       document.querySelectorAll<HTMLElement>(".act__shake").forEach((el) => {
-        el.style.translate = `${mag}px ${mag * -0.45}px`;
+        el.style.translate = `${mag}px ${mag * -0.4}px`;
       });
       if (shakeStep >= shakeFrames.length) shakeStep = -1;
     }
@@ -515,17 +769,21 @@ export async function start(): Promise<void> {
     const scrollMax = Math.max(1, document.documentElement.scrollHeight - window.innerHeight);
     const globalP = lenis.animatedScroll / scrollMax;
     const vel = Math.min(1, Math.abs(lenis.velocity) / 1400);
-    const flying = act.id === "spark" && act.p > 0.08 && act.p < 0.52;
-    if ((vel > 0.12 && act.id !== "still") || flying) fx.streaks(flying ? 0.62 : vel);
-    if (shockAmt > 0.25) fx.radial(x, y, 0.35 + shockAmt);
+    const quietPicture =
+      act.id === "still" ||
+      (act.id === "work" && act.p >= 0.58 && act.p < 0.9) ||
+      (act.id === "kakoi" && act.p > 0.91);
+    const flying = act.id === "spark" && act.p > 0.08 && act.p < 0.5;
+    if (!quietPicture && (flying || (vel > 0.18 && passage === "action"))) fx.streaks(flying ? 0.7 : vel);
     if (radialAmt > 0.02) fx.radial(x, y, radialAmt);
+    drawDust(now, act.id === "neko" && dustLive);
 
     if (glOn) {
       ink.draw({
         time: (now - started) / 1000,
         scroll: globalP,
         vel,
-        impact: shockAmt * 0.4 + (document.documentElement.classList.contains("is-hit") ? 0.8 : 0),
+        impact: document.documentElement.classList.contains("is-hit") ? 0.85 : shockAmt * 0.25,
         sparkX: x / window.innerWidth,
         sparkY: y / window.innerHeight,
         still: stillAmt,
@@ -533,7 +791,7 @@ export async function start(): Promise<void> {
     }
 
     actLabel.textContent = act.label;
-    const climbing = !(act.id === "still" || (act.id === "work" && act.p > 0.64 && act.p < 0.9));
+    const climbing = !quietPicture;
     if (climbing) heldFrame = null;
     const frame = heldFrame ?? Math.round(globalP * 2400 + 1);
     if (!climbing && heldFrame === null) heldFrame = frame;
@@ -596,32 +854,24 @@ function setBlade(opacity: number, shiftVw: number, rot: number): void {
 function workPoint(p: number): Pt {
   const w = window.innerWidth;
   const h = window.innerHeight;
-  if (mobile()) {
-    return along(
-      [
-        { x: w * 0.78, y: h * 0.32 },
-        { x: w * 0.5, y: h * 0.4 },
-        { x: w * 0.62, y: h * 0.48 },
-        { x: w * 0.4, y: h * 0.56 },
-        { x: w * 0.8, y: h * 0.66 },
-      ],
-      p,
-    );
-  }
-  const panels = [...document.querySelectorAll<HTMLElement>(".panel")];
-  if (panels.length < 4) return { x: w * 0.5, y: h * 0.5 };
-  const r = panels.map((panel) => panel.getBoundingClientRect());
-  return along(
-    [
-      { x: r[0].left + 12, y: r[0].top + 8 },
-      { x: r[0].right - 10, y: r[0].top + 8 },
-      { x: r[1].right - 16, y: r[1].top + r[1].height * 0.5 },
-      { x: r[2].left + 20, y: r[2].top + 10 },
-      { x: r[3].left + r[3].width * 0.45, y: r[3].bottom - 16 },
-      { x: w * 0.9, y: h * 0.58 },
-    ],
-    p,
-  );
+  const pts = mobile()
+    ? [
+        { x: w * 0.12, y: h * 0.38 },
+        { x: w * 0.86, y: h * 0.46 },
+        { x: w * 0.16, y: h * 0.58 },
+        { x: w * 0.84, y: h * 0.66 },
+        { x: w * 0.5, y: h * 0.48 },
+      ]
+    : [
+        { x: w * 0.14, y: h * 0.32 },
+        { x: w * 0.48, y: h * 0.24 },
+        { x: w * 0.62, y: h * 0.34 },
+        { x: w * 0.9, y: h * 0.3 },
+        { x: w * 0.22, y: h * 0.7 },
+        { x: w * 0.62, y: h * 0.74 },
+        { x: w * 0.5, y: h * 0.52 },
+      ];
+  return along(pts, onTwos(p, 8));
 }
 
 declare global {

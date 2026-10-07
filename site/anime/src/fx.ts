@@ -1,10 +1,13 @@
-export type HitMode = "hit" | "slash" | "soft" | "quiet";
+export type HitMode = "major" | "micro" | "quiet";
 
 export class StageFX {
   private ctx: CanvasRenderingContext2D | null;
   private w = 1;
   private h = 1;
-  private rafFlash = 0;
+  private timers: number[] = [];
+  private lastFull = -1e9;
+  /** While true, the director must not overwrite the inversion frames. */
+  holding = false;
 
   constructor(
     private canvas: HTMLCanvasElement,
@@ -26,15 +29,78 @@ export class StageFX {
   }
 
   fade(): void {
+    if (this.holding) return;
     const ctx = this.ctx;
     if (!ctx) return;
     ctx.globalCompositeOperation = "destination-out";
-    ctx.fillStyle = "rgba(0,0,0,0.18)";
+    ctx.fillStyle = "rgba(0,0,0,0.22)";
     ctx.fillRect(0, 0, this.w, this.h);
     ctx.globalCompositeOperation = "source-over";
   }
 
-  hit(x: number, y: number, text: string, rot: number, mode: HitMode): void {
+  /**
+   * A major strike is two full-screen inversions (white, then black), then a
+   * held drawing. A second major inside 1.1s is downgraded so the page stays
+   * under three flashes in any one second.
+   */
+  strike(x: number, y: number, text: string, rot: number, mode: HitMode): HitMode {
+    const now = performance.now();
+    let resolved: HitMode = mode;
+    if (mode === "major" && now - this.lastFull < 1100) resolved = "micro";
+    this.paintGlyph(x, y, text, rot, resolved);
+    if (resolved === "major") {
+      this.lastFull = now;
+      this.invert(x, y);
+    } else {
+      this.burst(x, y, resolved === "quiet" ? 14 : 36, resolved === "quiet" ? 0 : 0.7);
+      if (resolved === "quiet") {
+        this.grain.style.opacity = "0.42";
+        this.later(() => {
+          this.grain.style.opacity = "";
+        }, 480);
+      }
+    }
+    return resolved;
+  }
+
+  streaks(strength: number): void {
+    if (this.holding) return;
+    const ctx = this.ctx;
+    if (!ctx || strength < 0.08) return;
+    const n = Math.floor(6 + strength * 16);
+    ctx.strokeStyle = `rgba(245,240,230,${0.18 + strength * 0.4})`;
+    ctx.lineWidth = 1.25;
+    for (let i = 0; i < n; i++) {
+      const y = Math.random() * this.h;
+      const len = 60 + Math.random() * 200 * strength;
+      const x = Math.random() * this.w;
+      ctx.beginPath();
+      ctx.moveTo(x, y);
+      ctx.lineTo(x + len, y + (Math.random() - 0.5) * 4);
+      ctx.stroke();
+    }
+  }
+
+  radial(x: number, y: number, amount: number): void {
+    if (this.holding) return;
+    const ctx = this.ctx;
+    if (!ctx || amount <= 0.02) return;
+    const n = 28;
+    for (let i = 0; i < n; i++) {
+      const a = (i / n) * Math.PI * 2;
+      const inner = 30 + (i % 4) * 18;
+      const outer = inner + 90 + amount * 260 * ((i * 5) % 4) / 4;
+      ctx.strokeStyle = i % 9 === 0 ? "rgba(225,6,0,0.85)" : `rgba(245,240,230,${0.12 + amount * 0.2})`;
+      ctx.lineWidth = i % 5 === 0 ? 2 : 1;
+      ctx.beginPath();
+      ctx.moveTo(x + Math.cos(a) * inner, y + Math.sin(a) * inner);
+      ctx.lineTo(x + Math.cos(a) * outer, y + Math.sin(a) * outer);
+      ctx.stroke();
+    }
+  }
+
+  private paintGlyph(x: number, y: number, text: string, rot: number, mode: HitMode): void {
+    if (!text) return;
     this.glyph.style.setProperty("--rot", `${rot}deg`);
     this.glyph.style.left = `${x}px`;
     this.glyph.style.top = `${y}px`;
@@ -43,77 +109,49 @@ export class StageFX {
     this.glyph.classList.remove("on");
     void this.glyph.offsetWidth;
     this.glyph.classList.add("on");
+  }
 
-    if (mode === "hit" || mode === "slash") {
-      this.flash.style.opacity = "1";
-      window.clearTimeout(this.rafFlash);
-      this.rafFlash = window.setTimeout(() => {
-        this.flash.style.opacity = "0";
-      }, 70);
-    }
-    if (mode === "hit") this.shade.style.opacity = "0.78";
-    if (mode === "quiet") this.grain.style.opacity = "0.38";
-    window.setTimeout(() => {
+  private invert(x: number, y: number): void {
+    const root = document.documentElement;
+    this.clearTimers();
+    this.holding = true;
+    this.flash.style.opacity = "1";
+    this.shade.style.opacity = "0";
+    root.classList.add("is-chroma");
+    this.burst(x, y, 72, 1);
+    this.later(() => {
+      this.flash.style.opacity = "0";
+      this.shade.style.opacity = "1";
+      root.classList.remove("is-chroma");
+    }, 80);
+    this.later(() => {
       this.shade.style.opacity = "0";
-      if (mode === "quiet") this.grain.style.opacity = "";
-    }, mode === "hit" ? 280 : 180);
-
-    const count = mode === "quiet" ? 18 : mode === "soft" ? 28 : 56;
-    this.burst(x, y, count, mode === "slash" ? 0.15 : 1);
+      this.holding = false;
+    }, 170);
   }
 
-  streaks(strength: number): void {
-    const ctx = this.ctx;
-    if (!ctx || strength < 0.08) return;
-    const n = Math.floor(8 + strength * 24);
-    ctx.strokeStyle = `rgba(245,240,230,${0.15 + strength * 0.35})`;
-    ctx.lineWidth = 1;
-    for (let i = 0; i < n; i++) {
-      const y = Math.random() * this.h;
-      const len = 40 + Math.random() * 180 * strength;
-      const x = Math.random() * this.w;
-      ctx.beginPath();
-      ctx.moveTo(x, y);
-      ctx.lineTo(x + len, y + (Math.random() - 0.5) * 6);
-      ctx.stroke();
-    }
+  private later(fn: () => void, ms: number): void {
+    this.timers.push(window.setTimeout(fn, ms));
   }
 
-  radial(x: number, y: number, amount: number): void {
-    const ctx = this.ctx;
-    if (!ctx || amount <= 0.02) return;
-    const n = 36;
-    ctx.strokeStyle = `rgba(245,240,230,${0.08 + amount * 0.18})`;
-    for (let i = 0; i < n; i++) {
-      const a = (i / n) * Math.PI * 2 + amount;
-      const inner = 40 + (i % 5) * 16;
-      const outer = inner + 80 + amount * 220 * ((i * 7) % 5) / 5;
-      ctx.beginPath();
-      ctx.moveTo(x + Math.cos(a) * inner, y + Math.sin(a) * inner);
-      ctx.lineTo(x + Math.cos(a) * outer, y + Math.sin(a) * outer);
-      ctx.stroke();
-    }
+  private clearTimers(): void {
+    for (const timer of this.timers) window.clearTimeout(timer);
+    this.timers = [];
   }
 
   private burst(x: number, y: number, count: number, red: number): void {
     const ctx = this.ctx;
     if (!ctx) return;
     for (let i = 0; i < count; i++) {
-      const a = (i / count) * Math.PI * 2 + Math.random() * 0.2;
-      const len = 70 + Math.random() * 220;
-      const inner = 8 + Math.random() * 30;
-      ctx.strokeStyle = i % 7 === 0 && red > 0.2 ? "rgba(225,6,0,0.9)" : "rgba(245,240,230,0.85)";
+      const a = (i / count) * Math.PI * 2;
+      const len = 90 + ((i * 47) % 180);
+      const inner = 6 + (i % 5) * 10;
+      ctx.strokeStyle = i % 8 === 0 && red > 0 ? "rgba(225,6,0,0.95)" : "rgba(245,240,230,0.92)";
       ctx.lineWidth = i % 4 === 0 ? 2.5 : 1;
       ctx.beginPath();
       ctx.moveTo(x + Math.cos(a) * inner, y + Math.sin(a) * inner);
       ctx.lineTo(x + Math.cos(a) * len, y + Math.sin(a) * len);
       ctx.stroke();
-    }
-    for (let i = 0; i < 8; i++) {
-      const a = Math.random() * Math.PI * 2;
-      const d = 30 + Math.random() * 90;
-      ctx.fillStyle = "rgba(245,240,230,0.8)";
-      ctx.fillRect(x + Math.cos(a) * d, y + Math.sin(a) * d, 3 + Math.random() * 7, 2);
     }
   }
 }
