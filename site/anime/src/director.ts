@@ -357,7 +357,7 @@ export async function start(): Promise<void> {
       if (u > 0.86 && i % 4 === 0) continue;
       const a0 = -Math.PI / 2 + ((i - 1) / steps) * Math.PI * 2;
       const a1 = -Math.PI / 2 + (i / steps) * Math.PI * 2;
-      const width = u > 0.74 ? lerp(28, 1.4, (u - 0.74) / 0.26) : 8 + Math.sin(u * Math.PI) * 18;
+      const width = u > 0.82 ? lerp(26, 2.2, (u - 0.82) / 0.18) : 16 + Math.sin(u * Math.PI) * 14;
       ringCtx.strokeStyle = u > 0.9 ? "rgba(245,240,230,0.45)" : "rgba(245,240,230,0.96)";
       ringCtx.lineWidth = width;
       ringCtx.beginPath();
@@ -605,7 +605,7 @@ export async function start(): Promise<void> {
       }
       target = aim;
       shockAmt = 0;
-      stillAmt = p >= 0.92 ? 0.45 : 0;
+      stillAmt = 0;
       radialAmt = 0;
       glCanvas.style.opacity = "1";
     },
@@ -807,10 +807,7 @@ export async function start(): Promise<void> {
     shock.style.opacity = shockAmt > 0 ? "1" : "0";
     shock.style.transform = `translate(${x}px, ${y}px) scale(${0.2 + shockScale})`;
 
-    if (!fx.holding) {
-      const dim = act.id === "kakoi" && act.p < 0.4 ? ramp(act.p, 0.02, 0.16) * 0.55 : 0;
-      shade.style.opacity = String(dim);
-    }
+    if (!fx.holding) shade.style.opacity = "0";
 
     if (shakeStep >= 0) {
       if (now - shakeClock > shakeEvery) {

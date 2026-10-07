@@ -735,7 +735,13 @@ h3 {
   line-height: 1.15;
   margin: 0 0 18px;
 }
-.is-motion .domain { position: absolute; inset: 0; z-index: 3; }
+.is-motion .domain {
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  max-width: none;
+  width: auto;
+}
 .is-motion .rule {
   opacity: 0;
   visibility: hidden;
@@ -761,9 +767,9 @@ h3 {
   opacity: 0.78;
   visibility: visible;
   position: absolute;
-  width: min(18ch, 13vw);
-  max-width: 13vw;
-  font-size: clamp(12px, 1.15vw, 15px);
+  width: min(22ch, 16vw);
+  max-width: 16vw;
+  font-size: clamp(15px, 1.35vw, 18px);
   line-height: 1.25;
   color: var(--milk);
   z-index: 4;
