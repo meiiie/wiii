@@ -10,15 +10,16 @@ gsap.registerPlugin(ScrollTrigger);
 type Beat = { act: ActName; at: number; glyph: string; rot: number; mode: "major" | "micro" | "quiet"; sfx: "impact" | "slash" | "sub" | "tick" | "quiet" | "whoosh" };
 
 const BEATS: Beat[] = [
-  { act: "intrusion", at: 0.22, glyph: "ワァッ", rot: -8, mode: "micro", sfx: "whoosh" },
-  { act: "clash", at: 0.46, glyph: "ズバッ", rot: -6, mode: "major", sfx: "impact" },
-  { act: "observe", at: 0.18, glyph: "ピタッ", rot: 4, mode: "quiet", sfx: "tick" },
-  { act: "neko", at: 0.46, glyph: "トンッ", rot: 6, mode: "micro", sfx: "slash" },
-  { act: "kakoi", at: 0.2, glyph: "囲", rot: 0, mode: "major", sfx: "sub" },
-  { act: "still", at: 0.12, glyph: "シーン", rot: 0, mode: "quiet", sfx: "quiet" },
+  { act: "intrusion", at: 0.28, glyph: "ワァッ", rot: -8, mode: "micro", sfx: "whoosh" },
+  { act: "clash", at: 0.32, glyph: "ズバッ", rot: -8, mode: "major", sfx: "impact" },
+  { act: "observe", at: 0.16, glyph: "ピタッ", rot: 4, mode: "quiet", sfx: "tick" },
+  { act: "neko", at: 0.42, glyph: "トンッ", rot: 11, mode: "micro", sfx: "slash" },
+  { act: "kakoi", at: 0.2, glyph: "囲", rot: -4, mode: "major", sfx: "sub" },
+  { act: "kakoi", at: 0.9, glyph: "", rot: 0, mode: "major", sfx: "quiet" },
+  { act: "still", at: 0.14, glyph: "シーン", rot: 0, mode: "quiet", sfx: "quiet" },
 ];
 
-const RULES = [0.36, 0.5, 0.62, 0.74, 0.86];
+const RULES = [0.26, 0.36, 0.42, 0.7, 0.86];
 
 const clamp01 = (v: number) => Math.min(1, Math.max(0, v));
 const lerp = (a: number, b: number, t: number) => a + (b - a) * t;
@@ -111,14 +112,14 @@ export async function start(): Promise<void> {
     },
     clash(p) {
       const el = document.getElementById("act-clash") as HTMLElement;
-      const invert = p >= 0.42 && p < 0.52;
-      const shatter = p >= 0.52 && p < 0.64;
-      const hold = p >= 0.64;
+      const invert = p >= 0.12 && p < 0.2;
+      const shatter = p >= 0.2 && p < 0.28;
+      const hold = p >= 0.28;
       el.classList.toggle("is-invert", invert);
       el.classList.toggle("is-shatter", shatter);
       el.classList.toggle("is-hold", hold);
       impact.style.opacity = invert || hold ? "1" : "0";
-      cam("clash", hold || shatter ? 1.06 : lerp(1.34, 1.16, p), hold ? 0 : lerp(6, -2, p), 0);
+      cam("clash", hold || shatter ? 1.05 : lerp(1.32, 1.14, p), hold ? 0 : lerp(6, -2, p), 0);
       panels.forEach((panel) => panel.classList.toggle("is-in", hold));
     },
     observe(p) {
@@ -127,35 +128,50 @@ export async function start(): Promise<void> {
     },
     neko(p) {
       const el = document.getElementById("act-neko") as HTMLElement;
-      const burst = p >= 0.46;
+      const burst = p >= 0.42;
       el.classList.toggle("is-residue", !burst);
       nekoLine.hidden = burst;
       nekoNext.hidden = !burst;
       if (burst) {
-        const q = quant((p - 0.46) / 0.54, 7);
-        cam("neko", lerp(1.06, 1.2, q), lerp(2, -1, q), lerp(0, -2, q), lerp(-1.2, 1.8, q));
+        const q = quant((p - 0.42) / 0.58, 7);
+        cam("neko", lerp(1.04, 1.18, q), lerp(3, -2, q), lerp(1, -3, q), lerp(-2, 2.4, q));
       }
     },
     kakoi(p) {
       const el = document.getElementById("act-kakoi") as HTMLElement;
-      const open = p >= 0.16;
-      el.classList.toggle("is-residue", !open);
-      if (open) {
-        const q = quant((p - 0.16) / 0.84, 8);
-        cam("kakoi", lerp(1.08, 1.24, q), lerp(1, -1, q), lerp(2, -2, q), lerp(1.1, -1.6, q));
+      const black = document.getElementById("kakoi-black") as HTMLElement;
+      const ring = document.querySelector("#ring-stroke") as SVGPathElement;
+      const inner = document.querySelector("#ring-inner") as SVGPathElement;
+      const drawT = clamp01(p / 0.16);
+      const open = p >= 0.3;
+      const domain = p >= 0.26;
+      el.classList.toggle("is-residue", false);
+      el.classList.toggle("is-domain", domain);
+      el.classList.toggle("is-mark", p < 0.26);
+      black.style.opacity = p < 0.18 ? "1" : p < 0.26 ? String(1 - (p - 0.18) / 0.08) : "0";
+      const paint = (node: SVGPathElement) => {
+        const len = node.getTotalLength();
+        node.style.strokeDasharray = `${len}`;
+        node.style.strokeDashoffset = `${len * (1 - drawT)}`;
+      };
+      paint(ring);
+      paint(inner);
+      if (domain) {
+        const q = quant((p - 0.24) / 0.76, 6);
+        cam("kakoi", lerp(1.04, 1.16, q), lerp(1, -1, q), lerp(1, -1, q));
       }
-      let idx = 0;
+      let idx = -1;
       for (let i = 0; i < RULES.length; i++) if (p >= RULES[i]) idx = i;
       rules.forEach((rule, i) => {
         rule.classList.toggle("is-now", open && i === idx);
-        rule.classList.toggle("is-debris", open && i < idx);
+        rule.classList.toggle("is-debris", false);
       });
     },
     still() {
-      cam("still", 1.1, 8, 1);
+      cam("still", 1.02, -6, 0);
     },
-    return() {
-      cam("return", 1.14, 10, 0);
+    return(p) {
+      cam("return", lerp(1.42, 1.62, p), lerp(4, -2, p), lerp(6, 2, p));
     },
   };
 
@@ -168,6 +184,8 @@ export async function start(): Promise<void> {
       theme.content = "#F3EEE3";
       actLabel.textContent = "07 Return";
       battle.setAct("return", 1);
+      document.documentElement.dataset.act = "return";
+      sfx.bed(sfx.enabled ? "return" : null);
       battle.draw(now, 0);
       if (!fx.holding) fx.fade();
       return;
@@ -186,6 +204,9 @@ export async function start(): Promise<void> {
     }
     render[act.id](act.p);
     battle.setAct(act.id, act.p);
+    document.documentElement.dataset.act = act.id;
+    document.documentElement.dataset.p = act.p.toFixed(3);
+    sfx.bed(sfx.enabled ? act.id : null);
 
     if (act.p > act.prev && act.p - act.prev < 0.2) {
       for (const beat of BEATS) {
@@ -224,7 +245,7 @@ export async function start(): Promise<void> {
       fx.fade();
     }
 
-    const paper = act.id === "still" || act.id === "kakoi" || act.id === "return";
+    const paper = act.id === "still" || (act.id === "kakoi" && act.p >= 0.24);
     document.documentElement.classList.toggle("on-paper", paper);
     theme.content = paper ? "#F3EEE3" : "#0B0B0D";
     actLabel.textContent = act.label;

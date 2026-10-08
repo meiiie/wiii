@@ -325,28 +325,47 @@ export function mountBattle(sfx: Sfx, onWord: (text: string, x: number, y: numbe
     }
   };
 
-  const drawSpecks = (now: number) => {
-    if (!ctx || act !== "still") return;
+  const drawLife = (now: number) => {
+    if (!ctx || act === "observe") return;
     const t = now / 1000;
-    for (let i = 0; i < 9; i++) {
-      const x = (0.08 + ((i * 0.17) % 0.84)) * window.innerWidth;
-      const y = ((0.12 + ((i * 0.23) % 0.76) + t * 0.004) % 1) * window.innerHeight;
-      const r = 8 + (i % 4) * 7;
+    const w = window.innerWidth;
+    const h = window.innerHeight;
+    if (act === "kakoi" && progress >= 0.08) {
+      for (let i = 0; i < 26; i++) {
+        const x = (0.12 + ((i * 0.137) % 0.76)) * w + Math.sin(t * 0.55 + i) * 7;
+        const y = (0.1 + ((i * 0.173) % 0.72)) * h + Math.cos(t * 0.42 + i * 1.3) * 6;
+        ctx.globalAlpha = 0.28 + (i % 4) * 0.1;
+        ctx.fillStyle = i % 3 === 0 ? "#E0261F" : progress < 0.24 ? "#F3EEE3" : "#2A2928";
+        ctx.fillRect(x, y, 3 + (i % 3), 2 + (i % 2));
+      }
+      ctx.globalAlpha = 1;
+      return;
+    }
+    const ink = act === "still";
+    const n = act === "intrusion" ? 18 : 9;
+    for (let i = 0; i < n; i++) {
+      const driftX = act === "intrusion" ? t * 0.03 : t * 0.012;
+      const x = ((0.06 + i * 0.11 + driftX) % 1) * w;
+      const y = ((0.15 + ((i * 0.19) % 0.7) + Math.sin(t * 0.35 + i) * 0.03) % 1) * h;
+      const r = ink ? 7 + (i % 4) * 6 : 10 + (i % 5) * 8;
       const g = ctx.createRadialGradient(x, y, 1, x, y, r);
-      g.addColorStop(0, "rgba(11,11,13,0.72)");
-      g.addColorStop(1, "rgba(11,11,13,0)");
+      const tone = ink ? "11,11,13" : act === "intrusion" ? "224,38,31" : "243,238,227";
+      g.addColorStop(0, `rgba(${tone},${ink ? 0.55 : 0.28})`);
+      g.addColorStop(1, `rgba(${tone},0)`);
       ctx.fillStyle = g;
       ctx.beginPath();
       ctx.arc(x, y, r, 0, Math.PI * 2);
       ctx.fill();
-      if (i % 3 === 0) {
-        ctx.strokeStyle = "rgba(11,11,13,0.45)";
-        ctx.lineWidth = 2;
-        ctx.beginPath();
-        ctx.moveTo(x, y);
-        ctx.quadraticCurveTo(x + r, y - r * 0.2, x + r * 2.1, y + r);
-        ctx.stroke();
+    }
+    if (act === "intrusion") {
+      for (let i = 0; i < 10; i++) {
+        const x = (0.55 + ((i * 0.07 + t * 0.04) % 0.4)) * w;
+        const y = (0.2 + ((i * 0.13) % 0.55)) * h + Math.sin(t * 3 + i) * 4;
+        ctx.globalAlpha = 0.35 + (Math.sin(t * 6 + i) > 0 ? 0.4 : 0);
+        ctx.fillStyle = i % 2 ? "#E0261F" : "#F3EEE3";
+        ctx.fillRect(x, y, 4, 3);
       }
+      ctx.globalAlpha = 1;
     }
   };
 
@@ -357,15 +376,18 @@ export function mountBattle(sfx: Sfx, onWord: (text: string, x: number, y: numbe
       progress = p;
       const freed = id === "kakoi" || id === "still" || id === "return";
       root.classList.toggle("is-freed", freed);
-      wiii.style.opacity = id === "clash" && p < 0.42 ? "1" : "0";
-      drift.style.opacity = id === "intrusion" ? "1" : id === "clash" && p < 0.42 ? "0.92" : id === "neko" && p < 0.46 ? "0.85" : "0";
-      if (id === "clash" && p < 0.34) {
-        wiii.style.transform = `translate(${-18 + p * 90}vw, 8vh)`;
+      const ringLock = id === "kakoi" && p >= 0.06 && p < 0.28;
+      wiii.style.opacity = id === "clash" && p < 0.3 ? "1" : "0";
+      drift.style.opacity = id === "intrusion" ? "1" : id === "clash" && p < 0.3 ? "0.92" : id === "neko" && p < 0.42 ? "0.85" : ringLock ? "0.95" : "0";
+      drift.classList.toggle("is-frozen", ringLock);
+      if (id === "clash" && p < 0.3) {
+        wiii.style.transform = `translate(${-18 + p * 110}vw, 8vh)`;
       } else if (id === "return") {
-        wiii.style.transform = "translate(34vw, 18vh) scale(0.72)";
+        wiii.style.opacity = "0";
       }
       if (id === "intrusion") drift.style.transform = "translate(-4vw, 4vh)";
       else if (id === "neko") drift.style.transform = `translate(${-8 - p * 20}vw, 6vh) rotate(${-6 - p * 8}deg)`;
+      else if (ringLock) drift.style.transform = "translate(54vw, 2vh) scale(0.58)";
       else drift.style.transform = "translate(48vw, 0)";
     },
     draw(now, vel) {
@@ -379,7 +401,7 @@ export function mountBattle(sfx: Sfx, onWord: (text: string, x: number, y: numbe
         placeArms();
         drawMarks();
         drawShed();
-        drawSpecks(now);
+        drawLife(now);
       }
       const bucket = Math.floor(now / (chasing() ? 80 : 32));
       if (bucket !== trailBucket) {

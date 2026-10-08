@@ -5,6 +5,8 @@ export class Sfx {
   private master: GainNode | null = null;
   private noise: AudioBuffer | null = null;
   enabled = false;
+  private bedAct = "";
+  private bedStop: (() => void) | null = null;
 
   async toggle(): Promise<boolean> {
     if (!this.ctx) {
@@ -21,8 +23,61 @@ export class Sfx {
     }
     if (this.ctx.state === "suspended") await this.ctx.resume();
     this.enabled = !this.enabled;
+    if (!this.enabled) this.bed(null);
     if (this.enabled) this.play("tick");
     return this.enabled;
+  }
+
+  /** Quiet loop that changes with the act. No-ops when the act is unchanged. */
+  bed(act: string | null): void {
+    if (!this.enabled || !act || !this.ctx || !this.master || !this.noise) {
+      this.stopBed();
+      return;
+    }
+    if (act === this.bedAct && this.bedStop) return;
+    this.stopBed();
+    const freqs: Record<string, number> = {
+      awaken: 196,
+      intrusion: 98,
+      clash: 146,
+      observe: 262,
+      neko: 330,
+      kakoi: 52,
+      still: 174,
+      return: 146,
+    };
+    const src = this.ctx.createBufferSource();
+    src.buffer = this.noise;
+    src.loop = true;
+    const filter = this.ctx.createBiquadFilter();
+    filter.type = act === "kakoi" ? "lowpass" : "bandpass";
+    filter.frequency.value = freqs[act] ?? 180;
+    filter.Q.value = act === "kakoi" ? 0.65 : 0.55;
+    const gain = this.ctx.createGain();
+    const now = this.ctx.currentTime;
+    gain.gain.setValueAtTime(0.0001, now);
+    gain.gain.exponentialRampToValueAtTime(act === "kakoi" ? 0.055 : 0.026, now + 0.18);
+    src.connect(filter);
+    filter.connect(gain);
+    gain.connect(this.master);
+    src.start();
+    this.bedAct = act;
+    this.bedStop = () => {
+      try {
+        src.stop();
+      } catch {
+        /* already stopped */
+      }
+      src.disconnect();
+      filter.disconnect();
+      gain.disconnect();
+    };
+  }
+
+  private stopBed(): void {
+    this.bedStop?.();
+    this.bedStop = null;
+    this.bedAct = "";
   }
 
   play(kind: Kind): void {
