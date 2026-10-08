@@ -42,8 +42,10 @@ export async function upgradeArt(): Promise<void> {
       if (set.includes(".avif") && avif.length) node.setAttribute("srcset", extend(set, avif, "avif"));
       else if (set.includes(".webp") && webp.length) node.setAttribute("srcset", extend(set, webp, "webp"));
     });
-    const hi = webp.includes(2560) ? "2560" : "1920";
-    document.documentElement.dataset.art = hi;
+    const hi = webp.includes(2560) ? 2560 : 1920;
+    document.querySelectorAll<HTMLElement>(".shards i").forEach((el) => {
+      el.style.backgroundImage = `url("/art/kf04_impact-${hi}.webp")`;
+    });
   }
 
   if (cuts.length) {

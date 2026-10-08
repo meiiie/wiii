@@ -664,8 +664,6 @@ html.is-hitstop .is-cover .splash img { scale: 1.025 0.99; }
   height: 100%;
   background: url("/art/kf04_impact-1280.webp") center / cover no-repeat;
 }
-html[data-art="1920"] .is-motion .shards i { background-image: url("/art/kf04_impact-1920.webp"); }
-html[data-art="2560"] .is-motion .shards i { background-image: url("/art/kf04_impact-2560.webp"); }
 .is-motion .shards i:nth-child(1) { clip-path: polygon(0 0, 46% 2%, 40% 40%, 0 46%); transform: translate(-22px, -14px) rotate(-1.4deg); }
 .is-motion .shards i:nth-child(2) { clip-path: polygon(46% 0, 100% 0, 100% 38%, 52% 34%); transform: translate(20px, -16px) rotate(1.6deg); }
 .is-motion .shards i:nth-child(3) { clip-path: polygon(0 46%, 38% 38%, 44% 74%, 0 80%); transform: translate(-18px, 10px) rotate(0.8deg); }
