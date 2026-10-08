@@ -7,25 +7,116 @@ export class Sfx {
   enabled = false;
   private bedAct = "";
   private bedStop: (() => void) | null = null;
+  private windFilter: BiquadFilterNode | null = null;
+  private windGain: GainNode | null = null;
+  private windSrc: AudioBufferSourceNode | null = null;
+  private ready: Promise<void> | null = null;
+
+  /** Resume the context on a user gesture so a later unmute works on iOS. */
+  unlock(): void {
+    void this.ensure().then(async () => {
+      if (this.ctx && this.ctx.state === "suspended") await this.ctx.resume();
+    });
+  }
 
   async toggle(): Promise<boolean> {
-    if (!this.ctx) {
-      const Ctx = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
-      this.ctx = new Ctx();
-      this.master = this.ctx.createGain();
-      this.master.gain.value = 0.35;
-      this.master.connect(this.ctx.destination);
-      const length = this.ctx.sampleRate * 2;
-      const buffer = this.ctx.createBuffer(1, length, this.ctx.sampleRate);
-      const data = buffer.getChannelData(0);
-      for (let i = 0; i < length; i++) data[i] = Math.random() * 2 - 1;
-      this.noise = buffer;
-    }
-    if (this.ctx.state === "suspended") await this.ctx.resume();
+    await this.ensure();
+    if (this.ctx && this.ctx.state === "suspended") await this.ctx.resume();
     this.enabled = !this.enabled;
-    if (!this.enabled) this.bed(null);
+    if (!this.enabled) {
+      this.bed(null);
+      this.stopWind();
+    }
     if (this.enabled) this.play("tick");
     return this.enabled;
+  }
+
+  private ensure(): Promise<void> {
+    if (!this.ready) this.ready = this.build();
+    return this.ready;
+  }
+
+  private async build(): Promise<void> {
+    const Ctx = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
+    this.ctx = new Ctx();
+    this.master = this.ctx.createGain();
+    this.master.gain.value = 0.32;
+    const comp = this.ctx.createDynamicsCompressor();
+    comp.threshold.value = -16;
+    comp.knee.value = 8;
+    comp.ratio.value = 3;
+    comp.attack.value = 0.003;
+    comp.release.value = 0.12;
+    this.master.connect(comp);
+    comp.connect(this.ctx.destination);
+    const length = this.ctx.sampleRate * 2;
+    const buffer = this.ctx.createBuffer(1, length, this.ctx.sampleRate);
+    const data = buffer.getChannelData(0);
+    for (let i = 0; i < length; i++) data[i] = Math.random() * 2 - 1;
+    this.noise = buffer;
+  }
+
+  /** Filtered noise whose cutoff and gain follow the wind field. Silent while muted. */
+  wind(strength: number, ember = false): void {
+    if (!this.enabled || !this.ctx || !this.master || !this.noise) {
+      this.stopWind();
+      return;
+    }
+    if (!this.windSrc) {
+      const src = this.ctx.createBufferSource();
+      src.buffer = this.noise;
+      src.loop = true;
+      const filter = this.ctx.createBiquadFilter();
+      filter.type = "lowpass";
+      const gain = this.ctx.createGain();
+      gain.gain.value = 0.0001;
+      src.connect(filter);
+      filter.connect(gain);
+      gain.connect(this.master);
+      src.start();
+      this.windSrc = src;
+      this.windFilter = filter;
+      this.windGain = gain;
+    }
+    const now = this.ctx.currentTime;
+    const cutoff = ember ? 700 + strength * 1600 : 140 + strength * 980;
+    const level = Math.min(0.07, (ember ? 0.015 : 0.006) + strength * 0.05);
+    this.windFilter?.frequency.setTargetAtTime(Math.max(40, cutoff), now, 0.08);
+    this.windGain?.gain.setTargetAtTime(Math.max(0.0001, level), now, 0.08);
+  }
+
+  /** The silence is the hit. Restores the master a moment later. */
+  silence(seconds = 0.25): void {
+    if (!this.ctx || !this.master) return;
+    const now = this.ctx.currentTime;
+    const back = this.enabled ? 0.32 : 0.0001;
+    this.master.gain.cancelScheduledValues(now);
+    this.master.gain.setValueAtTime(Math.max(0.0001, this.master.gain.value), now);
+    this.master.gain.linearRampToValueAtTime(0.0001, now + 0.02);
+    this.master.gain.setValueAtTime(0.0001, now + seconds);
+    this.master.gain.linearRampToValueAtTime(back, now + seconds + 0.06);
+  }
+
+  crystal(): void {
+    this.tone(2400, 0.045, 0.035, "sine");
+  }
+
+  crackle(): void {
+    this.burst(480, 1.1, 0.04, 0.05);
+  }
+
+  private stopWind(): void {
+    try {
+      this.windSrc?.stop();
+    } catch {
+      /* already stopped */
+    }
+    this.windSrc?.disconnect();
+    this.windFilter?.disconnect();
+    this.windGain?.disconnect();
+    this.windSrc = null;
+    this.windFilter = null;
+    this.windGain = null;
   }
 
   /** Quiet loop that changes with the act. No-ops when the act is unchanged. */
@@ -125,7 +216,7 @@ export class Sfx {
     const osc = this.ctx.createOscillator();
     const gain = this.ctx.createGain();
     osc.type = type;
-    osc.frequency.value = freq;
+    osc.frequency.value = freq * (0.94 + Math.random() * 0.12);
     const now = this.ctx.currentTime;
     gain.gain.setValueAtTime(0.0001, now);
     gain.gain.exponentialRampToValueAtTime(peak, now + 0.012);

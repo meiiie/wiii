@@ -1,4 +1,5 @@
 import type { Sfx } from "./audio";
+import { viewSize, weatherGust, weatherPuff, weatherRibbon } from "./weather";
 
 export type ActName =
   | "awaken"
@@ -70,7 +71,7 @@ export function mountBattle(sfx: Sfx, onWord: (text: string, x: number, y: numbe
   const marks = new Map<ActName, Mark[]>();
   let act: ActName = "awaken";
   let progress = 0;
-  let pointer: Pt = { x: window.innerWidth * 0.72, y: window.innerHeight * 0.42 };
+  let pointer: Pt = { x: viewSize().w * 0.72, y: viewSize().h * 0.42 };
   let down: Pt | null = null;
   let downAt = 0;
   let combo: number[] = [];
@@ -81,9 +82,9 @@ export function mountBattle(sfx: Sfx, onWord: (text: string, x: number, y: numbe
   let trailBucket = -1;
 
   const resize = () => {
-    const dpr = Math.min(window.devicePixelRatio || 1, 1.25);
-    wash.width = Math.floor(window.innerWidth * dpr);
-    wash.height = Math.floor(window.innerHeight * dpr);
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    wash.width = Math.floor(viewSize().w * dpr);
+    wash.height = Math.floor(viewSize().h * dpr);
     ctx?.setTransform(dpr, 0, 0, dpr, 0, 0);
   };
   resize();
@@ -95,8 +96,8 @@ export function mountBattle(sfx: Sfx, onWord: (text: string, x: number, y: numbe
   };
 
   const anchor = (): Pt => {
-    const w = window.innerWidth;
-    const h = window.innerHeight;
+    const w = viewSize().w;
+    const h = viewSize().h;
     if (act === "clash") return { x: w * 0.78, y: h * 0.42 };
     if (act === "observe") return { x: w * 0.8, y: h * 0.48 };
     if (act === "neko") return { x: w * 0.22, y: h * 0.5 };
@@ -135,8 +136,8 @@ export function mountBattle(sfx: Sfx, onWord: (text: string, x: number, y: numbe
 
   const hitDrift = (pt: Pt): boolean => {
     const zones = ZONES[act] ?? [];
-    const w = window.innerWidth;
-    const h = window.innerHeight;
+    const w = viewSize().w;
+    const h = viewSize().h;
     for (const zone of zones) {
       if (pt.x >= zone.x * w && pt.x <= (zone.x + zone.w) * w && pt.y >= zone.y * h && pt.y <= (zone.y + zone.h) * h) {
         return true;
@@ -151,7 +152,7 @@ export function mountBattle(sfx: Sfx, onWord: (text: string, x: number, y: numbe
 
   const splash = (pt: Pt, hit: boolean, big: boolean) => {
     const list = marks.get(act) ?? [];
-    list.push({ x: pt.x, y: pt.y, r: big ? 54 : hit ? 28 : 16, hit, rot: Math.random() * 0.6 - 0.3 });
+    list.push({ x: pt.x, y: pt.y, r: big ? 64 : hit ? 40 : 30, hit, rot: Math.random() * 0.4 - 0.2 });
     if (list.length > 8) list.shift();
     marks.set(act, list);
     if (hit) {
@@ -171,9 +172,11 @@ export function mountBattle(sfx: Sfx, onWord: (text: string, x: number, y: numbe
     }
   };
 
-  const strike = (pt: Pt, dash = false) => {
+  const strike = (pt: Pt, dash = false, vx = 0, vy = 0) => {
+    window.__WIII && (window.__WIII.strikes += 1);
     const now = performance.now();
     const hit = hitDrift(pt);
+    weatherGust(pt.x, pt.y, vx, vy);
     const mask = onMask(pt);
     if (mask) {
       maskHits = Math.min(5, maskHits + 1);
@@ -198,7 +201,11 @@ export function mountBattle(sfx: Sfx, onWord: (text: string, x: number, y: numbe
     splash(pt, hit || mask, finisher || dash || mask);
     root.classList.add("is-tap");
     window.setTimeout(() => root.classList.remove("is-tap"), finisher ? 180 : 90);
-    sfx.play(finisher || maskHits >= 5 ? "impact" : hit || mask ? "slash" : "tick");
+    const sound = dash ? (hit || mask ? "slash" : "whoosh") : finisher || maskHits >= 5 ? "impact" : hit || mask ? "slash" : "tick";
+    sfx.play(sound);
+    if ((hit || mask) && !window.matchMedia("(prefers-reduced-motion: reduce)").matches && /Android/i.test(navigator.userAgent)) {
+      navigator.vibrate?.(8);
+    }
     if (mask && maskHits >= 5) onWord("囲", pt.x, pt.y);
     else if (finisher || mask) onWord("ズバッ", pt.x, pt.y);
     else if (hit) onWord("トンッ", pt.x, pt.y);
@@ -221,13 +228,28 @@ export function mountBattle(sfx: Sfx, onWord: (text: string, x: number, y: numbe
     return pt.x >= head.l && pt.x <= head.r && pt.y >= head.t && pt.y <= head.b;
   };
 
+  let scrollAtDown = 0;
+  let gesture = 0;
+  let touchArmed = false;
+  const touchLike = (event: PointerEvent) => event.pointerType === "touch" || event.pointerType === "pen";
+  const releaseCharge = () => {
+    gesture += 1;
+    down = null;
+    touchArmed = false;
+    root.classList.remove("is-wind");
+    root.classList.remove("is-charge");
+    spark.style.scale = "1";
+  };
   const onDown = (event: PointerEvent) => {
     const target = event.target as Element | null;
     if (target?.closest("a, button")) return;
     note();
+    sfx.unlock();
     down = { x: event.clientX, y: event.clientY };
     downAt = performance.now();
-    root.classList.add("is-wind");
+    scrollAtDown = window.scrollY;
+    touchArmed = false;
+    if (!touchLike(event)) root.classList.add("is-wind");
   };
 
   const onUp = (event: PointerEvent) => {
@@ -235,37 +257,82 @@ export function mountBattle(sfx: Sfx, onWord: (text: string, x: number, y: numbe
     const start = down;
     const held = performance.now() - downAt;
     const end = { x: event.clientX, y: event.clientY };
-    down = null;
     const dist = Math.hypot(end.x - start.x, end.y - start.y);
+    const scrolled = window.scrollY !== scrollAtDown;
+    const touch = touchLike(event);
+    const armed = touchArmed;
+    releaseCharge();
+    if (touch) {
+      const tap = dist < 10 && held < 250 && !scrolled;
+      const dash = armed && dist >= 10 && !scrolled;
+      if (!tap && !dash) return;
+      if (tap) weatherPuff(end.x, end.y);
+      const vx = end.x - start.x;
+      const vy = end.y - start.y;
+      if (dash) {
+        strike(end, true, vx, vy);
+        return;
+      }
+      strike(end, false, vx, vy);
+      return;
+    }
     const dash = held > 280 && dist > 36;
+    const token = gesture;
     const wait = Math.max(0, 80 - held);
     window.setTimeout(() => {
-      root.classList.remove("is-wind");
-      root.classList.remove("is-charge");
-      spark.style.scale = "1";
+      if (token !== gesture) return;
+      const vx = end.x - start.x;
+      const vy = end.y - start.y;
       if (dash) {
         const steps = 4;
         for (let i = 1; i <= steps; i++) {
           const t = i / steps;
-          if (hitDrift({ x: start.x + (end.x - start.x) * t, y: start.y + (end.y - start.y) * t })) {
-            strike(end, true);
+          if (hitDrift({ x: start.x + vx * t, y: start.y + vy * t })) {
+            strike(end, true, vx, vy);
             return;
           }
         }
-        strike(end, true);
+        strike(end, true, vx, vy);
         return;
       }
-      strike(end, false);
+      strike(end, false, vx, vy);
     }, wait);
   };
 
   window.addEventListener("pointerdown", onDown);
   window.addEventListener("pointerup", onUp);
+  window.addEventListener("pointercancel", releaseCharge);
+  window.addEventListener("lostpointercapture", () => {
+    if (down) releaseCharge();
+  });
+  window.addEventListener("scroll", () => {
+    if (down) releaseCharge();
+  }, { passive: true });
   window.addEventListener("pointermove", (event) => {
     pointer = { x: event.clientX, y: event.clientY };
     note();
-    if (down && performance.now() - downAt > 180) {
-      const k = clamp((performance.now() - downAt) / 700, 0, 1);
+    if (!down) return;
+    const dist = Math.hypot(event.clientX - down.x, event.clientY - down.y);
+    const held = performance.now() - downAt;
+    if (touchLike(event)) {
+      if (!touchArmed) {
+        if (dist > 10 || window.scrollY !== scrollAtDown) {
+          releaseCharge();
+          return;
+        }
+        if (held > 450) {
+          touchArmed = true;
+          root.classList.add("is-wind");
+        }
+        return;
+      }
+      const k = clamp((held - 450) / 500, 0, 1);
+      spark.style.scale = String(1 + k * 0.9);
+      root.classList.toggle("is-charge", k > 0.25);
+      return;
+    }
+    if (held > 180) {
+      const k = clamp(held / 700, 0, 1);
       spark.style.scale = String(1 + k * 0.9);
       root.classList.toggle("is-charge", k > 0.25);
     }
@@ -324,12 +391,27 @@ export function mountBattle(sfx: Sfx, onWord: (text: string, x: number, y: numbe
     return false;
   };
 
+  // Rotation changes the axis-aligned box. Size from the layout box, then
+  // map a local point through the linear part of the transform.
+  const placedOn = (el: HTMLElement, fx: number, fy: number) => {
+    const w = el.offsetWidth;
+    const h = el.offsetHeight;
+    const rect = el.getBoundingClientRect();
+    const cx = rect.left + rect.width / 2;
+    const cy = rect.top + rect.height / 2;
+    const raw = getComputedStyle(el).transform;
+    const m = new DOMMatrix(raw === "none" ? undefined : raw);
+    const linear = new DOMMatrix([m.a, m.b, m.c, m.d, 0, 0]);
+    const p = new DOMPoint(fx * w - w / 2, fy * h - h / 2).matrixTransform(linear);
+    return { x: cx + p.x, y: cy + p.y, w, h };
+  };
+
   const placeArms = () => {
-    const rect = drift.getBoundingClientRect();
-    const show = chasing() && Number(drift.style.opacity) > 0.2 && rect.width > 8;
+    const layout = placedOn(drift, 318 / 640, 250 / 871);
+    const show = chasing() && Number(drift.style.opacity) > 0.2 && layout.w > 8;
     drift.classList.toggle("is-armed", show);
-    const sx = rect.left + (318 / 640) * rect.width;
-    const sy = rect.top + (250 / 871) * rect.height;
+    const sx = layout.x;
+    const sy = layout.y;
     const aim = dodge({ x: sx, y: sy }, pointer);
     if (act !== "observe") frozenAngles = null;
     armEls.forEach((img, i) => {
@@ -338,8 +420,8 @@ export function mountBattle(sfx: Sfx, onWord: (text: string, x: number, y: numbe
         img.style.opacity = "0";
         return;
       }
-      const aw = (arm.w / 640) * rect.width;
-      const ah = (arm.h / 871) * rect.height;
+      const aw = (arm.w / 640) * layout.w;
+      const ah = (arm.h / 871) * layout.h;
       let ang = Math.atan2(aim.y - sy, aim.x - sx) - arm.rest;
       if (act === "observe") {
         if (!frozenAngles) frozenAngles = [];
@@ -357,24 +439,34 @@ export function mountBattle(sfx: Sfx, onWord: (text: string, x: number, y: numbe
   };
 
   const placeFace = () => {
-    const rect = drift.getBoundingClientRect();
-    const on = Number(drift.style.opacity) > 0.2 && rect.width > 8;
+    const sealed = root.classList.contains("is-sealed");
+    const origin = placedOn(drift, 0.36, 0.055);
+    const across = placedOn(drift, 0.6, 0.055);
+    const on = !sealed && Number(drift.style.opacity) > 0.2 && origin.w > 8;
     face.classList.toggle("is-on", on);
-    if (!on) return;
-    const headW = rect.width * 0.28;
-    const headH = rect.height * 0.17;
-    face.style.left = `${rect.left + rect.width * 0.33}px`;
-    face.style.top = `${rect.top + rect.height * 0.05}px`;
-    face.style.width = `${headW}px`;
-    face.style.height = `${headH}px`;
+    if (!on) {
+      face.classList.remove("is-look");
+      face.style.transform = "";
+      return;
+    }
+    const maskW = origin.w * 0.24;
+    const maskH = origin.h * 0.15;
+    const ang = Math.atan2(across.y - origin.y, across.x - origin.x);
+    face.style.left = `${origin.x}px`;
+    face.style.top = `${origin.y}px`;
+    face.style.width = `${maskW}px`;
+    face.style.height = `${maskH}px`;
+    face.style.transformOrigin = "0 0";
+    face.style.transform = `rotate(${ang}rad)`;
+    const rect = drift.getBoundingClientRect();
     const hover = pointer.x >= rect.left && pointer.x <= rect.right && pointer.y >= rect.top && pointer.y <= rect.bottom;
     face.classList.toggle("is-look", hover);
-    const ex = hover ? clamp((pointer.x - (rect.left + rect.width * 0.46)) / (rect.width * 0.28), -1, 1) : 0;
-    const ey = hover ? clamp((pointer.y - (rect.top + rect.height * 0.1)) / (rect.height * 0.18), -1, 1) : 0;
+    const ex = hover ? clamp((pointer.x - (rect.left + rect.width * 0.46)) / (rect.width * 0.45), -1, 1) : 0;
+    const ey = hover ? clamp((pointer.y - (rect.top + rect.height * 0.1)) / (rect.height * 0.22), -1, 1) : 0;
     const pupil = eye.firstElementChild as HTMLElement | null;
-    const dx = ex * Math.min(14, headW * 0.12);
-    const dy = ey * Math.min(10, headH * 0.14);
-    if (pupil) pupil.style.transform = `translate(calc(-50% + ${dx}px), calc(-50% + ${dy}px))`;
+    if (pupil) pupil.style.transform = `translate(calc(-50% + ${ex * 3.5}px), calc(-50% + ${ey * 2.5}px))`;
+    eye.style.left = `${((0.438 - 0.36) / 0.24) * maskW}px`;
+    eye.style.top = `${((0.094 - 0.055) / 0.15) * maskH}px`;
   };
 
   const drawMarks = () => {
@@ -389,14 +481,13 @@ export function mountBattle(sfx: Sfx, onWord: (text: string, x: number, y: numbe
       ctx.beginPath();
       ctx.ellipse(mark.x, mark.y, mark.r, mark.r * 0.72, mark.rot, 0, Math.PI * 2);
       ctx.fill();
-      if (mark.hit) {
-        ctx.strokeStyle = "rgba(224,38,31,0.8)";
-        ctx.lineWidth = 2;
-        ctx.beginPath();
-        ctx.moveTo(mark.x - mark.r * 0.4, mark.y);
-        ctx.lineTo(mark.x + mark.r * 0.7, mark.y - mark.r * 0.5);
-        ctx.stroke();
-      }
+      ctx.lineCap = "round";
+      ctx.lineWidth = mark.hit ? 5 : 4;
+      ctx.strokeStyle = mark.hit ? "rgba(224,38,31,0.95)" : "rgba(243,238,227,0.95)";
+      ctx.beginPath();
+      ctx.moveTo(mark.x - mark.r * 0.9, mark.y + mark.r * 0.15);
+      ctx.lineTo(mark.x + mark.r, mark.y - mark.r * 0.4);
+      ctx.stroke();
     }
   };
 
@@ -420,12 +511,12 @@ export function mountBattle(sfx: Sfx, onWord: (text: string, x: number, y: numbe
     const n = Math.floor(8 + vel * 18);
     ctx.strokeStyle = `rgba(243,238,227,${0.15 + vel * 0.35})`;
     for (let i = 0; i < n; i++) {
-      const y = ((i * 97) % window.innerHeight);
+      const y = ((i * 97) % viewSize().h);
       const len = 40 + vel * 220;
       ctx.lineWidth = i % 4 === 0 ? 2 : 1;
       ctx.beginPath();
-      ctx.moveTo((i * 130) % window.innerWidth, y);
-      ctx.lineTo(((i * 130) % window.innerWidth) + len, y + (i % 2 ? 2 : -2));
+      ctx.moveTo((i * 130) % viewSize().w, y);
+      ctx.lineTo(((i * 130) % viewSize().w) + len, y + (i % 2 ? 2 : -2));
       ctx.stroke();
     }
   };
@@ -433,8 +524,9 @@ export function mountBattle(sfx: Sfx, onWord: (text: string, x: number, y: numbe
   const drawLife = (now: number) => {
     if (!ctx || act === "observe") return;
     const t = now / 1000;
-    const w = window.innerWidth;
-    const h = window.innerHeight;
+    const w = viewSize().w;
+    const h = viewSize().h;
+    if (act === "kakoi" && progress >= 0.26) return;
     if (act === "kakoi" && progress >= 0.08) {
       for (let i = 0; i < 26; i++) {
         const x = (0.12 + ((i * 0.137) % 0.76)) * w + Math.sin(t * 0.55 + i) * 7;
@@ -483,15 +575,17 @@ export function mountBattle(sfx: Sfx, onWord: (text: string, x: number, y: numbe
       act = id;
       progress = p;
       const freed = id === "kakoi" || id === "still" || id === "return";
+      const sealed = id === "still" || id === "return" || (id === "kakoi" && p >= 0.26);
       root.classList.toggle("is-freed", freed);
-      const ringLock = id === "kakoi" && p >= 0.06 && p < 0.28;
+      root.classList.toggle("is-sealed", sealed);
+      const ringLock = id === "kakoi" && p >= 0.06 && p < 0.26;
       const scarf = id === "kakoi" && p < 0.26;
       wiii.style.opacity = id === "clash" && p < 0.3 ? "1" : scarf ? "1" : "0";
-      drift.style.opacity = id === "intrusion" ? "1" : id === "clash" && p < 0.3 ? "0.92" : id === "neko" && p < 0.42 ? "0.85" : ringLock ? "0.95" : "0";
+      drift.style.opacity = sealed ? "0" : id === "intrusion" ? "1" : id === "clash" && p < 0.3 ? "0.92" : id === "neko" && p < 0.42 ? "0.85" : ringLock ? "0.95" : "0";
       drift.classList.toggle("is-frozen", ringLock);
       if (scarf) {
-        const tipX = window.innerWidth * 0.36;
-        const tipY = window.innerHeight * 0.58;
+        const tipX = viewSize().w * 0.36;
+        const tipY = viewSize().h * 0.58;
         const w = wiii.offsetWidth || 360;
         const h = wiii.offsetHeight || 340;
         wiii.style.bottom = "auto";
@@ -525,13 +619,35 @@ export function mountBattle(sfx: Sfx, onWord: (text: string, x: number, y: numbe
       const pts = fingerTips();
       for (const pt of pts) tips.push(pt);
       if (ctx) {
-        ctx.clearRect(0, 0, window.innerWidth, window.innerHeight);
+        ctx.clearRect(0, 0, viewSize().w, viewSize().h);
         drawSpeed(vel);
         placeArms();
-        drawMarks();
         drawShed();
         drawLife(now);
+        drawMarks();
+        const ribbon = weatherRibbon();
+        if (ribbon.length > 1) {
+          ctx.lineCap = "round";
+          ctx.lineJoin = "round";
+          ctx.strokeStyle = "rgba(42,41,40,0.9)";
+          ctx.lineWidth = 7;
+          ctx.beginPath();
+          ribbon.forEach((pt, i) => (i ? ctx.lineTo(pt.x, pt.y) : ctx.moveTo(pt.x, pt.y)));
+          ctx.stroke();
+          ctx.strokeStyle = "rgba(243,238,227,0.85)";
+          ctx.lineWidth = 2;
+          ctx.stroke();
+        }
+        if (trail.length > 1) {
+          ctx.lineCap = "round";
+          ctx.strokeStyle = "rgba(243,238,227,0.4)";
+          ctx.lineWidth = Math.max(0.6, 2.6 - vel * 2.2);
+          ctx.beginPath();
+          trail.forEach((pt, i) => (i ? ctx.lineTo(pt.x, pt.y) : ctx.moveTo(pt.x, pt.y)));
+          ctx.stroke();
+        }
       }
+      if (!root.classList.contains("is-charge")) spark.style.scale = String(1 + Math.min(0.28, vel * 0.45));
       const bucket = Math.floor(now / (chasing() ? 80 : 32));
       if (bucket !== trailBucket) {
         trailBucket = bucket;

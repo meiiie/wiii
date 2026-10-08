@@ -1,3 +1,5 @@
+import { viewSize } from "./weather";
+
 export type HitMode = "major" | "micro" | "quiet";
 
 export class StageFX {
@@ -21,9 +23,10 @@ export class StageFX {
   }
 
   resize(): void {
-    const dpr = Math.min(window.devicePixelRatio || 1, 1.5);
-    this.w = window.innerWidth;
-    this.h = window.innerHeight;
+    const box = viewSize();
+    this.w = box.w;
+    this.h = box.h;
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
     this.canvas.width = Math.floor(this.w * dpr);
     this.canvas.height = Math.floor(this.h * dpr);
     this.ctx?.setTransform(dpr, 0, 0, dpr, 0, 0);
@@ -120,6 +123,7 @@ export class StageFX {
 
   private invert(x: number, y: number): void {
     const root = document.documentElement;
+    window.__WIII?.flashTimes.push(performance.now());
     this.clearTimers();
     this.holding = true;
     this.flash.style.opacity = "1";

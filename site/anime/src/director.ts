@@ -4,6 +4,7 @@ import Lenis from "lenis";
 import { Sfx } from "./audio";
 import { mountBattle, type ActName } from "./battle";
 import { StageFX } from "./fx";
+import { enableTilt, mountWeather, setWeatherCues, viewSize, weatherAudio, weatherFrame, weatherImpact, weatherResize } from "./weather";
 
 gsap.registerPlugin(ScrollTrigger);
 
@@ -25,7 +26,15 @@ const clamp01 = (v: number) => Math.min(1, Math.max(0, v));
 const lerp = (a: number, b: number, t: number) => a + (b - a) * t;
 
 export async function start(): Promise<void> {
-  const lenis = new Lenis({ autoRaf: false, lerp: 0.085, smoothWheel: true, anchors: true, respectReducedMotion: false });
+  const lenis = new Lenis({
+    autoRaf: false,
+    lerp: 0.085,
+    smoothWheel: true,
+    syncTouch: false,
+    anchors: true,
+    respectReducedMotion: false,
+  });
+  ScrollTrigger.config({ ignoreMobileResize: true });
   lenis.on("scroll", ScrollTrigger.update);
 
   const impact = document.getElementById("impact-plate") as HTMLElement;
@@ -51,7 +60,18 @@ export async function start(): Promise<void> {
     const on = await sfx.toggle();
     sound.setAttribute("aria-pressed", on ? "true" : "false");
     sound.lastChild!.textContent = on ? " Sound on" : " Sound off";
+    if (on) enableTilt();
   });
+  const snow = document.getElementById("snow") as HTMLCanvasElement;
+  mountWeather(snow);
+  setWeatherCues({
+    crystal: () => sfx.crystal(),
+    crackle: () => sfx.crackle(),
+  });
+  const hero = document.getElementById("hero-flake") as HTMLElement;
+  const brand = document.querySelector(".brand") as HTMLElement;
+  let shownFrame = 1;
+  let eyeSparked = false;
   const battle = mountBattle(sfx, (text, x, y) => {
     fx.strike(x, y, text, -4, "micro");
   });
@@ -70,7 +90,7 @@ export async function start(): Promise<void> {
   ).map(([id, label]) => {
     const el = document.getElementById(`act-${id}`) as HTMLElement;
     const pin = el.querySelector(".act__pin") as HTMLElement;
-    return { id, el, pin, label, p: 0, prev: 0, active: false };
+    return { id, el, pin, label, p: 0, prev: 0 };
   });
   acts[0].el.classList.add("is-cover");
 
@@ -81,9 +101,7 @@ export async function start(): Promise<void> {
       end: "bottom bottom",
       pin: act.pin,
       pinSpacing: false,
-      onToggle: (self) => {
-        act.active = self.isActive;
-      },
+      anticipatePin: 1,
       onUpdate: (self) => {
         act.p = self.progress;
       },
@@ -97,10 +115,13 @@ export async function start(): Promise<void> {
   const queued: { beat: Beat; at: number }[] = [];
   let shook = false;
 
+  const narrow = () => document.documentElement.clientWidth <= 800;
   const cam = (id: string, scale: number, x: number, y: number, rot = 0) => {
     const img = document.querySelector<HTMLElement>(`#act-${id} .splash.burst img, #act-${id} .splash:not(.residue) img`);
     if (!img) return;
-    img.style.transform = `scale(${scale}) translate(${x}%, ${y}%) rotate(${rot}deg)`;
+    const s = narrow() ? Math.min(scale, 1.05) : scale;
+    const k = narrow() ? 0.2 : 1;
+    img.style.transform = `scale(${s}) translate(${x * k}%, ${y * k}%) rotate(${rot * k}deg)`;
   };
   const quant = (v: number, steps: number) => Math.round(clamp01(v) * steps) / steps;
 
@@ -168,8 +189,7 @@ export async function start(): Promise<void> {
       });
     },
     still(p) {
-      cam("still", 1.02, -6, 0);
-      document.querySelector("#act-still .ghost-ring")?.classList.toggle("is-hot", p < 0.55);
+      cam("still", lerp(1.02, 1.04, p), -6, 0);
     },
     return(p) {
       cam("return", lerp(1.42, 1.62, p), lerp(4, -2, p), lerp(6, 2, p));
@@ -177,16 +197,26 @@ export async function start(): Promise<void> {
   };
 
   const motif = document.getElementById("motif") as HTMLElement;
+  const stage = ["grain", "snow", "wash", "wiii-cut", "drift-cut", "ghosts", "drift-arms", "drift-face", "hero-flake", "motif", "spark", "fxc"]
+    .map((id) => document.getElementById(id))
+    .filter((node): node is HTMLElement => Boolean(node));
+  // A fixed pin is a stacking context. These layers have to live inside it,
+  // under the plates, or the canvases paint over the type.
+  const seatLayers = (pin: HTMLElement) => {
+    for (const node of stage) if (node.parentElement !== pin) pin.append(node);
+  };
   const handoff = (id: ActName, p: number) => {
     let kind = "";
-    if (id === "intrusion" && p < 0.55) kind = "spark";
-    else if (id === "clash" && p < 0.5) kind = "cursor";
-    else if (id === "observe" && p < 0.55) kind = "ink";
-    else if (id === "neko" && p < 0.42) kind = "cursor";
-    else if (id === "return" && p < 0.55) kind = "spark";
+    if ((id === "awaken" && p > 0.72) || (id === "intrusion" && p < 0.5)) kind = "spark";
+    else if ((id === "intrusion" && p > 0.72) || (id === "clash" && p < 0.48)) kind = "cursor";
+    else if ((id === "clash" && p > 0.72) || (id === "observe" && p < 0.55)) kind = "ink";
+    else if ((id === "observe" && p > 0.72) || (id === "neko" && p < 0.42)) kind = "cursor";
+    else if ((id === "neko" && p > 0.72) || (id === "kakoi" && p < 0.06)) kind = "ring";
+    else if (id === "still" || id === "return") kind = "spark";
     motif.dataset.kind = kind;
     motif.dataset.act = id;
     motif.classList.toggle("is-on", kind !== "");
+    motif.toggleAttribute("data-drift", kind === "cursor");
   };
   const loopFrom = (x: number, y: number, cx: number, cy: number) => {
     const a0 = Math.atan2(y - cy, x - cx);
@@ -247,16 +277,19 @@ export async function start(): Promise<void> {
       if (!fx.holding) fx.fade();
       return;
     }
-    const live = acts.filter((item) => item.active);
-    if (live.length) shown = live[live.length - 1];
-    else {
-      const y = window.scrollY + 8;
-      for (const item of acts) if (item.el.offsetTop <= y) shown = item;
-    }
+    // anticipatePin can mark the next section active during a fast fling.
+    // The story follows the section whose top has actually reached the viewport.
+    const y = window.scrollY + 2;
+    shown = acts[0];
+    for (const item of acts) if (item.el.offsetTop <= y) shown = item;
     const act = shown;
     for (const item of acts) item.el.classList.toggle("is-cover", item === act);
+    seatLayers(act.pin);
     if (act.id !== lastAct) {
       if (!fx.holding) fx.clear();
+      brand.classList.remove("is-pulse");
+      void brand.offsetWidth;
+      brand.classList.add("is-pulse");
       lastAct = act.id;
     }
     render[act.id](act.p);
@@ -273,7 +306,8 @@ export async function start(): Promise<void> {
         if (act.prev < beat.at && act.p >= beat.at) {
           if (beat.mode === "major") queued.push({ beat, at: now + 140 });
           else {
-            fx.strike(window.innerWidth * 0.5, window.innerHeight * 0.46, beat.glyph, beat.rot, beat.mode);
+            const box = viewSize();
+            fx.strike(box.w * 0.5, box.h * 0.46, beat.glyph, beat.rot, beat.mode);
             sfx.play(beat.sfx);
           }
         }
@@ -282,8 +316,11 @@ export async function start(): Promise<void> {
     for (let i = queued.length - 1; i >= 0; i--) {
       if (now < queued[i].at) continue;
       const beat = queued[i].beat;
-      fx.strike(window.innerWidth * 0.5, window.innerHeight * 0.46, beat.glyph, beat.rot, "major");
-      sfx.play(beat.sfx);
+      const box = viewSize();
+      weatherImpact();
+      sfx.silence(0.25);
+      fx.strike(box.w * 0.5, box.h * 0.46, beat.glyph, beat.rot, "major");
+      window.setTimeout(() => sfx.play(beat.sfx), 260);
       document.documentElement.classList.add("is-hit");
       if (!shook) {
         shook = true;
@@ -298,6 +335,41 @@ export async function start(): Promise<void> {
 
     const vel = Math.min(1, Math.abs(lenis.velocity) / 1400);
     document.documentElement.classList.toggle("is-smear", vel > 0.22);
+    const box = viewSize();
+    const sparkEl = document.getElementById("spark") as HTMLElement;
+    const placed = /translate\(([-\d.]+)px,\s*([-\d.]+)px\)/.exec(sparkEl.style.transform);
+    const wiii = document.getElementById("wiii-cut") as HTMLElement;
+    const wr = wiii.getBoundingClientRect();
+    const scarf = Number(wiii.style.opacity) > 0.2
+      ? { x: wr.left + wr.width * 0.92, y: wr.top + wr.height * 0.22 }
+      : act.id === "intrusion"
+        ? { x: box.w * 0.22, y: box.h * 0.62 }
+        : null;
+    const flakeT = act.id === "awaken" && act.p < 0.4
+      ? act.p / 0.4
+      : act.id === "return" && act.p > 0.15 && act.p < 0.62
+        ? (act.p - 0.15) / 0.47
+        : -1;
+    if (flakeT >= 0) {
+      hero.style.opacity = "1";
+      hero.style.transform = `translate(${box.w * (narrow() ? 0.5 : 0.42)}px, ${-28 + flakeT * box.h * 0.34}px)`;
+    } else hero.style.opacity = "0";
+    document.documentElement.classList.toggle("is-eye-open", act.id === "awaken" && act.p >= 0.36 && act.p < 0.72);
+    document.documentElement.classList.toggle("is-eye-shut", act.id === "return" && act.p >= 0.55);
+    if (act.id === "awaken" && act.p >= 0.36 && !eyeSparked) {
+      eyeSparked = true;
+      sfx.play("spark");
+    }
+    weatherFrame(now, {
+      act: act.id,
+      p: act.p,
+      pointerX: placed ? Number(placed[1]) : box.w * 0.5,
+      pointerY: placed ? Number(placed[2]) : box.h * 0.42,
+      scroll: vel,
+      scarf,
+    });
+    const audio = weatherAudio();
+    sfx.wind(audio.strength, audio.ember);
     battle.draw(now, vel);
     if (!fx.holding) {
       shade.style.opacity = "0";
@@ -308,8 +380,10 @@ export async function start(): Promise<void> {
     document.documentElement.classList.toggle("on-paper", paper);
     theme.content = paper ? "#F3EEE3" : "#0B0B0D";
     actLabel.textContent = act.label;
-    const max = Math.max(1, document.documentElement.scrollHeight - window.innerHeight);
-    frameLabel.textContent = `F ${String(Math.round((lenis.animatedScroll / max) * 2400 + 1)).padStart(4, "0")}`;
+    const max = Math.max(1, document.documentElement.scrollHeight - viewSize().h);
+    const targetFrame = (lenis.animatedScroll / max) * 2400 + 1;
+    shownFrame += (targetFrame - shownFrame) * 0.18;
+    frameLabel.textContent = `F ${String(Math.round(shownFrame)).padStart(4, "0")}`;
     for (const link of reel) {
       link.setAttribute("aria-current", link.getAttribute("href") === `#act-${act.id}` ? "true" : "false");
     }
@@ -323,19 +397,25 @@ export async function start(): Promise<void> {
   fx.resize();
   window.addEventListener("resize", () => {
     fx.resize();
+    weatherResize();
     ScrollTrigger.refresh();
+  });
+  window.visualViewport?.addEventListener("resize", () => {
+    fx.resize();
+    weatherResize();
   });
   await document.fonts.ready;
   ScrollTrigger.refresh();
 
   window.__WIII = {
+    strikes: 0,
+    flashTimes: [],
     lenis,
     scrollToAct(id: string, progress: number) {
       const el = document.getElementById(id);
       if (!el) return;
-      const top = el.getBoundingClientRect().top + window.scrollY;
-      const span = Math.max(0, el.offsetHeight - window.innerHeight);
-      lenis.scrollTo(top + span * clamp01(progress), { immediate: true, force: true });
+      const span = Math.max(0, el.offsetHeight - viewSize().h);
+      lenis.scrollTo(el.offsetTop + span * clamp01(progress), { immediate: true, force: true });
       ScrollTrigger.update();
     },
   };
@@ -345,6 +425,8 @@ declare global {
   interface Window {
     __WIII?: {
       lenis: Lenis;
+      strikes: number;
+      flashTimes: number[];
       scrollToAct: (id: string, progress: number) => void;
     };
   }

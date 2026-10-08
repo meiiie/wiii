@@ -32,17 +32,20 @@
     <a class="skip" href="#content">Skip to content</a>
     <p id="strike-live" class="sr" aria-live="polite"></p>
     <div id="world">
-      <canvas id="wash" aria-hidden="true"></canvas>
-      <canvas id="fxc" aria-hidden="true"></canvas>
+      <canvas id="wash" data-decor aria-hidden="true"></canvas>
+      <canvas id="fxc" data-decor aria-hidden="true"></canvas>
       <div id="shade" aria-hidden="true"></div>
       <div id="flash" aria-hidden="true"></div>
-      <div id="grain" aria-hidden="true"></div>
+      <div id="grain" data-decor aria-hidden="true"></div>
+      <canvas id="snow" data-decor aria-hidden="true"></canvas>
+      <i id="hero-flake" data-decor aria-hidden="true"></i>
       <div id="glyph" aria-hidden="true"></div>
-      <div id="spark" class="motion-only" aria-hidden="true"></div>
-      <div id="ghosts" class="motion-only" aria-hidden="true"><i></i><i></i><i></i></div>
+      <div id="spark" class="motion-only" data-decor aria-hidden="true"></div>
+      <div id="ghosts" class="motion-only" data-drift data-decor aria-hidden="true"><i></i><i></i><i></i></div>
       <img
         id="wiii-cut"
         class="fighter motion-only"
+        data-decor
         src="/art/cut-wiii-420.webp"
         srcset="/art/cut-wiii-420.webp 420w, /art/cut-wiii-720.webp 720w"
         sizes="42vw"
@@ -50,7 +53,7 @@
         height="679"
         alt="Wiii, full figure, cream hair and charcoal scarf, cut out for the fight."
       />
-      <div id="drift-face" class="motion-only" aria-hidden="true">
+      <div id="drift-face" class="motion-only" data-drift data-decor aria-hidden="true">
         <i id="drift-eye"><b></b></i>
         <svg id="mask-crack" viewBox="0 0 100 100">
           <path class="c1" d="M58 16 L46 32" />
@@ -60,10 +63,12 @@
           <path class="c5" d="M78 72 L8 96" />
         </svg>
       </div>
-      <div id="motif" class="motion-only" aria-hidden="true"></div>
+      <div id="motif" class="motion-only" data-decor aria-hidden="true"></div>
       <img
         id="drift-cut"
         class="fighter motion-only"
+        data-drift
+        data-decor
         src="/art/cut-drift-360.webp"
         srcset="/art/cut-drift-360.webp 360w, /art/cut-drift-640.webp 640w"
         sizes="38vw"
@@ -71,7 +76,7 @@
         height="871"
         alt="Drift, full figure, white cracked mask and cursor-arms, cut out for the fight."
       />
-      <div id="drift-arms" class="motion-only" aria-hidden="true"></div>
+      <div id="drift-arms" class="motion-only" data-drift data-decor aria-hidden="true"></div>
 
       <header class="chrome">
         <a class="brand" href="#act-awaken">
@@ -260,7 +265,7 @@
                 <img src="/art/kf08_still-768.webp" width="1280" height="720" alt="Wiii from behind on white paper, mask shards on the ground, one small spark in his hand." loading="lazy" />
               </picture>
             </figure>
-            <div class="ghost-ring" aria-hidden="true"></div>
+            <div class="ghost-ring" data-drift data-decor aria-hidden="true"></div>
             <p class="tate" lang="ja">間</p>
             <div class="plate plate--still plate--tate">
               <h2>Computer is optional.</h2>

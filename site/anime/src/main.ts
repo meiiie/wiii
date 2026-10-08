@@ -1,9 +1,12 @@
 import "@fontsource/anton/latin-400.css";
+import "@fontsource/anton/latin-ext-400.css";
+import "@fontsource/anton/vietnamese-400.css";
 import "@fontsource/dm-mono/400.css";
 import "@fontsource/instrument-sans/400.css";
 import "@fontsource/instrument-serif/400.css";
 import "@fontsource/instrument-serif/400-italic.css";
 import "./style.css";
+import { paintStillSnow } from "./weather";
 
 function paintGrain(): void {
   const grain = document.getElementById("grain");
@@ -32,6 +35,8 @@ const reduced = window.matchMedia("(prefers-reduced-motion: reduce)");
 async function boot(): Promise<void> {
   if (reduced.matches) {
     document.documentElement.classList.add("is-reduced");
+    const snow = document.getElementById("snow") as HTMLCanvasElement | null;
+    if (snow) paintStillSnow(snow);
     return;
   }
   document.documentElement.classList.add("is-motion");
