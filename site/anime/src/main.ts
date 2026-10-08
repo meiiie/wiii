@@ -43,8 +43,10 @@ async function boot(): Promise<void> {
     if (snow) paintStillSnow(snow);
     return;
   }
-  document.documentElement.classList.add("is-motion", "is-cold");
+  document.documentElement.classList.add("is-motion");
+  if (window.scrollY <= 24) document.documentElement.classList.add("is-cold");
   const { start } = await import("./director");
+  if (window.scrollY > 24) document.documentElement.classList.remove("is-cold");
   await start();
 }
 

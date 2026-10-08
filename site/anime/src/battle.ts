@@ -32,6 +32,7 @@ const clamp = (v: number, a: number, b: number) => Math.min(b, Math.max(a, v));
 
 export function mountBattle(sfx: Sfx, onWord: (text: string, x: number, y: number) => void): {
   setAct: (id: ActName, p: number) => void;
+  recoil: () => void;
   draw: (now: number, vel: number) => void;
 } {
   const root = document.documentElement;
@@ -177,8 +178,9 @@ export function mountBattle(sfx: Sfx, onWord: (text: string, x: number, y: numbe
     }
     if (hit) {
       hitUntil = performance.now() + 380;
+      drift.classList.remove("is-hit");
+      void drift.offsetWidth;
       drift.classList.add("is-hit");
-      window.setTimeout(() => drift.classList.remove("is-hit"), 220);
       for (let i = 0; i < (big ? 18 : 10); i++) {
         const a = (i / 12) * Math.PI * 2;
         shed.push({
@@ -191,6 +193,16 @@ export function mountBattle(sfx: Sfx, onWord: (text: string, x: number, y: numbe
         });
       }
     }
+  };
+
+  let hintOnce = false;
+  const tickHint = () => {
+    if (hintOnce) return;
+    hintOnce = true;
+    const how = document.querySelector(".how");
+    if (!how) return;
+    how.classList.add("is-ticked", "is-ticking");
+    window.setTimeout(() => how.classList.remove("is-ticking"), 200);
   };
 
   const strike = (pt: Pt, dash = false, vx = 0, vy = 0) => {
@@ -287,7 +299,10 @@ export function mountBattle(sfx: Sfx, onWord: (text: string, x: number, y: numbe
       const tap = dist < 10 && held < 250 && !scrolled;
       const dash = armed && dist >= 10 && !scrolled;
       if (!tap && !dash) return;
-      if (tap) weatherPuff(end.x, end.y);
+      if (tap) {
+        weatherPuff(end.x, end.y);
+        tickHint();
+      }
       const vx = end.x - start.x;
       const vy = end.y - start.y;
       if (dash) {
@@ -298,6 +313,7 @@ export function mountBattle(sfx: Sfx, onWord: (text: string, x: number, y: numbe
       return;
     }
     const dash = held > 280 && dist > 36;
+    if (!dash && dist < 10 && held < 250) tickHint();
     const token = gesture;
     const wait = Math.max(0, 80 - held);
     window.setTimeout(() => {
@@ -636,7 +652,7 @@ export function mountBattle(sfx: Sfx, onWord: (text: string, x: number, y: numbe
         wiii.style.transformOrigin = "";
         wiii.style.transform = "";
       }
-      drift.style.width = crush ? "min(84vw, 480px)" : "";
+      drift.style.width = "";
       drift.style.transformOrigin = "";
       if (id === "intrusion") drift.style.transform = "translate(-4vw, 4vh)";
       else if (id === "neko" && phone && p < 0.42) {
@@ -645,10 +661,18 @@ export function mountBattle(sfx: Sfx, onWord: (text: string, x: number, y: numbe
       } else if (id === "neko") drift.style.transform = `translate(${-8 - p * 20}vw, 6vh) rotate(${-6 - p * 8}deg)`;
       else if (crush) {
         const q = Math.round(clamp(p / 0.26, 0, 1) * 5) / 5;
+        const zoom = 1.85 + q * 0.55;
+        drift.style.width = `min(${(84 * zoom).toFixed(2)}vw, ${Math.round(480 * zoom)}px)`;
         drift.style.transformOrigin = "28% 14%";
-        drift.style.transform = `translate(${-2 - q * 10}vw, ${-2 - q * 8}vh) scale(${1.85 + q * 0.55}) rotate(${-3 - q * 9}deg)`;
+        drift.style.transform = `translate(${-2 - q * 10}vw, ${-2 - q * 8}vh) rotate(${-3 - q * 9}deg)`;
       } else if (ringLock) drift.style.transform = "translate(54vw, 2vh) scale(0.58)";
       else drift.style.transform = "translate(48vw, 0)";
+    },
+    recoil() {
+      hitUntil = performance.now() + 380;
+      drift.classList.remove("is-hit");
+      void drift.offsetWidth;
+      drift.classList.add("is-hit");
     },
     draw(now, vel) {
       if (now - lastInput > 5000) root.classList.add("is-idle");

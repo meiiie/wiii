@@ -4,6 +4,7 @@ import Lenis from "lenis";
 import { Sfx } from "./audio";
 import { mountBattle, type ActName } from "./battle";
 import { StageFX } from "./fx";
+import { upgradeArt } from "./art";
 import { enableTilt, mountWeather, setWeatherCues, viewSize, weatherAudio, weatherFrame, weatherGust, weatherImpact, weatherResize } from "./weather";
 
 gsap.registerPlugin(ScrollTrigger);
@@ -26,6 +27,8 @@ const clamp01 = (v: number) => Math.min(1, Math.max(0, v));
 const lerp = (a: number, b: number, t: number) => a + (b - a) * t;
 
 export async function start(): Promise<void> {
+  const restoredY = window.scrollY;
+  void upgradeArt();
   const lenis = new Lenis({
     autoRaf: false,
     lerp: 0.085,
@@ -70,18 +73,23 @@ export async function start(): Promise<void> {
   });
   const hero = document.getElementById("hero-flake") as HTMLElement;
   const brand = document.querySelector(".brand") as HTMLElement;
-  let shownFrame = 1;
+  let shownFrame = -1;
   let eyeSparked = false;
   let eyeClosed = false;
   let flakeLanded = false;
-  let cold = true;
+  let cold = restoredY <= 24;
   let coldEyeUntil = 0;
   const coldFrom = performance.now();
+  const coldAnchor = restoredY;
   const flashTimes: number[] = [];
   let cutTimers: number[] = [];
   let lastFlash = -1e9;
   let endLatch: number | null = null;
-  document.documentElement.classList.add("is-cold");
+  if (cold) document.documentElement.classList.add("is-cold");
+  else {
+    document.documentElement.classList.remove("is-cold");
+    if (restoredY > 24) lenis.scrollTo(restoredY, { immediate: true, force: true });
+  }
   const battle = mountBattle(sfx, (text, x, y) => {
     fx.strike(x, y, text, -4, "micro");
   });
@@ -161,8 +169,8 @@ export async function start(): Promise<void> {
         const q = quant(p, 8);
         shot.style.transformOrigin = "62% 38%";
         shot.style.transform = `scale(${lerp(1.12, 1.92, q)}) translate(${lerp(10, -8, q)}%, ${lerp(-3, 6, q)}%) rotate(${lerp(1.4, -4.2, q)}deg)`;
-        const rack = q > 0.72 ? lerp(0, 2.6, (q - 0.72) / 0.28) : 0;
-        shot.style.filter = rack > 0.05 ? `blur(${rack.toFixed(2)}px)` : "";
+        const depth = q > 0.72 ? (q - 0.72) / 0.28 : 0;
+        shot.style.filter = depth > 0.05 ? `contrast(${(1.04 + depth * 0.14).toFixed(3)})` : "";
       } else {
         cam("observe", lerp(1.22, 1.12, p), lerp(4, 0, p), 0);
         shot?.style.removeProperty("filter");
@@ -182,6 +190,7 @@ export async function start(): Promise<void> {
         plate.classList.remove("is-struck");
         void plate.offsetWidth;
         plate.classList.add("is-struck");
+        window.setTimeout(() => plate.classList.remove("is-struck"), 200);
       }
       if (narrow()) {
         const wait = el.querySelector<HTMLElement>(".splash.residue img");
@@ -190,8 +199,8 @@ export async function start(): Promise<void> {
           const q = quant(clamp01(p / 0.42), 6);
           wait.style.transformOrigin = "74% 40%";
           wait.style.transform = `scale(${lerp(1.46, 2.28, q)}) translate(${lerp(16, -24, q)}%, ${lerp(1, 9, q)}%) rotate(${lerp(2.6, -6.2, q)}deg)`;
-          const rack = q > 0.66 ? lerp(0, 2.8, (q - 0.66) / 0.34) : 0;
-          wait.style.filter = rack > 0.05 ? `blur(${rack.toFixed(2)}px)` : "";
+          const depth = q > 0.66 ? (q - 0.66) / 0.34 : 0;
+          wait.style.filter = depth > 0.05 ? `contrast(${(1.04 + depth * 0.16).toFixed(3)})` : "";
         }
         if (jump) {
           const q = burst ? quant((p - 0.42) / 0.58, 7) : 0;
@@ -292,7 +301,7 @@ export async function start(): Promise<void> {
         const q = quant(clamp01(p / 0.7), 6);
         shot.style.transformOrigin = "38% 30%";
         shot.style.transform = `scale(${lerp(1.52, 2.18, q)}) translate(${lerp(6, -1, q)}%, ${lerp(3, -8, q)}%)`;
-        shot.style.filter = p >= 0.6 ? "brightness(0.52) contrast(1.08)" : "";
+        shot.style.filter = p >= 0.6 ? "contrast(1.18) brightness(0.62)" : "";
       } else {
         cam("return", lerp(1.42, 1.62, p), lerp(4, -2, p), lerp(6, 2, p));
         shot?.style.removeProperty("filter");
@@ -378,6 +387,7 @@ export async function start(): Promise<void> {
     plate.classList.remove("is-struck");
     void plate.offsetWidth;
     plate.classList.add("is-struck");
+    window.setTimeout(() => plate.classList.remove("is-struck"), 200);
   };
   const endCold = (reveal: boolean) => {
     if (!cold) return;
@@ -394,6 +404,7 @@ export async function start(): Promise<void> {
     cutTimers = [];
     root.classList.remove("is-cut-black", "is-cut-ink", "is-cut-wipe", "is-hitstop");
     root.classList.add("is-cut-black", "is-hitstop");
+    if (sfx.enabled) sfx.duckWind(0.09);
     const later = (ms: number, fn: () => void) => {
       cutTimers.push(window.setTimeout(fn, ms));
     };
@@ -437,7 +448,7 @@ export async function start(): Promise<void> {
   };
 
   const draw = (now: number) => {
-    if (cold && window.scrollY > 8) endCold(false);
+    if (cold && Math.abs(window.scrollY - coldAnchor) > 24) endCold(false);
     const viewingColo = window.scrollY + 24 >= colophon.offsetTop;
     document.documentElement.classList.toggle("is-colophon", viewingColo);
     if (viewingColo) {
@@ -505,20 +516,31 @@ export async function start(): Promise<void> {
       sfx.silence(0.25);
       fx.strike(box.w * 0.5, box.h * 0.46, beat.glyph, beat.rot, "major");
       window.setTimeout(() => sfx.play(beat.sfx), 260);
-      document.documentElement.classList.add("is-hit");
-      if (!shook) {
-        shook = true;
-        window.setTimeout(() => {
-          document.documentElement.classList.remove("is-hit");
-          shook = false;
-        }, 420);
-      }
+      const root = document.documentElement;
+      root.classList.add("is-strike-smear");
+      window.setTimeout(() => {
+        root.classList.remove("is-strike-smear");
+        battle.recoil();
+        root.classList.add("is-hit");
+        if (!shook) {
+          shook = true;
+          window.setTimeout(() => {
+            root.classList.remove("is-hit");
+            shook = false;
+          }, 420);
+        }
+      }, 83);
       queued.splice(i, 1);
     }
     act.prev = act.p;
 
     const vel = Math.min(1, Math.abs(lenis.velocity) / 1400);
-    document.documentElement.classList.toggle("is-smear", vel > 0.22);
+    const root = document.documentElement;
+    root.classList.toggle("is-smear", vel > 0.22);
+    root.classList.toggle(
+      "is-cam",
+      vel > 0.04 || root.classList.contains("is-smear") || root.classList.contains("is-hitstop") || root.classList.contains("is-cut-wipe") || root.classList.contains("is-strike-smear"),
+    );
     const box = viewSize();
     const sparkEl = document.getElementById("spark") as HTMLElement;
     const placed = /translate\(([-\d.]+)px,\s*([-\d.]+)px\)/.exec(sparkEl.style.transform);
@@ -606,12 +628,16 @@ export async function start(): Promise<void> {
     document.documentElement.classList.toggle("on-paper", paper);
     theme.content = paper ? "#F3EEE3" : "#0B0B0D";
     actLabel.textContent = act.label;
-    const max = Math.max(1, document.documentElement.scrollHeight - viewSize().h);
-    const targetFrame = (lenis.animatedScroll / max) * 2400 + 1;
-    shownFrame += (targetFrame - shownFrame) * 0.18;
-    frameLabel.textContent = `F ${String(Math.round(shownFrame)).padStart(4, "0")}`;
-    for (const link of reel) {
-      link.setAttribute("aria-current", link.getAttribute("href") === `#act-${act.id}` ? "true" : "false");
+    const twos = Math.floor(now / 83);
+    if (twos !== shownFrame) {
+      shownFrame = twos;
+      const max = Math.max(1, document.documentElement.scrollHeight - viewSize().h);
+      const target = Math.round((lenis.animatedScroll / max) * 2400 + 1);
+      frameLabel.textContent = `F ${String(target).padStart(4, "0")}`;
+      document.documentElement.classList.toggle("is-twos", twos % 2 === 1);
+      for (const link of reel) {
+        link.setAttribute("aria-current", link.getAttribute("href") === `#act-${act.id}` ? "true" : "false");
+      }
     }
   };
 

@@ -64,7 +64,7 @@ export class StageFX {
     } else {
       this.burst(x, y, resolved === "quiet" ? 14 : 36, resolved === "quiet" ? 0 : 0.7);
       if (resolved === "quiet") {
-        this.grain.style.opacity = "0.42";
+        this.grain.style.opacity = "0.06";
         this.later(() => {
           this.grain.style.opacity = "";
         }, 480);

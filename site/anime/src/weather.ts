@@ -103,10 +103,14 @@ export function weatherResize(): void {
 
 export function paintStillSnow(canvas: HTMLCanvasElement): void {
   const { w, h } = viewSize();
-  canvas.width = w;
-  canvas.height = h;
+  const dpr = Math.min(window.devicePixelRatio || 1, 2);
+  canvas.width = Math.floor(w * dpr);
+  canvas.height = Math.floor(h * dpr);
+  canvas.style.width = `${w}px`;
+  canvas.style.height = `${h}px`;
   const ctx = canvas.getContext("2d");
   if (!ctx) return;
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   ctx.clearRect(0, 0, w, h);
   for (let i = 0; i < 70; i++) {
     const x = hash(i + 1) * w;
@@ -117,8 +121,8 @@ export function paintStillSnow(canvas: HTMLCanvasElement): void {
     ctx.arc(x, y, r, 0, Math.PI * 2);
     ctx.fill();
   }
+  document.body.style.backgroundSize = `${w}px ${h}px`;
   document.body.style.backgroundImage = `url(${canvas.toDataURL("image/png")})`;
-  document.body.style.backgroundSize = "auto";
   canvas.style.display = "none";
 }
 
@@ -403,11 +407,14 @@ const createWeather = (canvas: HTMLCanvasElement): Runtime => {
       cues.crystal();
     }
     if (mode === 1 && Math.random() < 0.08) cues.crackle();
+    const spent = scene.act === "still" || scene.act === "return";
+    const sealing = scene.act === "kakoi" && scene.p >= 0.26;
+    const drawn = spent ? (w <= 800 ? 10 : 14) : sealing ? (w <= 800 ? 18 : 28) : count;
     if (gpu && gl) {
-      gpu.draw(gl, canvas, count, w, h, showTime, wx, wy, gustX, gustY, gustLife, shock, mode, ringR, pressure);
+      gpu.draw(gl, canvas, drawn, w, h, showTime, wx, wy, gustX, gustY, gustLife, shock, mode, ringR, pressure);
       return;
     }
-    paint2d(ctx2d, count, w, h, showTime, wx, wy, mode, shock);
+    paint2d(ctx2d, drawn, w, h, showTime, wx, wy, mode, shock);
   };
 
   return {

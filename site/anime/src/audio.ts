@@ -10,6 +10,7 @@ export class Sfx {
   private windFilter: BiquadFilterNode | null = null;
   private windGain: GainNode | null = null;
   private windSrc: AudioBufferSourceNode | null = null;
+  private windHold = 0;
   private ready: Promise<void> | null = null;
 
   /** Resume the context on a user gesture so a later unmute works on iOS. */
@@ -56,12 +57,25 @@ export class Sfx {
     this.noise = buffer;
   }
 
+  /** Drop the wind for a black hold so the cut is heard. The next wind() restores it. */
+  duckWind(seconds = 0.09): void {
+    if (!this.enabled || !this.ctx || !this.windGain) return;
+    const now = this.ctx.currentTime;
+    this.windHold = now + seconds;
+    const gain = this.windGain.gain;
+    gain.cancelScheduledValues(now);
+    gain.setValueAtTime(Math.max(0.0001, gain.value), now);
+    gain.linearRampToValueAtTime(0.0001, now + 0.012);
+    gain.setValueAtTime(0.0001, now + Math.max(0.02, seconds));
+  }
+
   /** Filtered noise whose cutoff and gain follow the wind field. Silent while muted. */
   wind(strength: number, ember = false): void {
     if (!this.enabled || !this.ctx || !this.master || !this.noise) {
       this.stopWind();
       return;
     }
+    if (this.windHold > this.ctx.currentTime) return;
     if (!this.windSrc) {
       const src = this.ctx.createBufferSource();
       src.buffer = this.noise;
