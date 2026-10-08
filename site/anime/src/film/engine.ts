@@ -21,26 +21,28 @@ import { FilmRenderer, type Grade, type SceneDraw } from "./render";
 import { VirtualScroll } from "./scroll";
 import { MasterTimeline } from "./timeline";
 
+/** Ink, paper, and the art's own red. No lift, no sepia, no channel bias. */
+const INK: Grade = { lift: [0, 0, 0], gain: [1, 1, 1], gamma: 1, sat: 1 };
 const GRADES: Record<ActId, Grade> = {
-  awaken: { lift: [0.02, 0.025, 0.04], gain: [0.95, 0.97, 1.05], gamma: 1.02, sat: 0.9 },
-  intrusion: { lift: [0.06, 0.01, 0.01], gain: [1.08, 0.94, 0.9], gamma: 0.96, sat: 1.05 },
-  clash: { lift: [0.05, 0.0, 0.0], gain: [1.12, 0.9, 0.86], gamma: 0.92, sat: 1.12 },
-  observe: { lift: [0.03, 0.03, 0.04], gain: [0.96, 0.96, 1.0], gamma: 1.04, sat: 0.72 },
-  neko: { lift: [0.04, 0.025, 0.015], gain: [1.05, 0.98, 0.92], gamma: 0.98, sat: 1.0 },
-  kakoi: { lift: [0.04, 0.03, 0.02], gain: [1.02, 0.98, 0.94], gamma: 1.0, sat: 0.92 },
-  still: { lift: [0.07, 0.06, 0.045], gain: [1.06, 1.03, 0.98], gamma: 1.05, sat: 0.66 },
-  return: { lift: [0.02, 0.025, 0.05], gain: [0.9, 0.95, 1.08], gamma: 1.04, sat: 0.84 },
+  awaken: INK,
+  intrusion: INK,
+  clash: INK,
+  observe: INK,
+  neko: INK,
+  kakoi: INK,
+  still: INK,
+  return: INK,
 };
 
 const FOG: Record<ActId, [number, number, number]> = {
-  awaken: [0.05, 0.06, 0.09],
-  intrusion: [0.12, 0.03, 0.03],
-  clash: [0.16, 0.04, 0.03],
-  observe: [0.08, 0.08, 0.09],
-  neko: [0.1, 0.06, 0.04],
-  kakoi: [0.09, 0.08, 0.07],
-  still: [0.93, 0.9, 0.84],
-  return: [0.04, 0.05, 0.08],
+  awaken: [0, 0, 0],
+  intrusion: [0, 0, 0],
+  clash: [0, 0, 0],
+  observe: [0, 0, 0],
+  neko: [0, 0, 0],
+  kakoi: [0, 0, 0],
+  still: [0, 0, 0],
+  return: [0, 0, 0],
 };
 
 type Tier = { dpr: number; dof: boolean; note: (ms: number) => boolean };
@@ -245,8 +247,8 @@ export async function startFilm(): Promise<void> {
       rig: [scroll.rigX, scroll.rigY],
       shake: now < shakeUntil ? shakeDir : [0, 0],
       fog: FOG[act],
-      fogAmt: act === "still" ? 0.08 : 0.22,
-      dof: renderer.dof,
+      fogAmt: 0,
+      dof: renderer.dof && plateId !== "impact",
       wiii: { tex: wiii, alpha: layout.wiii.alpha, pos: layout.wiii.pos, size: layout.wiii.size, depth: layout.wiii.depth },
       drift: { tex: drift, alpha: layout.drift.alpha, pos: layout.drift.pos, size: layout.drift.size, depth: layout.drift.depth },
       snow: { ...snow, count: hold % 2 === 0 ? snow.count : Math.max(12, snow.count - 8) },
@@ -260,7 +262,24 @@ export async function startFilm(): Promise<void> {
     const breathe = act === "still" ? 0 : Math.sin(now / 1000 * 0.7) * 0.003;
     const keys = orient === "portrait" ? PORTRAIT[act] : LANDSCAPE[act];
     const cam = evalCam(keys, local, breathe);
-    if (orient === "portrait") cam.truck = [Math.max(-0.08, Math.min(0.08, cam.truck[0])), cam.truck[1]];
+    if (orient === "portrait") {
+      cam.truck = [
+        Math.max(-0.02, Math.min(0.02, cam.truck[0])),
+        Math.max(-0.02, Math.min(0.02, cam.truck[1])),
+      ];
+      cam.dolly = Math.min(0.04, Math.max(0, cam.dolly));
+      const punch = act === "clash" && local >= 0.46 && local < 0.58;
+      if (act === "kakoi") {
+        cam.zoom = 1;
+        cam.dolly = 0;
+        cam.truck = [0, 0];
+      } else if (punch) {
+        const q = Math.sin(Math.min(1, (local - 0.46) / 0.12) * Math.PI);
+        cam.zoom = Math.min(cam.zoom, 1.06) * (1 + q * 0.14);
+      } else {
+        cam.zoom = Math.min(1.1, cam.zoom);
+      }
+    }
     const stepped = Math.round(local * 12) / 12;
     warm(plateFor(act, stepped), orient);
     warm(aheadPlate(act, stepped), orient);
@@ -287,14 +306,10 @@ export async function startFilm(): Promise<void> {
     }
     renderer.paintScene(0, a, now / 1000);
     const kind = timeline.gate ? (timeline.gate.kind === "ink" ? 1 : timeline.gate.kind === "smear" ? 2 : 3) : 0;
-    const smear = timeline.gate?.kind === "smear"
-      ? timeline.gate.t
-      : act === "clash" && local > 0.42 && local < 0.62
-        ? (local - 0.42) / 0.2
-        : 0;
+    const smear = timeline.gate?.kind === "smear" ? timeline.gate.t * 0.35 : 0;
     const grade = gradeFor(act, local, timeline.sealed);
-    const impact = plateId === "impact" || invertUntil > now;
-    renderer.present(grade, timeline.gate?.t ?? 0, kind, invertUntil > now ? 1 : 0, smear, impact ? 0.0035 : 0, now / 1000);
+    const flashing = invertUntil > now;
+    renderer.present(grade, timeline.gate?.t ?? 0, kind, flashing ? 1 : 0, smear, flashing ? 0.0006 : 0, now / 1000);
     const frame = Math.round((timeline.progress * 2400) + 1);
     overlay.sync(timeline, local, frame);
     if (sfx.enabled && timeline.act === "kakoi" && !timeline.sealed && timeline.seal > 0) {
@@ -389,10 +404,6 @@ function ACTS_NEXT(act: ActId): number {
   return Math.min(order.length - 1, order.indexOf(act) + 1);
 }
 
-function gradeFor(act: ActId, local: number, sealed: boolean): Grade {
-  const base = GRADES[act];
-  if (act === "kakoi" && sealed && local >= 0.26) {
-    return { lift: [0.06, 0.05, 0.04], gain: [1.04, 1.02, 0.98], gamma: 1.04, sat: 0.7 };
-  }
-  return base;
+function gradeFor(act: ActId, _local: number, _sealed: boolean): Grade {
+  return GRADES[act];
 }

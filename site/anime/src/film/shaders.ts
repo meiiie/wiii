@@ -172,8 +172,8 @@ void main() {
   if (dot(p, p) > 0.22) discard;
   float card = vBand < 0.5 ? 0.28 : (vBand < 1.5 ? 0.7 : 0.96);
   vec3 col = uMode > 0.5 && uMode < 1.5
-    ? mix(vec3(0.95, 0.45, 0.28), vec3(0.98, 0.9, 0.8), vSeed)
-    : vec3(0.93, 0.91, 0.86);
+    ? mix(vec3(0.78, 0.06, 0.04), vec3(0.92, 0.14, 0.08), vSeed)
+    : vec3(0.9, 0.9, 0.9);
   float alpha = (0.35 + uPressure * 0.4) * (0.45 + vSeed * 0.55);
   if (uMode > 1.5) alpha *= 0.55;
   if (vCalm > 0.5) alpha *= 0.45;
@@ -305,9 +305,9 @@ void main() {
   float l = dot(col, vec3(0.299, 0.587, 0.114));
   col = mix(vec3(l), col, uSat);
   col = pow(max(col, vec3(0.0)), vec3(max(0.2, uGamma))) * uGain + uLift;
-  float vig = smoothstep(0.28, 0.92, length(uv - 0.5));
-  col *= mix(1.0, 0.58, vig);
+  float vig = smoothstep(0.55, 0.98, length(uv - 0.5));
+  col *= mix(1.0, 0.9, vig);
   float grain = hash(uv * (80.0 + fract(uTime * 13.0) * 40.0) + uTime);
-  col += (grain - 0.5) * 0.055;
+  col += (grain - 0.5) * 0.018;
   frag = vec4(clamp(col, 0.0, 1.0), 1.0);
 }`;

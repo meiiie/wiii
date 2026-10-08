@@ -92,6 +92,68 @@ const drag = async (client, x, y0, y1) => {
   await sleep(16);
 };
 
+const overlayAt = async (w, h, mobile) => {
+  await page.setViewport({ width: w, height: h, deviceScaleFactor: mobile ? 2 : 1, isMobile: mobile, hasTouch: mobile });
+  await page.goto(`http://127.0.0.1:${port}/film`, { waitUntil: "domcontentloaded" });
+  await page.waitForFunction(() => window.__WIII?.mode === "film" && window.__WIII.plate, { timeout: 15000 });
+  await page.evaluate(() => document.fonts.ready);
+  await sleep(250);
+  // Kakoi at 0.55/0.60 stays unsealed. Acts after kakoi seal the ring, so they come last.
+  const stops = [
+    ["awaken", 0.55],
+    ["intrusion", 0.55],
+    ["clash", 0.2],
+    ["clash", 0.55],
+    ["clash", 0.7],
+    ["observe", 0.55],
+    ["neko", 0.55],
+    ["kakoi", 0.55],
+    ["kakoi", 0.6],
+    ["still", 0.55],
+    ["return", 0.55],
+    ["return", 0.9],
+  ];
+  let bad = 0;
+  for (const [id, t] of stops) {
+    await page.evaluate((act, local) => window.__WIII.scrollToAct(act, local), id, t);
+    await sleep(60);
+    const problems = await page.evaluate(() => {
+      const height = window.innerHeight;
+      const topLine = height * 0.14;
+      const botLine = height * 0.78;
+      const visible = [...document.querySelectorAll("[data-overlay]")].flatMap((el) => {
+        const style = getComputedStyle(el);
+        if (style.display === "none" || style.visibility === "hidden" || Number(style.opacity) < 0.05) return [];
+        const rect = el.getBoundingClientRect();
+        if (rect.width < 2 || rect.height < 2) return [];
+        const name = el.id || el.getAttribute("aria-label") || (el.textContent || "").trim().slice(0, 28);
+        return [{ name, top: rect.top, left: rect.left, bottom: rect.bottom, right: rect.right }];
+      });
+      const found = [];
+      for (const rect of visible) {
+        const inTop = rect.top >= -2 && rect.bottom <= topLine + 2;
+        const inBot = rect.top >= botLine - 2 && rect.bottom <= height + 2;
+        if (!inTop && !inBot) found.push(`zone ${rect.name} ${rect.top.toFixed(0)}-${rect.bottom.toFixed(0)} of ${height}`);
+      }
+      for (let i = 0; i < visible.length; i++) {
+        for (let j = i + 1; j < visible.length; j++) {
+          const a = visible[i];
+          const b = visible[j];
+          const overlapW = Math.min(a.right, b.right) - Math.max(a.left, b.left);
+          const overlapH = Math.min(a.bottom, b.bottom) - Math.max(a.top, b.top);
+          if (overlapW > 1 && overlapH > 1) found.push(`hit ${a.name} × ${b.name}`);
+        }
+      }
+      return found;
+    });
+    if (problems.length) {
+      bad += 1;
+      fail(`${w}x${h} ${id}@${t} ${problems.slice(0, 6).join("; ")}`);
+    }
+  }
+  if (!bad) console.log(`overlay ${w}x${h} clean`);
+};
+
 const overflow = () => page.evaluate(() => {
   const rootEl = document.documentElement;
   const offenders = [...document.querySelectorAll("body *")]
@@ -110,6 +172,11 @@ try {
   const home = await page.evaluate(() => window.__WIII.mode || "dom");
   console.log(`home mode=${home}`);
   if (home === "film") fail("software renderer took the film engine on /");
+
+  await overlayAt(360, 780, true);
+  await overlayAt(390, 844, true);
+  await overlayAt(430, 932, true);
+  await overlayAt(1440, 900, false);
 
   const phone = async (w, h, full) => {
     await page.setViewport({ width: w, height: h, deviceScaleFactor: 2, isMobile: true, hasTouch: true });

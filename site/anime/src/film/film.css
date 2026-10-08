@@ -20,11 +20,37 @@ html.is-film #world { display: none !important; }
   inset: 0;
   z-index: 2;
   pointer-events: none;
-  color: #f3eee3;
+  color: #f4f1ea;
   font-family: "Instrument Sans", "Segoe UI", sans-serif;
 }
+#film-root::before,
+#film-root::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  z-index: 0;
+  pointer-events: none;
+}
+#film-root::before {
+  top: 0;
+  height: 20%;
+  background: linear-gradient(to bottom, rgba(8, 8, 10, 0.78) 0%, rgba(8, 8, 10, 0.4) 58%, rgba(8, 8, 10, 0) 100%);
+}
+#film-root::after {
+  bottom: 0;
+  height: 30%;
+  background: linear-gradient(to top, rgba(8, 8, 10, 0.84) 0%, rgba(8, 8, 10, 0.4) 52%, rgba(8, 8, 10, 0) 100%);
+}
+#film-root.is-paper::before {
+  background: linear-gradient(to bottom, rgba(244, 241, 234, 0.9) 0%, rgba(244, 241, 234, 0.46) 58%, rgba(244, 241, 234, 0) 100%);
+}
+#film-root.is-paper::after {
+  background: linear-gradient(to top, rgba(244, 241, 234, 0.94) 0%, rgba(244, 241, 234, 0.5) 52%, rgba(244, 241, 234, 0) 100%);
+}
 #film-root :is(a, button) { pointer-events: auto; }
-#film-root.is-paper { color: #2a2928; }
+#film-root.is-paper { color: #1c1b1a; }
+#film-root :is(h1, p) { margin: 0; }
 .film-sr {
   position: absolute;
   width: 1px;
@@ -36,46 +62,63 @@ html.is-film #world { display: none !important; }
   position: absolute;
   left: 12px;
   top: -40px;
-  background: #f3eee3;
+  z-index: 3;
+  background: #f4f1ea;
   color: #0b0b0d;
   padding: 8px 12px;
 }
 .film-skip:focus { top: 12px; }
-.film-chrome, .film-stamps, .film-dock, #film-sound {
-  pointer-events: none;
-}
-.film-chrome {
+.film-readout,
+.film-ja,
+#film-body[hidden],
+#film-colo[hidden],
+#film-seal[hidden] { display: none !important; }
+.film-top,
+.film-bot {
   position: absolute;
-  top: 0;
   left: 0;
   right: 0;
+  z-index: 1;
+  box-sizing: border-box;
   display: flex;
-  justify-content: space-between;
+  flex-direction: column;
+  gap: 4px;
+  pointer-events: none;
+}
+.film-top {
+  top: 0;
+  height: 14%;
+  justify-content: flex-start;
+  padding: 10px 16px 4px;
+}
+.film-bot {
+  bottom: 0;
+  height: 22%;
+  justify-content: flex-end;
+  padding: 4px 16px 12px;
+}
+.film-chrome {
+  display: flex;
   align-items: center;
-  padding: 16px 20px;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 0;
 }
 .film-brand {
+  flex: 0 0 auto;
   font-family: "Anton", "Arial Narrow", sans-serif;
   letter-spacing: 0.08em;
   text-decoration: none;
-  font-size: 22px;
-  pointer-events: auto;
-}
-.film-readout {
-  display: flex;
-  gap: 12px;
-  font-family: "DM Mono", ui-monospace, monospace;
-  font-size: 12px;
-  letter-spacing: 0.08em;
-  opacity: 0.8;
+  font-size: 20px;
+  line-height: 1;
+  color: inherit;
 }
 .film-stamps {
-  position: absolute;
-  top: 64px;
-  right: 16px;
   display: flex;
-  flex-direction: column;
-  gap: 6px;
+  flex-direction: row;
+  flex-wrap: nowrap;
+  gap: 4px;
+  min-width: 0;
 }
 .film-stamps button, #film-sound, #film-seal {
   background: transparent;
@@ -86,106 +129,96 @@ html.is-film #world { display: none !important; }
 }
 .film-stamps button {
   font-family: "DM Mono", ui-monospace, monospace;
-  font-size: 12px;
-  opacity: 0.45;
-  padding: 2px;
+  font-size: 11px;
+  line-height: 1;
+  opacity: 0.5;
+  padding: 2px 1px;
 }
 .film-stamps button[aria-current="true"] { opacity: 1; }
-#film-sound {
-  position: absolute;
-  left: 20px;
-  bottom: 16px;
-  font-size: 16px;
-}
-.film-copy {
-  position: absolute;
-  left: 6%;
-  right: 18%;
-  bottom: 14%;
-  max-width: 36rem;
+.film-lead {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-height: 0;
 }
 .film-kicker {
   font-family: "DM Mono", ui-monospace, monospace;
-  font-size: 13px;
+  font-size: 12px;
+  line-height: 1.15;
   letter-spacing: 0.12em;
   text-transform: uppercase;
-  margin: 0 0 8px;
 }
-.film-copy h1 {
+#film-title {
   font-family: "Anton", "Arial Narrow", sans-serif;
   font-weight: 400;
-  font-size: clamp(34px, 5vw, 72px);
-  line-height: 0.95;
-  margin: 0 0 12px;
+  font-size: 22px;
+  line-height: 1.05;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
 }
-.film-copy p { margin: 0; font-size: 18px; line-height: 1.4; max-width: 38ch; }
-.film-ja {
-  position: absolute;
-  right: 8%;
-  top: 18%;
-  font-family: "Yuji Syuku", serif;
-  font-size: clamp(42px, 8vw, 96px);
-  writing-mode: vertical-rl;
-  margin: 0;
-  opacity: 0.85;
-  pointer-events: none;
+#film-body,
+.film-colo {
+  font-size: 15px;
+  line-height: 1.3;
 }
-.film-dock { position: absolute; left: 20px; right: 20px; bottom: 52px; }
-.film-how { margin: 0; font-size: 16px; opacity: 0.8; }
+#film-body {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  overflow: hidden;
+}
+.film-colo {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.film-colo a { color: inherit; }
+.film-bot-row {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 12px;
+}
+.film-how {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-size: 14px;
+  line-height: 1.25;
+  opacity: 0.86;
+}
+#film-sound {
+  flex: 0 0 auto;
+  white-space: nowrap;
+  font-size: 14px;
+  line-height: 1.2;
+  padding: 0;
+}
 #film-seal {
   display: inline-flex;
   align-items: center;
+  align-self: flex-start;
   gap: 8px;
-  margin-top: 10px;
-  font-size: 16px;
+  font-size: 14px;
+  line-height: 1;
+  padding: 0;
 }
-#film-seal[hidden] { display: none; }
-#film-seal svg { width: 36px; height: 36px; }
-.film-colo {
-  position: absolute;
-  left: 6%;
-  right: 6%;
-  bottom: 18%;
-  font-size: 16px;
-}
-.film-colo a { color: inherit; }
+#film-seal svg { width: 28px; height: 28px; flex: 0 0 auto; }
+#film-root.is-kakoi::before { background: none; }
+#film-root.is-kakoi .film-chrome { display: none; }
+#film-root.is-kakoi .film-bot { gap: 3px; padding: 2px 12px 6px; }
+#film-root.is-kakoi .film-kicker { font-size: 10px; letter-spacing: 0.08em; }
+#film-root.is-kakoi #film-title { font-size: 15px; line-height: 1.02; -webkit-line-clamp: 2; }
 @media (max-aspect-ratio: 0.75) {
-  .film-chrome { height: 14%; padding: 12px 16px 0; align-items: flex-start; }
-  .film-stamps { top: 8px; right: 8px; flex-direction: row; }
-  .film-copy {
-    top: 0;
-    bottom: auto;
-    height: 14%;
-    left: 16px;
-    right: 16px;
-    display: flex;
-    flex-direction: column;
-    justify-content: flex-end;
-    overflow: hidden;
-  }
-  .film-copy h1 { font-size: 22px; line-height: 1; margin: 0; }
-  .film-kicker { font-size: 12px; margin: 0 0 2px; }
-  #film-body {
-    position: absolute;
-    left: 16px;
-    right: 64px;
-    bottom: 23%;
-    max-height: 4.6em;
-    overflow: hidden;
-    font-size: 16px;
-  }
-  .film-ja { top: 16%; font-size: 42px; right: 12px; }
-  .film-dock {
-    height: 22%;
-    bottom: 0;
-    left: 0;
-    right: 0;
-    padding: 12px 16px 16px;
-    display: flex;
-    flex-direction: column;
-    justify-content: flex-end;
-    box-sizing: border-box;
-  }
-  #film-sound { left: 16px; bottom: 12px; }
-  .film-colo { bottom: 22%; }
+  .film-top { padding: 6px 10px 2px; gap: 2px; }
+  .film-bot { padding: 2px 12px 8px; gap: 4px; }
+  .film-brand { font-size: 18px; }
+  .film-stamps { gap: 3px; }
+  .film-stamps button { font-size: 10px; padding: 1px; }
+  .film-kicker { font-size: 11px; letter-spacing: 0.08em; }
+  #film-title { font-size: 16px; }
+  #film-body, .film-colo { font-size: 13px; line-height: 1.25; }
+  .film-how, #film-sound, #film-seal { font-size: 12px; }
+  #film-seal svg { width: 26px; height: 26px; }
 }

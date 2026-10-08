@@ -33,7 +33,7 @@ export const PORTRAIT_FOCAL: Record<PlateId, { x: number; y: number }> = {
   impact: { x: 0.5, y: 0.47 },
   observe: { x: 0.5, y: 0.62 },
   neko: { x: 0.5, y: 0.4 },
-  kakoi: { x: 0.5, y: 0.55 },
+  kakoi: { x: 0.5, y: 0.45 },
   still: { x: 0.5, y: 0.68 },
   return: { x: 0.58, y: 0.56 },
 };
@@ -71,18 +71,24 @@ export const LANDSCAPE: Record<ActId, CamKey> = {
 };
 
 /**
- * Portrait moves run on the long axis. Side truck stays inside the 8% margin.
- * Clash keeps one centre so the kf03 → kf04 cut does not slide the contact.
+ * Portrait framing is a cover-fit of the full 9:16 plate, plus a push no
+ * stronger than 1.10. Centre stays put so heads are not cropped. Dolly and
+ * truck stay small: the depth maps are relative. kf07 stays at 1.00 because
+ * the 囲 kanji occupies y 0.02–0.30. The kf04 punch is applied in the engine,
+ * and the contact centre does not move across that cut.
  */
+const portrait = (zoom: [number, number], dolly: [number, number], truckY: number, focal: { x: number; y: number }): CamKey =>
+  L(zoom, dolly, [[0, 0], [0, truckY]], [0, 0], [0.5, 0.52], [[0.5, 0.5], [0.5, 0.5]], focal);
+
 export const PORTRAIT: Record<ActId, CamKey> = {
-  awaken: L([1.06, 1.24], [0, 0.14], [[0, -0.02], [0, 0.05]], [0, 0.008], [0.48, 0.66], [[0.58, 0.4], [0.58, 0.56]], PORTRAIT_FOCAL.awaken),
-  intrusion: L([1.08, 1.18], [0.02, 0.16], [[0, 0.06], [0, -0.045]], [0, -0.01], [0.4, 0.58], [[0.5, 0.52], [0.5, 0.34]], PORTRAIT_FOCAL.intrusion),
-  clash: L([1.1, 1.16], [0.04, 0.2], [[0, 0.055], [0, -0.05]], [0, 0], [0.48, 0.56], [[0.5, 0.47], [0.5, 0.47]], PORTRAIT_FOCAL.clash),
-  observe: L([1.04, 1.12], [0, 0.08], [[0, -0.01], [0, 0.035]], [0, 0], [0.46, 0.55], [[0.5, 0.5], [0.5, 0.62]], PORTRAIT_FOCAL.observe),
-  neko: L([1.08, 1.2], [0.02, 0.14], [[0, 0.04], [0, -0.06]], [0, -0.008], [0.5, 0.64], [[0.5, 0.52], [0.5, 0.4]], PORTRAIT_FOCAL.neko),
-  kakoi: L([1.34, 1.08], [0.12, 0.03], [[0, -0.04], [0, 0.04]], [0, 0], [0.36, 0.5], [[0.5, 0.28], [0.5, 0.55]], PORTRAIT_FOCAL.kakoi),
-  still: L([1.03, 1.04], [0, 0], [[0, 0], [0, 0]], [0, 0], [0.5, 0.5], [[0.5, 0.68], [0.5, 0.68]], PORTRAIT_FOCAL.still),
-  return: L([1.22, 1.08], [0.12, 0.02], [[0, -0.02], [0, 0.03]], [0, 0], [0.62, 0.52], [[0.58, 0.42], [0.58, 0.56]], PORTRAIT_FOCAL.return),
+  awaken: portrait([1, 1.06], [0, 0.025], 0.012, PORTRAIT_FOCAL.awaken),
+  intrusion: portrait([1, 1.05], [0, 0.02], -0.01, PORTRAIT_FOCAL.intrusion),
+  clash: portrait([1.02, 1.06], [0, 0.03], 0.008, PORTRAIT_FOCAL.clash),
+  observe: portrait([1, 1.04], [0, 0.015], 0.008, PORTRAIT_FOCAL.observe),
+  neko: portrait([1, 1.06], [0, 0.02], -0.012, PORTRAIT_FOCAL.neko),
+  kakoi: portrait([1, 1], [0, 0], 0, PORTRAIT_FOCAL.kakoi),
+  still: portrait([1, 1.02], [0, 0], 0, PORTRAIT_FOCAL.still),
+  return: portrait([1.04, 1.02], [0.02, 0], 0.008, PORTRAIT_FOCAL.return),
 };
 
 export type Cam = {

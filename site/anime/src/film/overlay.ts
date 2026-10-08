@@ -85,21 +85,29 @@ export function mountOverlay(timeline: MasterTimeline): Overlay {
   root.innerHTML = `
     <a class="film-skip" href="#film-copy">Skip to content</a>
     <p id="film-live" class="film-sr" aria-live="polite"></p>
-    <header class="film-chrome">
-      <a class="film-brand" href="#act-awaken">Wiii</a>
-      <p class="film-readout" aria-hidden="true"><span id="film-act">00 Awaken</span><span id="film-frame">F 0001</span></p>
-    </header>
-    <nav class="film-stamps" aria-label="Acts"></nav>
-    <button id="film-sound" type="button" aria-pressed="false">Sound off</button>
-    <div class="film-copy" id="film-copy">
-      <p class="film-kicker" id="film-kicker"></p>
-      <h1 id="film-title"></h1>
-      <p id="film-body"></p>
-      <p class="film-ja" id="film-ja" lang="ja"></p>
+    <div class="film-top">
+      <header class="film-chrome">
+        <a class="film-brand" data-overlay href="#act-awaken">Wiii</a>
+        <p class="film-readout" aria-hidden="true"><span id="film-act">00 Awaken</span><span id="film-frame">F 0001</span></p>
+        <nav class="film-stamps" aria-label="Acts"></nav>
+      </header>
+      <div class="film-lead" id="film-copy">
+        <p class="film-kicker" id="film-kicker" data-overlay></p>
+        <h1 id="film-title" data-overlay></h1>
+      </div>
     </div>
-    <div class="film-dock">
-      <p class="film-how" id="film-how">Scroll the film. Tap to strike. Hold the ring to seal.</p>
-      <button id="film-seal" type="button" hidden>
+    <p class="film-ja" id="film-ja" lang="ja" hidden></p>
+    <div class="film-bot">
+      <p id="film-body" data-overlay hidden></p>
+      <footer class="film-colo" id="film-colo" hidden>
+        <p data-overlay>The spark goes back to the cursor.</p>
+        <p data-overlay>Built by <a href="https://holilihu.online">HoLiLiHu</a>. Original characters © HoLiLiHu</p>
+      </footer>
+      <div class="film-bot-row">
+        <p class="film-how" id="film-how" data-overlay>Scroll the film. Tap to strike. Hold the ring to seal.</p>
+        <button id="film-sound" type="button" data-overlay aria-pressed="false">Sound off</button>
+      </div>
+      <button id="film-seal" type="button" data-overlay hidden>
         <svg viewBox="0 0 48 48" aria-hidden="true">
           <circle cx="24" cy="24" r="18" fill="none" stroke="currentColor" stroke-width="2" opacity="0.35"></circle>
           <circle id="film-ring" cx="24" cy="24" r="18" fill="none" stroke="currentColor" stroke-width="3" stroke-dasharray="113" stroke-dashoffset="113"></circle>
@@ -107,10 +115,6 @@ export function mountOverlay(timeline: MasterTimeline): Overlay {
         Hold to seal
       </button>
     </div>
-    <footer class="film-colo" id="film-colo" hidden>
-      <p>The spark goes back to the cursor.</p>
-      <p>Built by <a href="https://holilihu.online">HoLiLiHu</a>. Original characters © HoLiLiHu</p>
-    </footer>
   `;
   document.body.append(root);
   const nav = root.querySelector(".film-stamps") as HTMLElement;
@@ -118,6 +122,7 @@ export function mountOverlay(timeline: MasterTimeline): Overlay {
     const btn = document.createElement("button");
     btn.type = "button";
     btn.dataset.act = id;
+    btn.dataset.overlay = "";
     btn.textContent = ACT_LABEL[id].slice(0, 2);
     btn.setAttribute("aria-label", ACT_LABEL[id].slice(3));
     nav.append(btn);
@@ -160,6 +165,9 @@ export function mountOverlay(timeline: MasterTimeline): Overlay {
   const ring = root.querySelector("#film-ring") as SVGCircleElement;
   const colo = root.querySelector("#film-colo") as HTMLElement;
   const live = root.querySelector("#film-live") as HTMLElement;
+  const lead = root.querySelector(".film-lead") as HTMLElement;
+  const top = root.querySelector(".film-top") as HTMLElement;
+  const bot = root.querySelector(".film-bot") as HTMLElement;
   let shown: ActId | "" = "";
 
   return {
@@ -182,15 +190,21 @@ export function mountOverlay(timeline: MasterTimeline): Overlay {
       title.textContent = copy.title;
       kicker.textContent = copy.kicker;
       ja.textContent = copy.ja;
+      let text = copy.body;
       if (act === "kakoi") {
-        let text = "Hold the ring. Drift stays outside.";
+        text = "Hold the ring. Drift stays outside.";
         for (const rule of RULES) if (local >= rule.at) text = rule.text;
-        body.textContent = text;
-      } else body.textContent = copy.body;
+      }
+      body.textContent = text;
+      body.hidden = text.trim() === "";
       actEl.textContent = ACT_LABEL[act];
       frameEl.textContent = `F ${String(frame).padStart(4, "0")}`;
-      const paper = act === "still" || (act === "kakoi" && local >= 0.26 && tl.sealed);
+      const paper = act === "still" || act === "kakoi";
+      const tuck = act === "kakoi" && window.innerWidth / Math.max(1, window.innerHeight) < 0.75;
       root.classList.toggle("is-paper", paper);
+      root.classList.toggle("is-kakoi", tuck);
+      if (tuck) bot.insertBefore(lead, bot.firstChild);
+      else top.append(lead);
       document.documentElement.classList.toggle("on-paper", paper);
       const showSeal = act === "kakoi" && !tl.sealed && local >= 0.45;
       seal.hidden = !showSeal;
