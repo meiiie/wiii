@@ -59,6 +59,7 @@ export function mountBattle(sfx: Sfx, onWord: (text: string, x: number, y: numbe
   const armEls = ARMS.map((arm) => {
     const img = document.createElement("img");
     img.src = arm.src;
+    img.srcset = `${arm.src} 1x, ${arm.src.replace(".webp", "-2x.webp")} 2x, ${arm.src.replace(".webp", "-3x.webp")} 3x`;
     img.alt = "";
     img.width = arm.w;
     img.height = arm.h;

@@ -12,7 +12,18 @@
     <meta name="color-scheme" content="dark" />
     <link rel="canonical" href="https://anime.holilihu.online/" />
     <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
-    <link rel="preload" href="/art/kf01_awaken-1280.webp" as="image" type="image/webp" />
+    <link rel="preload" as="image" type="image/avif"
+      imagesrcset="/art/kf01_awaken-480.avif 480w, /art/kf01_awaken-768.avif 768w, /art/kf01_awaken-1280.avif 1280w, /art/kf01_awaken-1920.avif 1920w"
+      imagesizes="(max-width: 800px) and (max-aspect-ratio: 16/9) 186.67vh, (max-width: 800px) 105vw, (max-aspect-ratio: 16/9) 240vh, 135vw"
+      media="(max-resolution: 1dppx) and (max-aspect-ratio: 16/9) and (max-height: 800px)" />
+    <link rel="preload" as="image" type="image/avif"
+      imagesrcset="/art/kf01_awaken-480.avif 480w, /art/kf01_awaken-768.avif 768w, /art/kf01_awaken-1280.avif 1280w, /art/kf01_awaken-1920.avif 1920w"
+      imagesizes="(max-width: 800px) and (max-aspect-ratio: 16/9) 186.67vh, (max-width: 800px) 105vw, (max-aspect-ratio: 16/9) 240vh, 135vw"
+      media="(max-resolution: 1dppx) and (min-aspect-ratio: 1.78) and (max-width: 1422px)" />
+    <link rel="preload" as="image" type="image/avif"
+      imagesrcset="/art/kf01_awaken-480.avif 480w, /art/kf01_awaken-768.avif 768w, /art/kf01_awaken-1280.avif 1280w, /art/kf01_awaken-1920.avif 1920w"
+      imagesizes="(max-width: 800px) and (max-aspect-ratio: 16/9) 186.67vh, (max-width: 800px) 105vw, (max-aspect-ratio: 16/9) 240vh, 135vw"
+      media="(max-width: 800px) and (max-aspect-ratio: 16/9) and (max-resolution: 1dppx) and (min-height: 801px) and (max-height: 1028px)" />
     <meta property="og:title" content="Wiii — The battle" />
     <meta
       property="og:description"
@@ -50,8 +61,9 @@
         class="fighter motion-only"
         data-decor
         src="/art/cut-wiii-420.webp"
-        srcset="/art/cut-wiii-420.webp 420w, /art/cut-wiii-720.webp 720w"
-        sizes="42vw"
+        srcset="/art/cut-wiii-420.webp 420w, /art/cut-wiii-720.webp 720w, /art/cut-wiii-960.webp 960w, /art/cut-wiii-1440.webp 1440w"
+        sizes="min(42vw, 480px)"
+        decoding="async"
         width="733"
         height="679"
         alt="Wiii, full figure, cream hair and charcoal scarf, cut out for the fight."
@@ -73,8 +85,9 @@
         data-drift
         data-decor
         src="/art/cut-drift-360.webp"
-        srcset="/art/cut-drift-360.webp 360w, /art/cut-drift-640.webp 640w"
+        srcset="/art/cut-drift-360.webp 360w, /art/cut-drift-640.webp 640w, /art/cut-drift-840.webp 840w, /art/cut-drift-1280.webp 1280w, /art/cut-drift-1920.webp 1920w"
         sizes="(max-width: 800px) min(202vw, 1152px), min(36vw, 420px)"
+        decoding="async"
         width="640"
         height="871"
         alt="Drift, full figure, white cracked mask and cursor-arms, cut out for the fight."
@@ -118,9 +131,9 @@
           <div class="act__pin">
             <figure class="splash">
               <picture>
-                <source type="image/avif" srcset="/art/kf01_awaken-768.avif 768w, /art/kf01_awaken-1280.avif 1280w" sizes="(max-width: 800px) 218vw, 162vw" />
-                <source type="image/webp" srcset="/art/kf01_awaken-480.webp 480w, /art/kf01_awaken-768.webp 768w, /art/kf01_awaken-1280.webp 1280w" sizes="(max-width: 800px) 218vw, 162vw" />
-                <img src="/art/kf01_awaken-1280.webp" width="1280" height="720" alt="Wiii in profile, cream hair and cat-ear tufts, a spark lighting in his dark eye against black." />
+                <source type="image/avif" srcset="/art/kf01_awaken-480.avif 480w, /art/kf01_awaken-768.avif 768w, /art/kf01_awaken-1280.avif 1280w, /art/kf01_awaken-1920.avif 1920w, /art/kf01_awaken-2560.avif 2560w" sizes="(max-width: 800px) and (max-aspect-ratio: 16/9) 186.67vh, (max-width: 800px) 105vw, (max-aspect-ratio: 16/9) 240vh, 135vw" />
+                <source type="image/webp" srcset="/art/kf01_awaken-480.webp 480w, /art/kf01_awaken-768.webp 768w, /art/kf01_awaken-1280.webp 1280w, /art/kf01_awaken-1920.webp 1920w, /art/kf01_awaken-2560.webp 2560w" sizes="(max-width: 800px) and (max-aspect-ratio: 16/9) 186.67vh, (max-width: 800px) 105vw, (max-aspect-ratio: 16/9) 240vh, 135vw" />
+                <img src="/art/kf01_awaken-1280.webp" width="1280" height="720" alt="Wiii in profile, cream hair and cat-ear tufts, a spark lighting in his dark eye against black." fetchpriority="high" />
               </picture>
             </figure>
             <p class="tate" lang="ja">覚醒</p>
@@ -136,9 +149,9 @@
           <div class="act__pin">
             <figure class="splash">
               <picture>
-                <source type="image/avif" srcset="/art/kf02_intrusion-768.avif 768w, /art/kf02_intrusion-1280.avif 1280w" sizes="(max-width: 800px) 105vw, 128vw" />
-                <source type="image/webp" srcset="/art/kf02_intrusion-480.webp 480w, /art/kf02_intrusion-768.webp 768w, /art/kf02_intrusion-1280.webp 1280w" sizes="(max-width: 800px) 105vw, 128vw" />
-                <img src="/art/kf02_intrusion-1280.webp" width="1280" height="720" alt="Drift, masked, reaches red cursor-fingers into floating pages while Wiii stands small in the dark." loading="lazy" />
+                <source type="image/avif" srcset="/art/kf02_intrusion-480.avif 480w, /art/kf02_intrusion-768.avif 768w, /art/kf02_intrusion-1280.avif 1280w, /art/kf02_intrusion-1920.avif 1920w, /art/kf02_intrusion-2560.avif 2560w" sizes="(max-width: 800px) and (max-aspect-ratio: 16/9) 186.67vh, (max-width: 800px) 105vw, (max-aspect-ratio: 16/9) 227.56vh, 128vw" />
+                <source type="image/webp" srcset="/art/kf02_intrusion-480.webp 480w, /art/kf02_intrusion-768.webp 768w, /art/kf02_intrusion-1280.webp 1280w, /art/kf02_intrusion-1920.webp 1920w, /art/kf02_intrusion-2560.webp 2560w" sizes="(max-width: 800px) and (max-aspect-ratio: 16/9) 186.67vh, (max-width: 800px) 105vw, (max-aspect-ratio: 16/9) 227.56vh, 128vw" />
+                <img src="/art/kf02_intrusion-1280.webp" width="1280" height="720" alt="Drift, masked, reaches red cursor-fingers into floating pages while Wiii stands small in the dark." />
               </picture>
             </figure>
             <p class="tate" lang="ja">侵入</p>
@@ -154,13 +167,16 @@
           <div class="act__pin">
             <figure class="splash">
               <picture>
-                <source type="image/avif" srcset="/art/kf03_clash-768.avif 768w, /art/kf03_clash-1280.avif 1280w" sizes="(max-width: 800px) 105vw, 132vw" />
-                <source type="image/webp" srcset="/art/kf03_clash-480.webp 480w, /art/kf03_clash-768.webp 768w, /art/kf03_clash-1280.webp 1280w" sizes="(max-width: 800px) 105vw, 132vw" />
-                <img src="/art/kf03_clash-1280.webp" width="1280" height="720" alt="Wiii dashes in, scarf trailing, as Drift's cursor-arms fill the black behind him." loading="lazy" />
+                <source type="image/avif" srcset="/art/kf03_clash-480.avif 480w, /art/kf03_clash-768.avif 768w, /art/kf03_clash-1280.avif 1280w, /art/kf03_clash-1920.avif 1920w, /art/kf03_clash-2560.avif 2560w" sizes="(max-width: 800px) and (max-aspect-ratio: 16/9) 186.67vh, (max-width: 800px) 105vw, (max-aspect-ratio: 16/9) 234.67vh, 132vw" />
+                <source type="image/webp" srcset="/art/kf03_clash-480.webp 480w, /art/kf03_clash-768.webp 768w, /art/kf03_clash-1280.webp 1280w, /art/kf03_clash-1920.webp 1920w, /art/kf03_clash-2560.webp 2560w" sizes="(max-width: 800px) and (max-aspect-ratio: 16/9) 186.67vh, (max-width: 800px) 105vw, (max-aspect-ratio: 16/9) 234.67vh, 132vw" />
+                <img src="/art/kf03_clash-1280.webp" width="1280" height="720" alt="Wiii dashes in, scarf trailing, as Drift's cursor-arms fill the black behind him." loading="lazy" decoding="async" />
               </picture>
             </figure>
             <div class="impact-seq" id="impact-seq">
-              <img id="impact-plate" class="impact-plate" src="/art/kf04_impact-1280.webp" srcset="/art/kf04_impact-480.webp 480w, /art/kf04_impact-768.webp 768w, /art/kf04_impact-1280.webp 1280w" sizes="100vw" width="1280" height="720" alt="Inverted impact frame: Wiii's fist meets Drift's mask in a red burst and white speed lines." />
+              <picture>
+                <source type="image/avif" srcset="/art/kf04_impact-480.avif 480w, /art/kf04_impact-768.avif 768w, /art/kf04_impact-1280.avif 1280w, /art/kf04_impact-1920.avif 1920w, /art/kf04_impact-2560.avif 2560w" sizes="(max-aspect-ratio: 16/9) 177.78vh, 100vw" />
+                <img id="impact-plate" class="impact-plate" src="/art/kf04_impact-1280.webp" srcset="/art/kf04_impact-480.webp 480w, /art/kf04_impact-768.webp 768w, /art/kf04_impact-1280.webp 1280w, /art/kf04_impact-1920.webp 1920w, /art/kf04_impact-2560.webp 2560w" sizes="(max-aspect-ratio: 16/9) 177.78vh, 100vw" width="1280" height="720" alt="Inverted impact frame: Wiii's fist meets Drift's mask in a red burst and white speed lines." loading="lazy" decoding="async" />
+              </picture>
               <div class="shards" id="impact-shards" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i></div>
             </div>
             <p class="ono ono--clash" lang="ja" aria-hidden="true">ズバッ</p>
@@ -181,9 +197,9 @@
           <div class="act__pin">
             <figure class="splash">
               <picture>
-                <source type="image/avif" srcset="/art/kf05_observe-768.avif 768w, /art/kf05_observe-1280.avif 1280w" sizes="(max-width: 800px) 228vw, 122vw" />
-                <source type="image/webp" srcset="/art/kf05_observe-480.webp 480w, /art/kf05_observe-768.webp 768w, /art/kf05_observe-1280.webp 1280w" sizes="(max-width: 800px) 228vw, 122vw" />
-                <img src="/art/kf05_observe-1280.webp" width="1280" height="720" alt="Time stops. Wiii stands calm while Drift's cursor-arms freeze inches from him." loading="lazy" />
+                <source type="image/avif" srcset="/art/kf05_observe-480.avif 480w, /art/kf05_observe-768.avif 768w, /art/kf05_observe-1280.avif 1280w, /art/kf05_observe-1920.avif 1920w, /art/kf05_observe-2560.avif 2560w" sizes="(max-width: 800px) and (max-aspect-ratio: 16/9) 341.34vh, (max-width: 800px) 192vw, (max-aspect-ratio: 16/9) 216.89vh, 122vw" />
+                <source type="image/webp" srcset="/art/kf05_observe-480.webp 480w, /art/kf05_observe-768.webp 768w, /art/kf05_observe-1280.webp 1280w, /art/kf05_observe-1920.webp 1920w, /art/kf05_observe-2560.webp 2560w" sizes="(max-width: 800px) and (max-aspect-ratio: 16/9) 341.34vh, (max-width: 800px) 192vw, (max-aspect-ratio: 16/9) 216.89vh, 122vw" />
+                <img src="/art/kf05_observe-1280.webp" width="1280" height="720" alt="Time stops. Wiii stands calm while Drift's cursor-arms freeze inches from him." loading="lazy" decoding="async" />
               </picture>
             </figure>
             <div class="halftone" aria-hidden="true"></div>
@@ -198,16 +214,16 @@
           <div class="act__pin">
             <figure class="splash residue" id="neko-residue">
               <picture>
-                <source type="image/avif" srcset="/art/kf05_observe-768.avif 768w, /art/kf05_observe-1280.avif 1280w" sizes="(max-width: 800px) 228vw, 122vw" />
-                <source type="image/webp" srcset="/art/kf05_observe-480.webp 480w, /art/kf05_observe-768.webp 768w, /art/kf05_observe-1280.webp 1280w" sizes="(max-width: 800px) 228vw, 122vw" />
-                <img src="/art/kf05_observe-1280.webp" width="1280" height="720" alt="The freeze holds. Drift's arms are still inches away, the moment before Neko moves." loading="lazy" />
+                <source type="image/avif" srcset="/art/kf05_observe-480.avif 480w, /art/kf05_observe-768.avif 768w, /art/kf05_observe-1280.avif 1280w, /art/kf05_observe-1920.avif 1920w, /art/kf05_observe-2560.avif 2560w" sizes="(max-width: 800px) and (max-aspect-ratio: 16/9) 405.34vh, (max-width: 800px) 228vw, (max-aspect-ratio: 16/9) 177.78vh, 100vw" />
+                <source type="image/webp" srcset="/art/kf05_observe-480.webp 480w, /art/kf05_observe-768.webp 768w, /art/kf05_observe-1280.webp 1280w, /art/kf05_observe-1920.webp 1920w, /art/kf05_observe-2560.webp 2560w" sizes="(max-width: 800px) and (max-aspect-ratio: 16/9) 405.34vh, (max-width: 800px) 228vw, (max-aspect-ratio: 16/9) 177.78vh, 100vw" />
+                <img src="/art/kf05_observe-1280.webp" width="1280" height="720" alt="The freeze holds. Drift's arms are still inches away, the moment before Neko moves." loading="lazy" decoding="async" />
               </picture>
             </figure>
             <figure class="splash burst">
               <picture>
-                <source type="image/avif" srcset="/art/kf06_neko_burst-768.avif 768w, /art/kf06_neko_burst-1280.avif 1280w" sizes="(max-width: 800px) 212vw, 118vw" />
-                <source type="image/webp" srcset="/art/kf06_neko_burst-480.webp 480w, /art/kf06_neko_burst-768.webp 768w, /art/kf06_neko_burst-1280.webp 1280w" sizes="(max-width: 800px) 212vw, 118vw" />
-                <img src="/art/kf06_neko_burst-1280.webp" width="1280" height="720" alt="Neko, the small cream cat, bursts from the scarf and snaps one of Drift's cursor-arms away." loading="lazy" />
+                <source type="image/avif" srcset="/art/kf06_neko_burst-480.avif 480w, /art/kf06_neko_burst-768.avif 768w, /art/kf06_neko_burst-1280.avif 1280w, /art/kf06_neko_burst-1920.avif 1920w, /art/kf06_neko_burst-2560.avif 2560w" sizes="(max-width: 800px) and (max-aspect-ratio: 16/9) 376.89vh, (max-width: 800px) 212vw, (max-aspect-ratio: 16/9) 209.78vh, 118vw" />
+                <source type="image/webp" srcset="/art/kf06_neko_burst-480.webp 480w, /art/kf06_neko_burst-768.webp 768w, /art/kf06_neko_burst-1280.webp 1280w, /art/kf06_neko_burst-1920.webp 1920w, /art/kf06_neko_burst-2560.webp 2560w" sizes="(max-width: 800px) and (max-aspect-ratio: 16/9) 376.89vh, (max-width: 800px) 212vw, (max-aspect-ratio: 16/9) 209.78vh, 118vw" />
+                <img src="/art/kf06_neko_burst-1280.webp" width="1280" height="720" alt="Neko, the small cream cat, bursts from the scarf and snaps one of Drift's cursor-arms away." loading="lazy" decoding="async" />
               </picture>
             </figure>
             <p class="ono ono--neko" lang="ja" aria-hidden="true">トンッ</p>
@@ -227,16 +243,16 @@
           <div class="act__pin">
             <figure class="splash residue" id="kakoi-residue">
               <picture>
-                <source type="image/avif" srcset="/art/kf06_neko_burst-768.avif 768w, /art/kf06_neko_burst-1280.avif 1280w" sizes="(max-width: 800px) 212vw, 118vw" />
-                <source type="image/webp" srcset="/art/kf06_neko_burst-480.webp 480w, /art/kf06_neko_burst-768.webp 768w, /art/kf06_neko_burst-1280.webp 1280w" sizes="(max-width: 800px) 212vw, 118vw" />
-                <img src="/art/kf06_neko_burst-1280.webp" width="1280" height="720" alt="Residue of the Neko burst, held for a cut before the ring closes." loading="lazy" />
+                <source type="image/avif" srcset="/art/kf06_neko_burst-480.avif 480w, /art/kf06_neko_burst-768.avif 768w, /art/kf06_neko_burst-1280.avif 1280w, /art/kf06_neko_burst-1920.avif 1920w, /art/kf06_neko_burst-2560.avif 2560w" sizes="(max-aspect-ratio: 16/9) 177.78vh, 100vw" />
+                <source type="image/webp" srcset="/art/kf06_neko_burst-480.webp 480w, /art/kf06_neko_burst-768.webp 768w, /art/kf06_neko_burst-1280.webp 1280w, /art/kf06_neko_burst-1920.webp 1920w, /art/kf06_neko_burst-2560.webp 2560w" sizes="(max-aspect-ratio: 16/9) 177.78vh, 100vw" />
+                <img src="/art/kf06_neko_burst-1280.webp" width="1280" height="720" alt="Residue of the Neko burst, held for a cut before the ring closes." loading="lazy" decoding="async" />
               </picture>
             </figure>
             <figure class="splash burst">
               <picture>
-                <source type="image/avif" srcset="/art/kf07_kakoi-768.avif 768w, /art/kf07_kakoi-1280.avif 1280w" sizes="(max-width: 800px) 208vw, 134vw" />
-                <source type="image/webp" srcset="/art/kf07_kakoi-480.webp 480w, /art/kf07_kakoi-768.webp 768w, /art/kf07_kakoi-1280.webp 1280w" sizes="(max-width: 800px) 208vw, 134vw" />
-                <img src="/art/kf07_kakoi-1280.webp" width="1280" height="720" alt="The charcoal scarf becomes a brushed ring. Inside, the world is cream. Drift is locked outside. The mark 囲 sits behind Wiii." loading="lazy" />
+                <source type="image/avif" srcset="/art/kf07_kakoi-480.avif 480w, /art/kf07_kakoi-768.avif 768w, /art/kf07_kakoi-1280.avif 1280w, /art/kf07_kakoi-1920.avif 1920w, /art/kf07_kakoi-2560.avif 2560w" sizes="(max-width: 800px) and (max-aspect-ratio: 16/9) 369.78vh, (max-width: 800px) 208vw, (max-aspect-ratio: 16/9) 238.23vh, 134vw" />
+                <source type="image/webp" srcset="/art/kf07_kakoi-480.webp 480w, /art/kf07_kakoi-768.webp 768w, /art/kf07_kakoi-1280.webp 1280w, /art/kf07_kakoi-1920.webp 1920w, /art/kf07_kakoi-2560.webp 2560w" sizes="(max-width: 800px) and (max-aspect-ratio: 16/9) 369.78vh, (max-width: 800px) 208vw, (max-aspect-ratio: 16/9) 238.23vh, 134vw" />
+                <img src="/art/kf07_kakoi-1280.webp" width="1280" height="720" alt="The charcoal scarf becomes a brushed ring. Inside, the world is cream. Drift is locked outside. The mark 囲 sits behind Wiii." loading="lazy" decoding="async" />
               </picture>
             </figure>
             <div class="blackout" id="kakoi-black" aria-hidden="true"></div>
@@ -266,9 +282,9 @@
           <div class="act__pin">
             <figure class="splash">
               <picture>
-                <source type="image/avif" srcset="/art/kf08_still-768.avif 768w, /art/kf08_still-1280.avif 1280w" sizes="(max-width: 800px) 105vw, 110vw" />
-                <source type="image/webp" srcset="/art/kf08_still-480.webp 480w, /art/kf08_still-768.webp 768w, /art/kf08_still-1280.webp 1280w" sizes="(max-width: 800px) 105vw, 110vw" />
-                <img src="/art/kf08_still-1280.webp" width="1280" height="720" alt="Wiii from behind on white paper, mask shards on the ground, one small spark in his hand." loading="lazy" />
+                <source type="image/avif" srcset="/art/kf08_still-480.avif 480w, /art/kf08_still-768.avif 768w, /art/kf08_still-1280.avif 1280w, /art/kf08_still-1920.avif 1920w, /art/kf08_still-2560.avif 2560w" sizes="(max-aspect-ratio: 16/9) 184.89vh, 104vw" />
+                <source type="image/webp" srcset="/art/kf08_still-480.webp 480w, /art/kf08_still-768.webp 768w, /art/kf08_still-1280.webp 1280w, /art/kf08_still-1920.webp 1920w, /art/kf08_still-2560.webp 2560w" sizes="(max-aspect-ratio: 16/9) 184.89vh, 104vw" />
+                <img src="/art/kf08_still-1280.webp" width="1280" height="720" alt="Wiii from behind on white paper, mask shards on the ground, one small spark in his hand." loading="lazy" decoding="async" />
               </picture>
             </figure>
             <div class="ghost-ring" data-drift data-decor aria-hidden="true"></div>
@@ -284,9 +300,9 @@
           <div class="act__pin">
             <figure class="splash">
               <picture>
-                <source type="image/avif" srcset="/art/kf01_awaken-768.avif 768w, /art/kf01_awaken-1280.avif 1280w" sizes="(max-width: 800px) 218vw, 162vw" />
-                <source type="image/webp" srcset="/art/kf01_awaken-480.webp 480w, /art/kf01_awaken-768.webp 768w, /art/kf01_awaken-1280.webp 1280w" sizes="(max-width: 800px) 218vw, 162vw" />
-                <img src="/art/kf01_awaken-1280.webp" width="1280" height="720" alt="Night again. Wiii's eye holds the spark, the same dark the story opened on." loading="lazy" />
+                <source type="image/avif" srcset="/art/kf01_awaken-480.avif 480w, /art/kf01_awaken-768.avif 768w, /art/kf01_awaken-1280.avif 1280w, /art/kf01_awaken-1920.avif 1920w, /art/kf01_awaken-2560.avif 2560w" sizes="(max-width: 800px) and (max-aspect-ratio: 16/9) 387.56vh, (max-width: 800px) 218vw, (max-aspect-ratio: 16/9) 288vh, 162vw" />
+                <source type="image/webp" srcset="/art/kf01_awaken-480.webp 480w, /art/kf01_awaken-768.webp 768w, /art/kf01_awaken-1280.webp 1280w, /art/kf01_awaken-1920.webp 1920w, /art/kf01_awaken-2560.webp 2560w" sizes="(max-width: 800px) and (max-aspect-ratio: 16/9) 387.56vh, (max-width: 800px) 218vw, (max-aspect-ratio: 16/9) 288vh, 162vw" />
+                <img src="/art/kf01_awaken-1280.webp" width="1280" height="720" alt="Night again. Wiii's eye holds the spark, the same dark the story opened on." loading="lazy" decoding="async" />
               </picture>
             </figure>
             <p class="tate" lang="ja">還</p>
