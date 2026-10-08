@@ -491,7 +491,8 @@ html.is-tap .how { opacity: 1; }
 .colophon .links { margin-top: 28px; }
 .colophon a { color: inherit; }
 .colophon a:active { text-decoration-thickness: 2px; }
-html.is-colophon .colophon { background: transparent; }
+.is-motion .colophon { visibility: hidden; }
+html.is-colophon .colophon { visibility: visible; background: transparent; }
 html.is-colophon #snow {
   visibility: visible;
   position: fixed;
