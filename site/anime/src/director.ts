@@ -771,10 +771,32 @@ export async function start(): Promise<void> {
 declare global {
   interface Window {
     __WIII?: {
-      lenis: Lenis;
+      lenis?: Lenis;
       strikes: number;
       flashTimes: number[];
       scrollToAct: (id: string, progress: number) => void;
+      mode?: string;
+      progress?: number;
+      act?: string;
+      gating?: boolean;
+      seal?: number;
+      orient?: string;
+      plate?: string;
+      present?: (u: number) => string;
+      debug?: () => {
+        target: number;
+        pos: number;
+        cam: number;
+        energy: number;
+        locked: boolean;
+        cap: number;
+        total: number;
+        plate: string;
+        textures: string[];
+        fbo: boolean;
+      };
+      release?: () => void;
+      perf?: () => { avg: number; p95: number; n: number; dpr: number; dof: boolean };
     };
   }
 }

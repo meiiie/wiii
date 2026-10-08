@@ -6,6 +6,7 @@ import "@fontsource/instrument-sans/400.css";
 import "@fontsource/instrument-serif/400.css";
 import "@fontsource/instrument-serif/400-italic.css";
 import "./style.css";
+import { shouldUseFilm } from "./film/capable";
 import { paintStillSnow } from "./weather";
 
 function paintGrain(): void {
@@ -37,10 +38,19 @@ markCoarse();
 coarse.addEventListener("change", markCoarse);
 
 async function boot(): Promise<void> {
-  if (reduced.matches) {
+  const params = new URLSearchParams(window.location.search);
+  const forceDom = params.get("page") === "dom";
+  const forceFilm = params.get("page") === "film";
+  if (reduced.matches && !forceFilm) {
     document.documentElement.classList.add("is-reduced");
     const snow = document.getElementById("snow") as HTMLCanvasElement | null;
     if (snow) paintStillSnow(snow);
+    return;
+  }
+  if (!forceDom && (forceFilm || shouldUseFilm())) {
+    document.documentElement.classList.add("is-film");
+    const { startFilm } = await import("./film/engine");
+    await startFilm();
     return;
   }
   document.documentElement.classList.add("is-motion");

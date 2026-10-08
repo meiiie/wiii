@@ -20,6 +20,11 @@ const SECURITY_HEADERS = {
 
 export default {
   async fetch(request, env) {
+    const url = new URL(request.url);
+    if (url.pathname === "/film" || url.pathname === "/film/") {
+      url.pathname = "/film.html";
+      request = new Request(url, request);
+    }
     const response = await env.ASSETS.fetch(request);
     const headers = new Headers(response.headers);
     for (const [key, value] of Object.entries(SECURITY_HEADERS)) {

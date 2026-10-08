@@ -30,6 +30,8 @@ html {
   overscroll-behavior-y: none;
   touch-action: pan-y;
 }
+html.is-film, html.is-film body { overflow: hidden; height: 100%; touch-action: none; }
+html.is-film #world { display: none !important; }
 body {
   background: var(--ink);
   color: var(--paper);

@@ -7,7 +7,7 @@
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview --host 127.0.0.1 --port 4173",
-    "qa": "npm run build && node scripts/qa.mjs",
+    "qa": "npm run build && node scripts/qa.mjs && node scripts/film-qa.mjs",
     "deploy:dry": "wrangler deploy --dry-run"
   },
   "dependencies": {
