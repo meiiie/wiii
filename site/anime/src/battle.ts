@@ -258,7 +258,7 @@ export function mountBattle(sfx: Sfx, onWord: (text: string, x: number, y: numbe
     const held = performance.now() - downAt;
     const end = { x: event.clientX, y: event.clientY };
     const dist = Math.hypot(end.x - start.x, end.y - start.y);
-    const scrolled = window.scrollY !== scrollAtDown;
+    const scrolled = Math.abs(window.scrollY - scrollAtDown) > 10;
     const touch = touchLike(event);
     const armed = touchArmed;
     releaseCharge();
@@ -306,7 +306,7 @@ export function mountBattle(sfx: Sfx, onWord: (text: string, x: number, y: numbe
     if (down) releaseCharge();
   });
   window.addEventListener("scroll", () => {
-    if (down) releaseCharge();
+    if (down && Math.abs(window.scrollY - scrollAtDown) > 10) releaseCharge();
   }, { passive: true });
   window.addEventListener("pointermove", (event) => {
     pointer = { x: event.clientX, y: event.clientY };
@@ -316,7 +316,7 @@ export function mountBattle(sfx: Sfx, onWord: (text: string, x: number, y: numbe
     const held = performance.now() - downAt;
     if (touchLike(event)) {
       if (!touchArmed) {
-        if (dist > 10 || window.scrollY !== scrollAtDown) {
+        if (dist > 10 || Math.abs(window.scrollY - scrollAtDown) > 10) {
           releaseCharge();
           return;
         }
