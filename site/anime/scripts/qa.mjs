@@ -232,6 +232,53 @@ try {
     await sleep(30);
   };
 
+  await page.setCacheEnabled(false);
+  await page.setViewport({ width: 390, height: 844, deviceScaleFactor: 3, isMobile: true, hasTouch: true });
+  const coldClient = await page.createCDPSession();
+  await coldClient.send("Network.enable");
+  await coldClient.send("Network.setCacheDisabled", { cacheDisabled: true });
+  await page.goto(`http://127.0.0.1:${port}/`, { waitUntil: "domcontentloaded" });
+  const coldSamples = [];
+  for (let i = 0; i < 40; i++) {
+    await drag(coldClient, 195, 700, 140);
+    coldSamples.push(await page.evaluate(() => Math.round(window.scrollY)));
+    await sleep(90);
+  }
+  await sleep(1400);
+  const coldEnd = await page.evaluate(() => {
+    const el = document.documentElement;
+    const view = window.visualViewport?.height || el.clientHeight;
+    const lenis = window.__WIII?.lenis;
+    return {
+      y: Math.round(window.scrollY),
+      max: Math.round(el.scrollHeight - view),
+      minHeight: el.style.minHeight,
+      overflow: `${getComputedStyle(el).overflowX} ${getComputedStyle(el).overflowY}`,
+      syncTouch: Boolean(lenis?.options?.syncTouch),
+      stopped: Boolean(lenis?.isStopped),
+      locked: Boolean(lenis?.isLocked),
+    };
+  });
+  console.log(`cold-fling 390 y=${coldEnd.y} max=${coldEnd.max} syncTouch=${coldEnd.syncTouch} stopped=${coldEnd.stopped} locked=${coldEnd.locked} minH=${coldEnd.minHeight || "-"} overflow=${coldEnd.overflow}`);
+  console.log(`cold-fling samples ${coldSamples.join(",")}`);
+  if (coldEnd.max - coldEnd.y > 120) fail(`cold fling stopped at ${coldEnd.y} of ${coldEnd.max}`);
+  let moved = false;
+  let run = 0;
+  let worst = 0;
+  for (let i = 0; i < coldSamples.length; i++) {
+    if (coldSamples[i] > 0) moved = true;
+    if (!moved) continue;
+    if (i > 0 && coldSamples[i] < coldSamples[i - 1] - 24) fail(`cold fling jumped backward ${coldSamples[i - 1]} -> ${coldSamples[i]}`);
+    const short = coldEnd.max - coldSamples[i] > 80;
+    if (i > 0 && coldSamples[i] === coldSamples[i - 1] && short) run += 1;
+    else run = 1;
+    worst = Math.max(worst, run);
+  }
+  if (worst >= 8) fail(`cold fling plateau of ${worst} while short of the end`);
+  await coldClient.send("Network.setCacheDisabled", { cacheDisabled: false });
+  await page.setCacheEnabled(true);
+  await coldClient.detach();
+
   for (const vp of [
     { w: 390, h: 844, dpr: 2 },
     { w: 360, h: 780, dpr: 3 },

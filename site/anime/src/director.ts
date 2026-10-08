@@ -29,11 +29,17 @@ const lerp = (a: number, b: number, t: number) => a + (b - a) * t;
 export async function start(): Promise<void> {
   const restoredY = window.scrollY;
   void upgradeArt();
+  // Touch devices get Lenis virtual scroll so a fling eases instead of stepping.
+  // This Lenis exposes touchInertiaExponent (default 1.7), not touchInertiaMultiplier.
+  // An exponent in the 25–35 range would explode the fling, so inertia stays at 1.7
+  // and syncTouchLerp 0.075 does the damping. Wheel lerp stays 0.085.
+  const coarsePointer = window.matchMedia("(pointer: coarse)").matches || navigator.maxTouchPoints > 0;
   const lenis = new Lenis({
     autoRaf: false,
     lerp: 0.085,
     smoothWheel: true,
-    syncTouch: false,
+    syncTouch: coarsePointer,
+    syncTouchLerp: 0.075,
     anchors: true,
     respectReducedMotion: false,
   });
@@ -85,6 +91,14 @@ export async function start(): Promise<void> {
   let cutTimers: number[] = [];
   let lastFlash = -1e9;
   let endLatch: number | null = null;
+  let seenHeight = 0;
+  let viewP = 0;
+  let viewV = 0;
+  let rawP = 0;
+  let springAct: ActName = "awaken";
+  let springAt = performance.now();
+  let forceSnap = false;
+  document.documentElement.style.minHeight = "";
   if (cold) document.documentElement.classList.add("is-cold");
   else {
     document.documentElement.classList.remove("is-cold");
@@ -389,7 +403,20 @@ export async function start(): Promise<void> {
     plate.classList.add("is-struck");
     window.setTimeout(() => plate.classList.remove("is-struck"), 200);
   };
+  const liveMax = () => {
+    const el = document.documentElement;
+    const view = window.visualViewport?.height || el.clientHeight;
+    return el.scrollHeight - view;
+  };
+  const releaseScrollLock = () => {
+    lenis.start();
+    for (const node of [document.documentElement, document.body]) {
+      if (node.style.overflow === "hidden" || node.style.overflow === "clip") node.style.overflow = "";
+      if (node.style.overflowY === "hidden" || node.style.overflowY === "clip") node.style.overflowY = "";
+    }
+  };
   const endCold = (reveal: boolean) => {
+    releaseScrollLock();
     if (!cold) return;
     cold = false;
     document.documentElement.classList.remove("is-cold");
@@ -425,26 +452,55 @@ export async function start(): Promise<void> {
   };
   const stabilizeEnd = () => {
     const el = document.documentElement;
+    if (el.style.minHeight) el.style.minHeight = "";
     const y = Math.round(window.scrollY);
-    const view = el.clientHeight;
-    const max = el.scrollHeight - view;
-    if (max <= 0) return;
-    if (endLatch === null) {
-      if (max - y <= 1) endLatch = y;
-      return;
-    }
-    if (y < endLatch - 12) {
+    const max = liveMax();
+    if (max <= 1) {
       endLatch = null;
-      el.style.minHeight = "";
       return;
     }
-    if (y >= max - 1 && y > endLatch + 8) endLatch = y;
-    const need = endLatch + view;
-    if (el.scrollHeight < need) el.style.minHeight = `${need}px`;
-    const legal = el.scrollHeight - el.clientHeight;
-    if (endLatch > legal) endLatch = Math.round(legal);
+    if (endLatch !== null && (max - endLatch > 6 || y < endLatch - 12)) {
+      endLatch = null;
+      return;
+    }
+    if (endLatch === null) {
+      if (max - y <= 6) endLatch = y;
+      return;
+    }
+    if (y > endLatch && max - y <= 6) endLatch = y;
     const current = Math.round(window.scrollY);
-    if (Math.abs(current - endLatch) > 0 && Math.abs(current - endLatch) <= 6) window.scrollTo(0, endLatch);
+    if (max - endLatch <= 6 && Math.abs(current - endLatch) > 0 && Math.abs(current - endLatch) <= 6) {
+      lenis.scrollTo(endLatch, { immediate: true, force: true });
+    }
+  };
+  let refreshTimer = 0;
+  const refreshLayout = () => {
+    const y = window.scrollY;
+    ScrollTrigger.refresh();
+    lenis.resize();
+    const max = Math.max(0, liveMax());
+    const next = Math.min(Math.max(0, y), max);
+    if (Math.abs(window.scrollY - next) > 1) lenis.scrollTo(next, { immediate: true, force: true });
+    seenHeight = document.documentElement.scrollHeight;
+    if (endLatch !== null && max - endLatch > 6) endLatch = null;
+  };
+  const scheduleRefresh = () => {
+    window.clearTimeout(refreshTimer);
+    refreshTimer = window.setTimeout(refreshLayout, 80);
+  };
+  const watchImages = () => {
+    for (const img of document.images) {
+      if (img.complete) continue;
+      img.addEventListener("load", scheduleRefresh, { once: true });
+    }
+  };
+  const trackHeight = () => {
+    const h = document.documentElement.scrollHeight;
+    if (h === seenHeight) return;
+    const grew = seenHeight > 0 && h > seenHeight + 6;
+    seenHeight = h;
+    lenis.resize();
+    if (grew) endLatch = null;
   };
 
   const draw = (now: number) => {
@@ -452,6 +508,12 @@ export async function start(): Promise<void> {
     const viewingColo = window.scrollY + 24 >= colophon.offsetTop;
     document.documentElement.classList.toggle("is-colophon", viewingColo);
     if (viewingColo) {
+      viewP = 1;
+      viewV = 0;
+      rawP = 1;
+      springAct = "return";
+      springAt = now;
+      forceSnap = false;
       for (const item of acts) item.el.classList.remove("is-cover");
       document.documentElement.classList.add("on-paper");
       theme.content = "#F3EEE3";
@@ -487,10 +549,36 @@ export async function start(): Promise<void> {
       lastAct = act.id;
     }
     if (cold) liftSnow();
-    render[act.id](act.p);
-    battle.setAct(act.id, act.p);
-    if (act.id === "kakoi") seatRing(act.p);
-    handoff(act.id, act.p);
+    const targetP = act.p;
+    const dt = Math.min(0.05, Math.max(0, (now - springAt) / 1000));
+    springAt = now;
+    const jumped = Math.abs(targetP - rawP) >= 0.5;
+    rawP = targetP;
+    const snap = forceSnap || act.id !== springAct || jumped;
+    forceSnap = false;
+    springAct = act.id;
+    if (snap || dt === 0) {
+      viewP = targetP;
+      viewV = 0;
+    } else {
+      const omega = 14;
+      const sub = 3;
+      const h = dt / sub;
+      for (let i = 0; i < sub; i++) {
+        const accel = omega * omega * (targetP - viewP) - 2 * omega * viewV;
+        viewV += accel * h;
+        viewP += viewV * h;
+      }
+      if (!Number.isFinite(viewP) || (Math.abs(targetP - viewP) < 0.0008 && Math.abs(viewV) < 0.02)) {
+        viewP = targetP;
+        viewV = 0;
+      }
+    }
+    const smooth = clamp01(viewP);
+    render[act.id](smooth);
+    battle.setAct(act.id, smooth);
+    if (act.id === "kakoi") seatRing(smooth);
+    handoff(act.id, smooth);
     document.documentElement.dataset.act = act.id;
     document.documentElement.dataset.p = act.p.toFixed(3);
     sfx.bed(sfx.enabled ? act.id : null);
@@ -551,10 +639,10 @@ export async function start(): Promise<void> {
       : act.id === "intrusion"
         ? { x: box.w * 0.22, y: box.h * 0.62 }
         : null;
-    const flakeT = act.id === "awaken" && act.p < 0.4
-      ? act.p / 0.4
-      : act.id === "return" && act.p > 0.08 && act.p < 0.62
-        ? (act.p - 0.08) / 0.54
+    const flakeT = act.id === "awaken" && smooth < 0.4
+      ? smooth / 0.4
+      : act.id === "return" && smooth > 0.08 && smooth < 0.62
+        ? (smooth - 0.08) / 0.54
         : -1;
     if (cold) {
       const elapsed = now - coldFrom;
@@ -583,16 +671,16 @@ export async function start(): Promise<void> {
       hero.style.removeProperty("--path");
     }
     if (coldEyeUntil && now > coldEyeUntil) coldEyeUntil = 0;
-    const scrollEye = act.id === "awaken" && act.p >= 0.36 && act.p < 0.72;
+    const scrollEye = act.id === "awaken" && smooth >= 0.36 && smooth < 0.72;
     document.documentElement.classList.toggle("is-eye-open", scrollEye || now < coldEyeUntil);
-    const shut = act.id === "return" && act.p >= 0.6;
+    const shut = act.id === "return" && smooth >= 0.6;
     document.documentElement.classList.toggle("is-eye-shut", shut);
-    if (act.id !== "return" || act.p < 0.48) {
+    if (act.id !== "return" || smooth < 0.48) {
       eyeClosed = false;
       flakeLanded = false;
       document.documentElement.classList.remove("is-flake");
     }
-    if (act.id === "return" && act.p >= 0.54 && !flakeLanded) {
+    if (act.id === "return" && smooth >= 0.54 && !flakeLanded) {
       flakeLanded = true;
       document.documentElement.classList.add("is-flake");
       sfx.crystal();
@@ -603,13 +691,13 @@ export async function start(): Promise<void> {
       eyeClosed = true;
       sfx.silence(0.32);
     }
-    if (act.id === "awaken" && act.p >= 0.36 && !eyeSparked) {
+    if (act.id === "awaken" && smooth >= 0.36 && !eyeSparked) {
       eyeSparked = true;
       sfx.play("spark");
     }
     weatherFrame(now, {
       act: act.id,
-      p: act.p,
+      p: smooth,
       pointerX: placed ? Number(placed[1]) : box.w * 0.5,
       pointerY: placed ? Number(placed[2]) : box.h * 0.42,
       scroll: vel,
@@ -624,7 +712,7 @@ export async function start(): Promise<void> {
       fx.fade();
     }
 
-    const paper = act.id === "still" || (act.id === "kakoi" && act.p >= 0.24);
+    const paper = act.id === "still" || (act.id === "kakoi" && smooth >= 0.24);
     document.documentElement.classList.toggle("on-paper", paper);
     theme.content = paper ? "#F3EEE3" : "#0B0B0D";
     actLabel.textContent = act.label;
@@ -650,6 +738,7 @@ export async function start(): Promise<void> {
       const el = document.getElementById(id);
       if (!el) return;
       const span = Math.max(0, el.offsetHeight - viewSize().h);
+      forceSnap = true;
       lenis.scrollTo(el.offsetTop + span * clamp01(progress), { immediate: true, force: true });
       ScrollTrigger.update();
     },
@@ -659,20 +748,24 @@ export async function start(): Promise<void> {
   gsap.ticker.add((time) => {
     lenis.raf(time * 1000);
     draw(performance.now());
+    trackHeight();
     stabilizeEnd();
   });
   fx.resize();
   window.addEventListener("resize", () => {
     fx.resize();
     weatherResize();
-    ScrollTrigger.refresh();
+    scheduleRefresh();
   });
   window.visualViewport?.addEventListener("resize", () => {
     fx.resize();
     weatherResize();
+    lenis.resize();
   });
+  watchImages();
+  window.addEventListener("load", scheduleRefresh, { once: true });
   await document.fonts.ready;
-  ScrollTrigger.refresh();
+  refreshLayout();
 }
 
 declare global {
