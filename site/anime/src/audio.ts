@@ -95,6 +95,20 @@ export class Sfx {
     this.master.gain.linearRampToValueAtTime(0.0001, now + 0.02);
     this.master.gain.setValueAtTime(0.0001, now + seconds);
     this.master.gain.linearRampToValueAtTime(back, now + seconds + 0.06);
+    if (!this.enabled) return;
+    const rise = now + seconds + 0.06;
+    const body = this.ctx.createOscillator();
+    const bodyGain = this.ctx.createGain();
+    body.type = "sine";
+    body.frequency.setValueAtTime(58, rise);
+    body.frequency.exponentialRampToValueAtTime(42, rise + 0.4);
+    bodyGain.gain.setValueAtTime(0.0001, rise);
+    bodyGain.gain.exponentialRampToValueAtTime(0.45, rise + 0.04);
+    bodyGain.gain.exponentialRampToValueAtTime(0.0001, rise + 0.48);
+    body.connect(bodyGain);
+    bodyGain.connect(this.master);
+    body.start(rise);
+    body.stop(rise + 0.52);
   }
 
   crystal(): void {

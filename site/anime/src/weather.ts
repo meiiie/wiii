@@ -292,15 +292,18 @@ const createWeather = (canvas: HTMLCanvasElement): Runtime => {
       wx += pull * 60;
       pressure = 0.62;
     } else if (scene.act === "observe") {
-      wx *= 0.3;
-      pressure = 0.08;
+      wx *= 0.3 + scene.p * 0.35;
+      pressure = 0.08 + scene.p * 0.22;
+    } else if (scene.act === "neko" && scene.p < 0.42) {
+      wx += 70 + scene.p * 80;
+      pressure = 0.62 + scene.p * 0.5;
     } else if (scene.act === "neko" && scene.p >= 0.42) {
       mode = 1;
       wy -= 40;
       pressure = 0.2;
     } else if (scene.act === "kakoi") {
       wx += scene.p >= 0.26 ? 260 : 80;
-      pressure = scene.p < 0.26 ? 0.35 : 0.05;
+      pressure = scene.p < 0.26 ? 0.72 : 0.05;
     } else if (scene.act === "still") {
       mode = 2;
       wx = 0;

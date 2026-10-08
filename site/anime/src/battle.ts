@@ -77,7 +77,7 @@ export function mountBattle(sfx: Sfx, onWord: (text: string, x: number, y: numbe
   let combo: number[] = [];
   let lastInput = performance.now();
   let hitUntil = 0;
-  let shed: { x: number; y: number; vx: number; vy: number; life: number }[] = [];
+  let shed: { x: number; y: number; vx: number; vy: number; life: number; s: number }[] = [];
   let frozenTips: Pt[] | null = null;
   let trailBucket = -1;
 
@@ -155,6 +155,17 @@ export function mountBattle(sfx: Sfx, onWord: (text: string, x: number, y: numbe
     list.push({ x: pt.x, y: pt.y, r: big ? 64 : hit ? 40 : 30, hit, rot: Math.random() * 0.4 - 0.2 });
     if (list.length > 8) list.shift();
     marks.set(act, list);
+    for (let i = 0; i < 7; i++) {
+      const a = (i / 7) * Math.PI * 2 + 0.4;
+      shed.push({
+        x: pt.x + Math.cos(a) * 8,
+        y: pt.y + Math.sin(a) * 6,
+        vx: Math.cos(a) * (0.8 + (i % 3) * 0.45),
+        vy: Math.sin(a) * 0.7 - 0.55,
+        life: 0.9,
+        s: 6 + (i % 3) * 3,
+      });
+    }
     if (hit) {
       hitUntil = performance.now() + 220;
       drift.classList.add("is-hit");
@@ -167,6 +178,7 @@ export function mountBattle(sfx: Sfx, onWord: (text: string, x: number, y: numbe
           vx: Math.cos(a) * (2 + (i % 4)),
           vy: Math.sin(a) * (2 + (i % 3)) - 1,
           life: 1,
+          s: 4,
         });
       }
     }
@@ -203,8 +215,8 @@ export function mountBattle(sfx: Sfx, onWord: (text: string, x: number, y: numbe
     window.setTimeout(() => root.classList.remove("is-tap"), finisher ? 180 : 90);
     const sound = dash ? (hit || mask ? "slash" : "whoosh") : finisher || maskHits >= 5 ? "impact" : hit || mask ? "slash" : "tick";
     sfx.play(sound);
-    if ((hit || mask) && !window.matchMedia("(prefers-reduced-motion: reduce)").matches && /Android/i.test(navigator.userAgent)) {
-      navigator.vibrate?.(8);
+    if (!window.matchMedia("(prefers-reduced-motion: reduce)").matches && /Android/i.test(navigator.userAgent)) {
+      navigator.vibrate?.(hit || mask ? [10, 24, 16] : 8);
     }
     if (mask && maskHits >= 5) onWord("囲", pt.x, pt.y);
     else if (finisher || mask) onWord("ズバッ", pt.x, pt.y);
@@ -501,7 +513,7 @@ export function mountBattle(sfx: Sfx, onWord: (text: string, x: number, y: numbe
       bit.life -= 0.06;
       ctx.globalAlpha = Math.max(0, bit.life);
       ctx.fillStyle = bit.life > 0.5 ? "#E0261F" : "#F3EEE3";
-      ctx.fillRect(bit.x, bit.y, 4, 3);
+      ctx.fillRect(bit.x, bit.y, bit.s, Math.max(2, bit.s - 2));
     }
     ctx.globalAlpha = 1;
   };
@@ -581,18 +593,24 @@ export function mountBattle(sfx: Sfx, onWord: (text: string, x: number, y: numbe
       const ringLock = id === "kakoi" && p >= 0.06 && p < 0.26;
       const scarf = id === "kakoi" && p < 0.26;
       wiii.style.opacity = id === "clash" && p < 0.3 ? "1" : scarf ? "1" : "0";
-      drift.style.opacity = sealed ? "0" : id === "intrusion" ? "1" : id === "clash" && p < 0.3 ? "0.92" : id === "neko" && p < 0.42 ? "0.85" : ringLock ? "0.95" : "0";
-      drift.classList.toggle("is-frozen", ringLock);
+      const phone = viewSize().w <= 800;
+      const crush = id === "kakoi" && p < 0.26 && phone;
+      drift.classList.toggle("is-frozen", ringLock && !crush);
+      drift.style.opacity = sealed ? "0" : id === "intrusion" ? "1" : id === "clash" && p < 0.3 ? "0.92" : id === "neko" && p < 0.42 ? "0.85" : crush || ringLock ? "0.96" : "0";
+      face.style.opacity = crush ? "0" : "";
+      wiii.style.zIndex = "";
       if (scarf) {
-        const tipX = viewSize().w * 0.36;
-        const tipY = viewSize().h * 0.58;
         const w = wiii.offsetWidth || 360;
         const h = wiii.offsetHeight || 340;
+        const scale = phone ? 0.3 : 0.72;
+        const tipX = viewSize().w * (phone ? 0.16 : 0.36);
+        const tipY = viewSize().h * (phone ? 0.74 : 0.58);
         wiii.style.bottom = "auto";
         wiii.style.transformOrigin = "72% 80%";
-        wiii.style.transform = "scale(0.72)";
+        wiii.style.transform = `scale(${scale})`;
         wiii.style.left = `${tipX - w * 0.72}px`;
         wiii.style.top = `${tipY - h * 0.8}px`;
+        wiii.style.zIndex = phone ? "6" : "";
       } else if (id === "clash" && p < 0.3) {
         wiii.style.bottom = "0";
         wiii.style.top = "";
@@ -606,9 +624,18 @@ export function mountBattle(sfx: Sfx, onWord: (text: string, x: number, y: numbe
         wiii.style.transformOrigin = "";
         wiii.style.transform = "";
       }
+      drift.style.width = crush ? "min(84vw, 480px)" : "";
+      drift.style.transformOrigin = "";
       if (id === "intrusion") drift.style.transform = "translate(-4vw, 4vh)";
-      else if (id === "neko") drift.style.transform = `translate(${-8 - p * 20}vw, 6vh) rotate(${-6 - p * 8}deg)`;
-      else if (ringLock) drift.style.transform = "translate(54vw, 2vh) scale(0.58)";
+      else if (id === "neko" && phone && p < 0.42) {
+        const q = Math.round(clamp(p / 0.42, 0, 1) * 6) / 6;
+        drift.style.transform = `translate(${-6 - q * 16}vw, ${4 - q * 6}vh) rotate(${-4 - q * 12}deg)`;
+      } else if (id === "neko") drift.style.transform = `translate(${-8 - p * 20}vw, 6vh) rotate(${-6 - p * 8}deg)`;
+      else if (crush) {
+        const q = Math.round(clamp(p / 0.26, 0, 1) * 5) / 5;
+        drift.style.transformOrigin = "28% 14%";
+        drift.style.transform = `translate(${-2 - q * 10}vw, ${-2 - q * 8}vh) scale(${1.85 + q * 0.55}) rotate(${-3 - q * 9}deg)`;
+      } else if (ringLock) drift.style.transform = "translate(54vw, 2vh) scale(0.58)";
       else drift.style.transform = "translate(48vw, 0)";
     },
     draw(now, vel) {

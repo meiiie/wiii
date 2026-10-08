@@ -145,7 +145,18 @@ export async function start(): Promise<void> {
       panels.forEach((panel) => panel.classList.toggle("is-in", hold));
     },
     observe(p) {
-      cam("observe", lerp(1.22, 1.12, p), lerp(4, 0, p), 0);
+      const shot = document.querySelector<HTMLElement>("#act-observe .splash img");
+      if (narrow() && shot) {
+        const q = quant(p, 8);
+        shot.style.transformOrigin = "62% 38%";
+        shot.style.transform = `scale(${lerp(1.12, 1.92, q)}) translate(${lerp(10, -8, q)}%, ${lerp(-3, 6, q)}%) rotate(${lerp(1.4, -4.2, q)}deg)`;
+        const rack = q > 0.72 ? lerp(0, 2.6, (q - 0.72) / 0.28) : 0;
+        shot.style.filter = rack > 0.05 ? `blur(${rack.toFixed(2)}px)` : "";
+      } else {
+        cam("observe", lerp(1.22, 1.12, p), lerp(4, 0, p), 0);
+        shot?.style.removeProperty("filter");
+        shot?.style.removeProperty("transform-origin");
+      }
       document.getElementById("act-observe")?.classList.toggle("is-hold", p > 0.12);
     },
     neko(p) {
@@ -155,12 +166,19 @@ export async function start(): Promise<void> {
       nekoLine.hidden = burst;
       nekoNext.hidden = !burst;
       if (narrow()) {
-        const q = burst ? quant((p - 0.42) / 0.58, 7) : 0;
         const wait = el.querySelector<HTMLElement>(".splash.residue img");
         const jump = el.querySelector<HTMLElement>(".splash.burst img");
-        if (wait) wait.style.transform = "scale(1.58) translate(-4%, 2%)";
+        if (wait) {
+          const q = quant(clamp01(p / 0.42), 6);
+          wait.style.transformOrigin = "74% 40%";
+          wait.style.transform = `scale(${lerp(1.46, 2.28, q)}) translate(${lerp(16, -24, q)}%, ${lerp(1, 9, q)}%) rotate(${lerp(2.6, -6.2, q)}deg)`;
+          const rack = q > 0.66 ? lerp(0, 2.8, (q - 0.66) / 0.34) : 0;
+          wait.style.filter = rack > 0.05 ? `blur(${rack.toFixed(2)}px)` : "";
+        }
         if (jump) {
-          jump.style.transform = `scale(${lerp(1.9, 2.08, q)}) translate(${lerp(0, -2, q)}%, ${lerp(3, 0, q)}%) rotate(${lerp(-0.8, 1.1, q)}deg)`;
+          const q = burst ? quant((p - 0.42) / 0.58, 7) : 0;
+          jump.style.transform = `scale(${lerp(1.72, 2.12, q)}) translate(${lerp(2, -3, q)}%, ${lerp(4, 0, q)}%) rotate(${lerp(-1.4, 2.4, q)}deg)`;
+          jump.style.filter = "";
         }
         return;
       }
@@ -178,6 +196,17 @@ export async function start(): Promise<void> {
       el.classList.toggle("is-domain", domain);
       el.classList.toggle("is-mark", p < 0.26);
       black.style.opacity = p < 0.18 ? "1" : p < 0.26 ? String(1 - (p - 0.18) / 0.08) : "0";
+      const mark = el.querySelector<HTMLElement>(".ono--kakoi");
+      if (mark) {
+        if (narrow() && p < 0.26) {
+          const q = quant(p / 0.26, 5);
+          mark.style.fontSize = `${lerp(86, 118, q).toFixed(1)}vw`;
+          mark.style.transform = `translate(-50%, -50%) rotate(${lerp(-13, -2.5, q).toFixed(2)}deg)`;
+        } else {
+          mark.style.removeProperty("font-size");
+          mark.style.removeProperty("transform");
+        }
+      }
       if (domain) {
         const q = quant((p - 0.24) / 0.76, 6);
         cam("kakoi", lerp(1.04, 1.16, q), lerp(1, -1, q), lerp(1, -1, q));

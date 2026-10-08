@@ -888,7 +888,7 @@ html.is-slam .act__pin { translate: 0 6px; }
 
 .is-motion .ghost-ring { display: none; }
 html.is-hit .act__pin { translate: 8px -3px; }
-html.is-tap .act__pin { translate: -3px 2px; }
+html.is-tap .act__pin { translate: -3px 2px; scale: 0.985; }
 html.is-wind .splash img { scale: 1.03 0.98; }
 html.on-paper { color-scheme: light; }
 html.on-paper body { background: var(--paper); }
@@ -947,7 +947,7 @@ html.is-colophon .act { visibility: hidden; }
   }
   .is-motion .plate--poster {
     top: auto;
-    bottom: var(--dock);
+    bottom: calc(var(--dock) + 36px);
     left: 16px;
     right: 16px;
     width: auto;
@@ -955,10 +955,18 @@ html.is-colophon .act { visibility: hidden; }
   }
   .is-motion .plate--poster h1 {
     font-size: 34px;
-    line-height: 0.96;
-    margin-bottom: 12px;
+    line-height: 1;
+    margin-bottom: 0;
   }
-  .is-motion .plate--poster p { font-size: 16px; line-height: 1.35; max-width: 34ch; }
+  .is-motion .plate--poster h1::after {
+    margin-top: 18px;
+    transform: none;
+  }
+  .is-motion .plate--poster p { font-size: 16px; line-height: 1.45; max-width: 34ch; margin-top: 28px; }
+  .is-motion .plate--torn {
+    bottom: calc(var(--dock) + 48px);
+    padding-bottom: 28px;
+  }
   #act-awaken .splash img { object-position: 41% 30%; }
   #act-intrusion .splash img { object-position: 64% 32%; }
   #act-clash .splash img { object-position: 48% 42%; }
@@ -1015,7 +1023,16 @@ html.is-colophon .act { visibility: hidden; }
   }
   .is-motion .plate--tate :is(h2, p) { writing-mode: horizontal-tb; }
   .is-motion .plate :is(h1, h2) { font-size: 26px; }
-  .is-motion .plate--poster h1 { font-size: 34px; line-height: 0.96; }
+  .is-motion .plate--poster h1 { font-size: 34px; line-height: 1; }
+  .is-motion #act-kakoi.is-mark .ono--kakoi {
+    font-size: min(108vw, 640px);
+    top: 42%;
+    z-index: 15;
+    line-height: 0.78;
+    opacity: 1;
+  }
+  .is-motion .plate:active,
+  .is-motion .panel:active { scale: 0.985; }
   .is-motion #act-clash .smash { font-size: 32px; line-height: 0.95; }
   .is-motion .ono { font-size: 72px; }
   .is-motion .ono--kakoi { font-size: 120px; }
