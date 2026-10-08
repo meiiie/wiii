@@ -1,0 +1,12 @@
+name = "wiii-anime-site"
+compatibility_date = "2026-10-07"
+main = "worker/index.js"
+workers_dev = false
+
+routes = [
+  { pattern = "anime.holilihu.online", custom_domain = true }
+]
+
+[assets]
+directory = "./dist"
+binding = "ASSETS"
