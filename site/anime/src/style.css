@@ -433,22 +433,72 @@ html.is-tap .how { opacity: 1; }
 .fine { color: var(--lift); }
 .colophon {
   position: relative;
-  z-index: 22;
+  z-index: 12;
   background: var(--paper);
   color: var(--char);
-  padding: 42px 8vw 56px;
+  min-height: 100vh;
+  min-height: 100svh;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-start;
+  padding: 16vh 8vw 18vh;
+  max-width: 920px;
 }
-.colophon .cols {
+.ink-stroke { display: block; width: min(440px, 68%); height: 40px; }
+.ink-stroke path {
+  fill: none;
+  stroke: #141210;
+  stroke-width: 8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.is-motion .ink-stroke path {
+  stroke-dasharray: 980;
+  stroke-dashoffset: 980;
+  animation: ink-once 1.15s ease 0.2s forwards;
+}
+@keyframes ink-once { to { stroke-dashoffset: 0; } }
+.colophon__title {
+  margin: 18px 0 0;
+  max-width: 16ch;
+  font-family: var(--serif);
+  font-size: 28px;
+  line-height: 1.2;
+}
+.colophon__credits {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 32px;
+  margin-top: 22px;
+  padding-top: 14px;
+  border-top: 1px solid rgba(20, 18, 16, 0.28);
+  font-family: var(--serif);
+  font-size: 18px;
+}
+.colophon__credits p { margin: 0; }
+.colophon__facts {
+  list-style: none;
+  margin: 28px 0 0;
+  padding: 0;
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 14px 36px;
-  max-width: 880px;
+  gap: 18px 40px;
+  max-width: 820px;
   font-family: var(--serif);
   font-size: 18px;
   line-height: 1.45;
 }
+.colophon .links { margin-top: 28px; }
 .colophon a { color: inherit; }
-.colophon .fine { margin: 0; }
+.colophon a:active { text-decoration-thickness: 2px; }
+html.is-colophon .colophon { background: transparent; }
+html.is-colophon #snow {
+  visibility: visible;
+  position: fixed;
+  inset: 0;
+  z-index: 11;
+  pointer-events: none;
+}
 .halftone, .ghost-ring, .shards, .splash.residue { display: none; }
 
 .motion-only { display: none; }
@@ -459,6 +509,7 @@ html.is-tap .how { opacity: 1; }
 .is-motion .act:not(.is-cover) { visibility: hidden; }
 .is-motion .act:not(:last-child) { margin-bottom: -100vh; margin-bottom: -100svh; }
 .is-motion .act.is-cover .act__pin {
+  z-index: 16 !important;
   position: fixed !important;
   inset: 0 !important;
   width: 100% !important;
@@ -962,7 +1013,22 @@ html.is-colophon .act { visibility: hidden; }
     margin-top: 18px;
     transform: none;
   }
-  .is-motion .plate--poster p { font-size: 16px; line-height: 1.45; max-width: 34ch; margin-top: 28px; }
+  .is-motion .plate--poster > p:last-child {
+    font-size: 16px;
+    line-height: 1.45;
+    max-width: 34ch;
+    margin-top: 28px;
+    padding: 12px 14px 14px;
+    background: rgba(11, 11, 13, 0.88);
+    box-shadow: 0 0 18px 6px rgba(11, 11, 13, 0.5);
+  }
+  .is-motion .plate--poster h1 {
+    text-shadow: 0 2px 18px rgba(11, 11, 13, 0.9), 0 1px 2px #0b0b0d;
+  }
+  .is-motion #act-return .plate--night {
+    opacity: 0;
+    visibility: hidden;
+  }
   .is-motion .plate--torn {
     bottom: calc(var(--dock) + 48px);
     padding-bottom: 28px;
@@ -1069,7 +1135,11 @@ html.is-colophon .act { visibility: hidden; }
   .is-motion .panel em { font-size: 16px; line-height: 1.35; }
   .is-motion #act-clash.is-hold .plate--clash { bottom: auto; top: 64px; }
   .is-motion .rule.is-debris { display: none; }
-  .colophon .cols { grid-template-columns: 1fr; }
+  .colophon { padding: 72px 22px calc(var(--dock) + 24px); max-width: none; }
+  .colophon__title { font-size: 22px; margin-top: 8px; }
+  .colophon__credits { flex-direction: column; gap: 6px; margin-top: 14px; padding-top: 10px; font-size: 18px; }
+  .colophon__facts { grid-template-columns: 1fr; font-size: 16px; gap: 12px; margin-top: 16px; }
+  .colophon .links { margin-top: 16px; }
   .fighter { width: min(70vw, 280px); }
   .is-motion #act-awaken { height: 200vh; height: 200svh; }
   .is-motion #act-intrusion { height: 160vh; height: 160svh; }
@@ -1091,5 +1161,5 @@ html.is-colophon .act { visibility: hidden; }
   .act { padding: 8vh 6vw 10vh; }
   .splash img { max-height: 72vh; width: 100%; object-fit: cover; }
   .plate { margin-top: 16px; }
-  .colophon .cols { grid-template-columns: 1fr; }
+  .colophon__facts { grid-template-columns: 1fr; }
 }

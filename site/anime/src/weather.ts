@@ -214,7 +214,7 @@ void main(){
   float inner=mix(0.5,mix(0.28,0.02,phone),near);
   float alpha=(1.0-smoothstep(inner,1.0,d))*(near>0.5?mix(0.55,0.74,phone):0.9)*mix(0.72,1.0,vDepth);
   vec3 col=uMode>0.5 && uMode<1.5 ? vec3(1.0,0.46,0.1) : vec3(0.97,0.96,0.92);
-  if(uMode>1.5) col=vec3(1.0);
+  if(uMode>1.5) col=vec3(0.45, 0.43, 0.4);
   o=vec4(col,alpha);
 }`;
 
@@ -283,8 +283,15 @@ const createWeather = (canvas: HTMLCanvasElement): Runtime => {
     let wy = tiltY * 12;
     mode = 0;
     pressure = 0;
-    if (scene.act === "awaken" || scene.act === "return") {
+    if (scene.act === "awaken") {
       wx *= 0.2;
+    } else if (scene.act === "return") {
+      if (scene.p >= 0.55) {
+        mode = 2;
+        wx = 0;
+        wy = 0;
+      } else wx *= 0.12;
+      pressure = scene.p > 0.4 ? 0.18 : 0.04;
     } else if (scene.act === "intrusion") {
       wx += pull * (80 + scene.p * 220);
       pressure = 0.25 + scene.p * 0.45;
@@ -472,7 +479,8 @@ const paint2d = (
     }
     const hand = w <= 840;
     const r = depth < 0.33 ? (hand ? 18 : 6) : depth < 0.66 ? (hand ? 3.4 : 2.6) : 1.3;
-    ctx.fillStyle = mode === 1 ? "rgba(255,120,40,0.8)" : `rgba(243,238,227,${depth < 0.33 ? 0.45 : 0.85})`;
+    const ash = depth < 0.33 ? 0.55 : 0.8;
+    ctx.fillStyle = mode === 1 ? "rgba(255,120,40,0.8)" : mode === 2 ? `rgba(90,84,76,${ash})` : `rgba(243,238,227,${depth < 0.33 ? 0.45 : 0.85})`;
     ctx.beginPath();
     ctx.ellipse(x, y, r, r * (1 + Math.min(2, Math.abs(wx) / 200)), 0, 0, Math.PI * 2);
     ctx.fill();

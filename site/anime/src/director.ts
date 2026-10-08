@@ -72,6 +72,7 @@ export async function start(): Promise<void> {
   const brand = document.querySelector(".brand") as HTMLElement;
   let shownFrame = 1;
   let eyeSparked = false;
+  let eyeClosed = false;
   const battle = mountBattle(sfx, (text, x, y) => {
     fx.strike(x, y, text, -4, "micro");
   });
@@ -207,9 +208,46 @@ export async function start(): Promise<void> {
           mark.style.removeProperty("transform");
         }
       }
-      if (domain) {
-        const q = quant((p - 0.24) / 0.76, 6);
-        cam("kakoi", lerp(1.04, 1.16, q), lerp(1, -1, q), lerp(1, -1, q));
+      const shot = el.querySelector<HTMLElement>(".splash.burst img");
+      if (domain && shot) {
+        if (narrow()) {
+          let scale = 1.08;
+          let x = 0;
+          let y = 0;
+          let rot = 0;
+          let origin = "50% 58%";
+          if (p < 0.42) {
+            const q = quant((p - 0.26) / 0.16, 3);
+            scale = lerp(1.02, 1.16, q);
+            rot = lerp(0.4, -0.6, q);
+          } else if (p < 0.7) {
+            const q = quant((p - 0.42) / 0.28, 4);
+            scale = lerp(1.2, 1.46, q);
+            x = lerp(2, -4, q);
+            y = lerp(2, 6, q);
+            rot = lerp(-0.8, 1.8, q);
+            origin = "46% 64%";
+          } else {
+            const q = quant((p - 0.7) / 0.3, 4);
+            scale = lerp(1.62, 2.08, q);
+            x = lerp(1, -2, q);
+            y = lerp(-6, -12, q);
+            rot = lerp(-1.4, -3.6, q);
+            origin = "52% 34%";
+          }
+          shot.style.transformOrigin = origin;
+          shot.style.transform = `scale(${scale}) translate(${x}%, ${y}%) rotate(${rot}deg)`;
+        } else {
+          const late = p >= 0.7;
+          const q = late ? quant((p - 0.7) / 0.3, 4) : quant((p - 0.26) / 0.44, 4);
+          shot.style.transformOrigin = late ? "50% 38%" : "50% 58%";
+          shot.style.transform = late
+            ? `scale(${lerp(1.18, 1.34, q)}) translate(${lerp(0, -2, q)}%, ${lerp(-3, -7, q)}%) rotate(${lerp(-0.6, -1.8, q)}deg)`
+            : `scale(${lerp(1.04, 1.1, q)}) translate(${lerp(1, -1, q)}%, 0%)`;
+        }
+      } else if (shot) {
+        shot.style.removeProperty("transform");
+        shot.style.removeProperty("transform-origin");
       }
       let idx = -1;
       for (let i = 0; i < RULES.length; i++) if (p >= RULES[i]) idx = i;
@@ -231,7 +269,19 @@ export async function start(): Promise<void> {
       cam("still", lerp(1.02, 1.04, p), -6, 0);
     },
     return(p) {
-      cam("return", lerp(1.42, 1.62, p), lerp(4, -2, p), lerp(6, 2, p));
+      const shot = document.querySelector<HTMLElement>("#act-return .splash img");
+      const el = document.getElementById("act-return");
+      if (narrow() && shot) {
+        const q = quant(clamp01(p / 0.7), 6);
+        shot.style.transformOrigin = "38% 30%";
+        shot.style.transform = `scale(${lerp(1.52, 2.18, q)}) translate(${lerp(6, -1, q)}%, ${lerp(3, -8, q)}%)`;
+        shot.style.filter = p >= 0.6 ? "brightness(0.52) contrast(1.08)" : "";
+      } else {
+        cam("return", lerp(1.42, 1.62, p), lerp(4, -2, p), lerp(6, 2, p));
+        shot?.style.removeProperty("filter");
+        shot?.style.removeProperty("transform-origin");
+      }
+      el?.classList.toggle("is-after", p >= 0.78);
     },
   };
 
@@ -311,7 +361,13 @@ export async function start(): Promise<void> {
       actLabel.textContent = "07 Return";
       battle.setAct("return", 1);
       document.documentElement.dataset.act = "return";
-      sfx.bed(sfx.enabled ? "return" : null);
+      const snow = document.getElementById("snow");
+      if (snow && snow.parentElement !== document.body) document.body.append(snow);
+      const box = viewSize();
+      weatherFrame(now, { act: "still", p: 1, pointerX: box.w * 0.5, pointerY: box.h * 0.18, scroll: 0, scarf: null });
+      sfx.wind(0, false);
+      sfx.bed(sfx.enabled ? "still" : null);
+      hero.style.opacity = "0";
       battle.draw(now, 0);
       if (!fx.holding) fx.fade();
       return;
@@ -386,15 +442,26 @@ export async function start(): Promise<void> {
         : null;
     const flakeT = act.id === "awaken" && act.p < 0.4
       ? act.p / 0.4
-      : act.id === "return" && act.p > 0.15 && act.p < 0.62
-        ? (act.p - 0.15) / 0.47
+      : act.id === "return" && act.p > 0.08 && act.p < 0.62
+        ? (act.p - 0.08) / 0.54
         : -1;
     if (flakeT >= 0) {
-      hero.style.opacity = "1";
-      hero.style.transform = `translate(${box.w * (narrow() ? 0.5 : 0.42)}px, ${-28 + flakeT * box.h * 0.34}px)`;
+      const returning = act.id === "return";
+      const x = box.w * (returning ? (narrow() ? 0.38 : 0.42) : narrow() ? 0.5 : 0.42);
+      const landY = returning ? box.h * (narrow() ? 0.3 : 0.34) : box.h * 0.34;
+      const startY = returning ? box.h * 0.04 : -28;
+      const fade = returning ? Math.max(0, (flakeT - 0.86) / 0.14) : 0;
+      hero.style.opacity = String(1 - fade);
+      hero.style.transform = `translate(${x}px, ${startY + flakeT * (landY - startY)}px)`;
     } else hero.style.opacity = "0";
     document.documentElement.classList.toggle("is-eye-open", act.id === "awaken" && act.p >= 0.36 && act.p < 0.72);
-    document.documentElement.classList.toggle("is-eye-shut", act.id === "return" && act.p >= 0.55);
+    const shut = act.id === "return" && act.p >= 0.6;
+    document.documentElement.classList.toggle("is-eye-shut", shut);
+    if (act.id !== "return" || act.p < 0.5) eyeClosed = false;
+    if (shut && !eyeClosed) {
+      eyeClosed = true;
+      sfx.silence(0.32);
+    }
     if (act.id === "awaken" && act.p >= 0.36 && !eyeSparked) {
       eyeSparked = true;
       sfx.play("spark");
