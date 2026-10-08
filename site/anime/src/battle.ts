@@ -539,6 +539,7 @@ export function mountBattle(sfx: Sfx, onWord: (text: string, x: number, y: numbe
     const w = viewSize().w;
     const h = viewSize().h;
     if (act === "kakoi" && progress >= 0.26) return;
+    if (act === "still" || act === "return") return;
     if (act === "kakoi" && progress >= 0.08) {
       for (let i = 0; i < 26; i++) {
         const x = (0.12 + ((i * 0.137) % 0.76)) * w + Math.sin(t * 0.55 + i) * 7;
@@ -551,17 +552,16 @@ export function mountBattle(sfx: Sfx, onWord: (text: string, x: number, y: numbe
       ctx.globalAlpha = 1;
       return;
     }
-    const ink = act === "still";
     const n = act === "intrusion" ? 18 : 9;
     for (let i = 0; i < n; i++) {
       const driftX = act === "intrusion" ? t * 0.03 : t * 0.012;
       const x = ((0.06 + i * 0.11 + driftX) % 1) * w;
       const y = ((0.15 + ((i * 0.19) % 0.7) + Math.sin(t * 0.35 + i) * 0.03) % 1) * h;
       if (blocked(x, y)) continue;
-      const r = ink ? 7 + (i % 4) * 6 : 10 + (i % 5) * 8;
+      const r = 10 + (i % 5) * 8;
       const g = ctx.createRadialGradient(x, y, 1, x, y, r);
-      const tone = ink ? "11,11,13" : act === "intrusion" ? "224,38,31" : "243,238,227";
-      g.addColorStop(0, `rgba(${tone},${ink ? 0.55 : 0.28})`);
+      const tone = act === "intrusion" ? "224,38,31" : "243,238,227";
+      g.addColorStop(0, `rgba(${tone},0.28)`);
       g.addColorStop(1, `rgba(${tone},0)`);
       ctx.fillStyle = g;
       ctx.beginPath();

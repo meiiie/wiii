@@ -112,6 +112,7 @@ export class Sfx {
   }
 
   crystal(): void {
+    if (!this.enabled) return;
     this.tone(2400, 0.045, 0.035, "sine");
   }
 

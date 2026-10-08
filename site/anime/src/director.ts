@@ -4,7 +4,7 @@ import Lenis from "lenis";
 import { Sfx } from "./audio";
 import { mountBattle, type ActName } from "./battle";
 import { StageFX } from "./fx";
-import { enableTilt, mountWeather, setWeatherCues, viewSize, weatherAudio, weatherFrame, weatherImpact, weatherResize } from "./weather";
+import { enableTilt, mountWeather, setWeatherCues, viewSize, weatherAudio, weatherFrame, weatherGust, weatherImpact, weatherResize } from "./weather";
 
 gsap.registerPlugin(ScrollTrigger);
 
@@ -73,6 +73,7 @@ export async function start(): Promise<void> {
   let shownFrame = 1;
   let eyeSparked = false;
   let eyeClosed = false;
+  let flakeLanded = false;
   const battle = mountBattle(sfx, (text, x, y) => {
     fx.strike(x, y, text, -4, "micro");
   });
@@ -301,7 +302,7 @@ export async function start(): Promise<void> {
     else if ((id === "clash" && p > 0.72) || (id === "observe" && p < 0.55)) kind = "ink";
     else if ((id === "observe" && p > 0.72) || (id === "neko" && p < 0.42)) kind = "cursor";
     else if ((id === "neko" && p > 0.72) || (id === "kakoi" && p < 0.06)) kind = "ring";
-    else if (id === "still" || id === "return") kind = "spark";
+    else if (id === "still" || id === "return") kind = "";
     motif.dataset.kind = kind;
     motif.dataset.act = id;
     motif.classList.toggle("is-on", kind !== "");
@@ -451,13 +452,30 @@ export async function start(): Promise<void> {
       const landY = returning ? box.h * (narrow() ? 0.3 : 0.34) : box.h * 0.34;
       const startY = returning ? box.h * 0.04 : -28;
       const fade = returning ? Math.max(0, (flakeT - 0.86) / 0.14) : 0;
+      const y = startY + flakeT * (landY - startY);
       hero.style.opacity = String(1 - fade);
-      hero.style.transform = `translate(${x}px, ${startY + flakeT * (landY - startY)}px)`;
-    } else hero.style.opacity = "0";
+      hero.style.transform = `translate(${x}px, ${y}px)`;
+      if (returning) hero.style.setProperty("--path", `${Math.max(16, y)}px`);
+      else hero.style.removeProperty("--path");
+    } else {
+      hero.style.opacity = "0";
+      hero.style.removeProperty("--path");
+    }
     document.documentElement.classList.toggle("is-eye-open", act.id === "awaken" && act.p >= 0.36 && act.p < 0.72);
     const shut = act.id === "return" && act.p >= 0.6;
     document.documentElement.classList.toggle("is-eye-shut", shut);
-    if (act.id !== "return" || act.p < 0.5) eyeClosed = false;
+    if (act.id !== "return" || act.p < 0.48) {
+      eyeClosed = false;
+      flakeLanded = false;
+      document.documentElement.classList.remove("is-flake");
+    }
+    if (act.id === "return" && act.p >= 0.54 && !flakeLanded) {
+      flakeLanded = true;
+      document.documentElement.classList.add("is-flake");
+      sfx.crystal();
+      const land = viewSize();
+      weatherGust(land.w * (narrow() ? 0.38 : 0.42), land.h * (narrow() ? 0.3 : 0.34), 0, 240);
+    }
     if (shut && !eyeClosed) {
       eyeClosed = true;
       sfx.silence(0.32);
