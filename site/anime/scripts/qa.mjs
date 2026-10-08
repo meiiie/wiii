@@ -205,6 +205,8 @@ try {
       if (style.display === "none" || style.visibility === "hidden") continue;
       if (style.objectFit === "cover") continue;
       if (Number(style.opacity) < 0.05) continue;
+      // Rotated arms change getBoundingClientRect. The bitmap ratio is the
+      // layout box from offsetWidth/offsetHeight.
       const w = img.offsetWidth;
       const h = img.offsetHeight;
       if (w < 8 || h < 8) continue;

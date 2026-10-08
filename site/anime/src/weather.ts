@@ -183,7 +183,8 @@ void main(){
     float band=smoothstep(uShock+30.0,uShock,sd)*smoothstep(uShock-90.0,uShock-20.0,sd);
     pos+=(s/max(sd,1.0))*band*64.0;
   }
-  float size=depth<0.33?mix(18.0,10.0,depth/0.33):mix(6.5,1.8,depth);
+  float hand=step(uRes.x,840.0);
+  float size=depth<0.33?mix(20.0,12.0,depth/0.33)*mix(1.0,2.7,hand):mix(5.5,1.6,depth)*mix(1.0,1.25,hand);
   vec2 vel=wind+vec2(0.0,grav*speed);
   float stretch=1.0+clamp(length(vel)/320.0,0.0,2.6);
   vec2 dir=length(vel)>8.0?normalize(vel):vec2(0.0,grav);
@@ -195,7 +196,7 @@ void main(){
   gl_Position=vec4(clip,0.0,1.0);
   vDepth=depth;
   vUv=aCorner+0.5;
-  vNear=depth<0.33?1.0:0.0;
+  vNear=depth<0.33?(hand>0.5?2.0:1.0):0.0;
 }`;
 
 const FRAG = `#version 300 es
@@ -208,8 +209,10 @@ out vec4 o;
 void main(){
   float d=length((vUv-0.5)*2.0);
   if(d>1.0) discard;
-  float edge=vNear>0.5?0.05:0.45;
-  float alpha=smoothstep(1.0,edge,d)*(vNear>0.5?0.42:0.88)*mix(0.72,1.0,vDepth);
+  float near=step(0.5,vNear);
+  float phone=step(1.5,vNear);
+  float inner=mix(0.5,mix(0.28,0.02,phone),near);
+  float alpha=(1.0-smoothstep(inner,1.0,d))*(near>0.5?mix(0.55,0.74,phone):0.9)*mix(0.72,1.0,vDepth);
   vec3 col=uMode>0.5 && uMode<1.5 ? vec3(1.0,0.46,0.1) : vec3(0.97,0.96,0.92);
   if(uMode>1.5) col=vec3(1.0);
   o=vec4(col,alpha);
@@ -227,12 +230,12 @@ uniform float uPressure;
 out vec4 o;
 void main(){
   vec2 uv=gl_FragCoord.xy/uRes;
-  float v=smoothstep(0.42,1.05,length((uv-vec2(0.5,0.42))*vec2(1.15,1.25)));
-  float fringe=smoothstep(0.62,1.0,v)*uPressure;
-  vec3 col=vec3(0.03,0.0,0.02)*v*uPressure;
-  col.r+=fringe*0.45;
-  col.b+=fringe*0.18;
-  o=vec4(col,v*uPressure*0.78);
+  float v=smoothstep(0.26,1.0,length((uv-vec2(0.5,0.4))*vec2(1.08,1.22)));
+  float fringe=smoothstep(0.55,1.0,v)*uPressure;
+  vec3 col=vec3(0.02,0.0,0.015)*v*uPressure;
+  col.r+=fringe*0.55;
+  col.b+=fringe*0.12;
+  o=vec4(col,v*uPressure*0.92);
 }`;
 
 const createWeather = (canvas: HTMLCanvasElement): Runtime => {
@@ -464,7 +467,8 @@ const paint2d = (
         y += (dy / sd) * 18;
       }
     }
-    const r = depth < 0.33 ? 6 : depth < 0.66 ? 2.6 : 1.3;
+    const hand = w <= 840;
+    const r = depth < 0.33 ? (hand ? 18 : 6) : depth < 0.66 ? (hand ? 3.4 : 2.6) : 1.3;
     ctx.fillStyle = mode === 1 ? "rgba(255,120,40,0.8)" : `rgba(243,238,227,${depth < 0.33 ? 0.45 : 0.85})`;
     ctx.beginPath();
     ctx.ellipse(x, y, r, r * (1 + Math.min(2, Math.abs(wx) / 200)), 0, 0, Math.PI * 2);

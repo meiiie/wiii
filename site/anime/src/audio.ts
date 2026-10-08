@@ -147,21 +147,33 @@ export class Sfx {
     const gain = this.ctx.createGain();
     const now = this.ctx.currentTime;
     gain.gain.setValueAtTime(0.0001, now);
-    gain.gain.exponentialRampToValueAtTime(act === "kakoi" ? 0.055 : 0.026, now + 0.18);
+    gain.gain.exponentialRampToValueAtTime(act === "kakoi" ? 0.05 : 0.022, now + 0.18);
     src.connect(filter);
     filter.connect(gain);
     gain.connect(this.master);
     src.start();
+    const voice = this.ctx.createOscillator();
+    const voiceGain = this.ctx.createGain();
+    voice.type = act === "clash" ? "triangle" : "sine";
+    voice.frequency.value = (freqs[act] ?? 180) * (act === "intrusion" || act === "kakoi" ? 1 : 2);
+    voiceGain.gain.setValueAtTime(0.0001, now);
+    voiceGain.gain.exponentialRampToValueAtTime(act === "still" || act === "observe" ? 0.018 : 0.01, now + 0.45);
+    voice.connect(voiceGain);
+    voiceGain.connect(this.master);
+    voice.start();
     this.bedAct = act;
     this.bedStop = () => {
       try {
         src.stop();
+        voice.stop();
       } catch {
         /* already stopped */
       }
       src.disconnect();
       filter.disconnect();
       gain.disconnect();
+      voice.disconnect();
+      voiceGain.disconnect();
     };
   }
 

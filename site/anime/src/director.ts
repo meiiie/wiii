@@ -154,6 +154,16 @@ export async function start(): Promise<void> {
       el.classList.toggle("is-residue", !burst);
       nekoLine.hidden = burst;
       nekoNext.hidden = !burst;
+      if (narrow()) {
+        const q = burst ? quant((p - 0.42) / 0.58, 7) : 0;
+        const wait = el.querySelector<HTMLElement>(".splash.residue img");
+        const jump = el.querySelector<HTMLElement>(".splash.burst img");
+        if (wait) wait.style.transform = "scale(1.58) translate(-4%, 2%)";
+        if (jump) {
+          jump.style.transform = `scale(${lerp(1.9, 2.08, q)}) translate(${lerp(0, -2, q)}%, ${lerp(3, 0, q)}%) rotate(${lerp(-0.8, 1.1, q)}deg)`;
+        }
+        return;
+      }
       if (burst) {
         const q = quant((p - 0.42) / 0.58, 7);
         cam("neko", lerp(1.04, 1.18, q), lerp(3, -2, q), lerp(1, -3, q), lerp(-2, 2.4, q));

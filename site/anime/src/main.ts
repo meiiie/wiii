@@ -31,6 +31,10 @@ function paintGrain(): void {
 paintGrain();
 
 const reduced = window.matchMedia("(prefers-reduced-motion: reduce)");
+const coarse = window.matchMedia("(pointer: coarse), (hover: none)");
+const markCoarse = () => document.documentElement.classList.toggle("is-coarse", coarse.matches);
+markCoarse();
+coarse.addEventListener("change", markCoarse);
 
 async function boot(): Promise<void> {
   if (reduced.matches) {
