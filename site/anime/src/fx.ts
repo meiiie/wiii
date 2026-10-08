@@ -54,7 +54,7 @@ export class StageFX {
     let resolved: HitMode = mode;
     if (mode === "major" && now - this.lastFull < 1100) resolved = "micro";
     this.paintGlyph(x, y, text, rot, resolved);
-    this.cool = now + (resolved === "major" ? 0 : 320);
+    this.cool = now + (resolved === "major" ? 0 : 780);
     if (resolved === "major") {
       this.lastFull = now;
       this.invert(x, y);
@@ -155,8 +155,8 @@ export class StageFX {
       const a = (i / count) * Math.PI * 2;
       const len = 90 + ((i * 47) % 180);
       const inner = 6 + (i % 5) * 10;
-      ctx.strokeStyle = i % 8 === 0 && red > 0 ? "rgba(224,38,31,0.95)" : "rgba(245,240,230,0.92)";
-      ctx.lineWidth = i % 4 === 0 ? 2.5 : 1;
+      ctx.strokeStyle = i % 3 === 0 && red > 0 ? "rgba(224,38,31,0.96)" : i % 3 === 1 ? "rgba(11,11,13,0.9)" : "rgba(245,240,230,0.94)";
+      ctx.lineWidth = i % 4 === 0 ? 5 : 2;
       ctx.beginPath();
       ctx.moveTo(x + Math.cos(a) * inner, y + Math.sin(a) * inner);
       ctx.lineTo(x + Math.cos(a) * len, y + Math.sin(a) * len);

@@ -92,6 +92,7 @@ export async function start(): Promise<void> {
 
   let shown = acts[0];
   let lastAct: ActName = "awaken";
+  let slammed = -1;
   const colophon = document.getElementById("colophon") as HTMLElement;
   const queued: { beat: Beat; at: number }[] = [];
   let shook = false;
@@ -116,9 +117,9 @@ export async function start(): Promise<void> {
       const shatter = p >= 0.2 && p < 0.28;
       const hold = p >= 0.28;
       el.classList.toggle("is-invert", invert);
-      el.classList.toggle("is-shatter", shatter);
+      el.classList.toggle("is-shatter", shatter || hold);
       el.classList.toggle("is-hold", hold);
-      impact.style.opacity = invert || hold ? "1" : "0";
+      impact.style.opacity = invert ? "1" : "0";
       cam("clash", hold || shatter ? 1.05 : lerp(1.32, 1.14, p), hold ? 0 : lerp(6, -2, p), 0);
       panels.forEach((panel) => panel.classList.toggle("is-in", hold));
     },
@@ -140,22 +141,12 @@ export async function start(): Promise<void> {
     kakoi(p) {
       const el = document.getElementById("act-kakoi") as HTMLElement;
       const black = document.getElementById("kakoi-black") as HTMLElement;
-      const ring = document.querySelector("#ring-stroke") as SVGPathElement;
-      const inner = document.querySelector("#ring-inner") as SVGPathElement;
-      const drawT = clamp01(p / 0.16);
       const open = p >= 0.3;
       const domain = p >= 0.26;
       el.classList.toggle("is-residue", false);
       el.classList.toggle("is-domain", domain);
       el.classList.toggle("is-mark", p < 0.26);
       black.style.opacity = p < 0.18 ? "1" : p < 0.26 ? String(1 - (p - 0.18) / 0.08) : "0";
-      const paint = (node: SVGPathElement) => {
-        const len = node.getTotalLength();
-        node.style.strokeDasharray = `${len}`;
-        node.style.strokeDashoffset = `${len * (1 - drawT)}`;
-      };
-      paint(ring);
-      paint(inner);
       if (domain) {
         const q = quant((p - 0.24) / 0.76, 6);
         cam("kakoi", lerp(1.04, 1.16, q), lerp(1, -1, q), lerp(1, -1, q));
@@ -163,16 +154,82 @@ export async function start(): Promise<void> {
       let idx = -1;
       for (let i = 0; i < RULES.length; i++) if (p >= RULES[i]) idx = i;
       rules.forEach((rule, i) => {
-        rule.classList.toggle("is-now", open && i === idx);
-        rule.classList.toggle("is-debris", false);
+        const now = open && i === idx;
+        rule.classList.toggle("is-now", now);
+        rule.classList.toggle("is-debris", open && i < idx);
+        if (now && i !== slammed) {
+          slammed = i;
+          const box = rule.getBoundingClientRect();
+          fx.strike(box.left + box.width * 0.5, box.top + Math.min(box.height * 0.45, 36), "", 0, "micro");
+          sfx.play("tick");
+          document.documentElement.classList.add("is-slam");
+          window.setTimeout(() => document.documentElement.classList.remove("is-slam"), 180);
+        }
       });
     },
-    still() {
+    still(p) {
       cam("still", 1.02, -6, 0);
+      document.querySelector("#act-still .ghost-ring")?.classList.toggle("is-hot", p < 0.55);
     },
     return(p) {
       cam("return", lerp(1.42, 1.62, p), lerp(4, -2, p), lerp(6, 2, p));
     },
+  };
+
+  const motif = document.getElementById("motif") as HTMLElement;
+  const handoff = (id: ActName, p: number) => {
+    let kind = "";
+    if (id === "intrusion" && p < 0.55) kind = "spark";
+    else if (id === "clash" && p < 0.5) kind = "cursor";
+    else if (id === "observe" && p < 0.55) kind = "ink";
+    else if (id === "neko" && p < 0.42) kind = "cursor";
+    else if (id === "return" && p < 0.55) kind = "spark";
+    motif.dataset.kind = kind;
+    motif.dataset.act = id;
+    motif.classList.toggle("is-on", kind !== "");
+  };
+  const loopFrom = (x: number, y: number, cx: number, cy: number) => {
+    const a0 = Math.atan2(y - cy, x - cx);
+    const r = Math.max(80, Math.hypot(x - cx, y - cy));
+    const n = 8;
+    let d = `M ${x.toFixed(1)} ${y.toFixed(1)}`;
+    for (let i = 1; i <= n; i++) {
+      const a = a0 + (i / n) * Math.PI * 2;
+      const wobble = 1 + 0.065 * Math.sin(a * 3 + 0.4);
+      const endX = i === n ? x : cx + Math.cos(a) * r * wobble;
+      const endY = i === n ? y : cy + Math.sin(a) * r * wobble;
+      const c1a = a0 + ((i - 0.7) / n) * Math.PI * 2;
+      const c2a = a0 + ((i - 0.3) / n) * Math.PI * 2;
+      d += ` C ${(cx + Math.cos(c1a) * r).toFixed(1)} ${(cy + Math.sin(c1a) * r).toFixed(1)}, ${(cx + Math.cos(c2a) * r).toFixed(1)} ${(cy + Math.sin(c2a) * r).toFixed(1)}, ${endX.toFixed(1)} ${endY.toFixed(1)}`;
+    }
+    return d;
+  };
+  const seatRing = (p: number) => {
+    const ring = document.querySelector("#ring-stroke") as SVGPathElement;
+    const inner = document.querySelector("#ring-inner") as SVGPathElement;
+    const svg = document.getElementById("kakoi-ring") as HTMLElement;
+    const figure = document.getElementById("wiii-cut") as HTMLElement;
+    const box = svg.getBoundingClientRect();
+    const wr = figure.getBoundingClientRect();
+    if (box.width < 8 || wr.width < 8) return;
+    // Scarf cloth, just in from the flying tip (image fractions of the cutout).
+    const tipX = wr.left + wr.width * 0.95;
+    const tipY = wr.top + wr.height * 0.215;
+    const bodyX = wr.left + wr.width * 0.4;
+    const bodyY = wr.top + wr.height * 0.5;
+    const vx = ((tipX - box.left) / box.width) * 1000;
+    const vy = ((tipY - box.top) / box.height) * 1000;
+    const cx = ((bodyX - box.left) / box.width) * 1000;
+    const cy = ((bodyY - box.top) / box.height) * 1000;
+    const d = loopFrom(vx, vy, cx, cy);
+    ring.setAttribute("d", d);
+    inner.setAttribute("d", d);
+    const drawn = clamp01(p / 0.16);
+    for (const node of [ring, inner]) {
+      const len = node.getTotalLength();
+      node.style.strokeDasharray = `${len}`;
+      node.style.strokeDashoffset = `${len * (1 - drawn)}`;
+    }
   };
 
   const draw = (now: number) => {
@@ -204,6 +261,8 @@ export async function start(): Promise<void> {
     }
     render[act.id](act.p);
     battle.setAct(act.id, act.p);
+    if (act.id === "kakoi") seatRing(act.p);
+    handoff(act.id, act.p);
     document.documentElement.dataset.act = act.id;
     document.documentElement.dataset.p = act.p.toFixed(3);
     sfx.bed(sfx.enabled ? act.id : null);

@@ -49,6 +49,11 @@ export function mountBattle(sfx: Sfx, onWord: (text: string, x: number, y: numbe
     { src: "/art/drift-arm-3.webp", w: 252, h: 583, ox: 0.1667, oy: 0.0755, rest: 1.2634 },
     { src: "/art/drift-arm-4.webp", w: 349, h: 365, ox: 0.1347, oy: 0.1288, rest: 0.7563 },
   ];
+  const face = document.getElementById("drift-face") as HTMLElement;
+  const eye = document.getElementById("drift-eye") as HTMLElement;
+  let maskHits = 0;
+  type Box = { l: number; t: number; r: number; b: number };
+  let boxes: Box[] = [];
   const armEls = ARMS.map((arm) => {
     const img = document.createElement("img");
     img.src = arm.src;
@@ -169,24 +174,51 @@ export function mountBattle(sfx: Sfx, onWord: (text: string, x: number, y: numbe
   const strike = (pt: Pt, dash = false) => {
     const now = performance.now();
     const hit = hitDrift(pt);
-    if (now < finisherUntil) {
+    const mask = onMask(pt);
+    if (mask) {
+      maskHits = Math.min(5, maskHits + 1);
+      face.dataset.crack = String(maskHits);
+      face.classList.toggle("is-across", maskHits >= 5);
+      face.classList.remove("is-crack");
+      void face.offsetWidth;
+      face.classList.add("is-crack");
+    }
+    if (now < finisherUntil && !mask) {
       splash(pt, hit, true);
+      onWord("ズバッ", pt.x, pt.y);
       return;
     }
     combo = combo.filter((t) => now - t < 680);
     combo.push(now);
-    const finisher = combo.length >= 3;
+    const finisher = combo.length >= 3 && !mask;
     if (finisher) {
       combo = [];
       finisherUntil = now + 760;
     }
-    splash(pt, hit, finisher || dash);
+    splash(pt, hit || mask, finisher || dash || mask);
     root.classList.add("is-tap");
     window.setTimeout(() => root.classList.remove("is-tap"), finisher ? 180 : 90);
-    sfx.play(finisher ? "impact" : hit ? "slash" : "tick");
-    if (finisher) onWord("ズバッ", pt.x, pt.y);
+    sfx.play(finisher || maskHits >= 5 ? "impact" : hit || mask ? "slash" : "tick");
+    if (mask && maskHits >= 5) onWord("囲", pt.x, pt.y);
+    else if (finisher || mask) onWord("ズバッ", pt.x, pt.y);
     else if (hit) onWord("トンッ", pt.x, pt.y);
-    if (live) live.textContent = hit ? (finisher ? "Finisher. Drift recoils." : "Hit. Drift recoils.") : "Miss. The ink stays.";
+    else onWord("ピタッ", pt.x, pt.y);
+    if (live) {
+      live.textContent = mask && maskHits >= 5
+        ? "The crack reaches across."
+        : mask
+          ? "The mask cracks."
+          : hit
+            ? (finisher ? "Finisher. Drift recoils." : "Hit. Drift recoils.")
+            : "The ink stays.";
+    }
+  };
+
+  const onMask = (pt: Pt): boolean => {
+    if (Number(drift.style.opacity) < 0.2) return false;
+    const rect = drift.getBoundingClientRect();
+    const head = { l: rect.left + rect.width * 0.34, t: rect.top + rect.height * 0.05, r: rect.left + rect.width * 0.62, b: rect.top + rect.height * 0.22 };
+    return pt.x >= head.l && pt.x <= head.r && pt.y >= head.t && pt.y <= head.b;
   };
 
   const onDown = (event: PointerEvent) => {
@@ -241,12 +273,64 @@ export function mountBattle(sfx: Sfx, onWord: (text: string, x: number, y: numbe
   window.addEventListener("wheel", note, { passive: true });
   window.addEventListener("keydown", note);
 
+  const collectBoxes = () => {
+    boxes = [...document.querySelectorAll<HTMLElement>(".plate, .panel.is-in, .rule.is-now, .rule.is-debris, .ono, .tate")]
+      .filter((el) => {
+        if (el.hidden) return false;
+        const style = getComputedStyle(el);
+        if (style.display === "none" || style.visibility === "hidden" || Number(style.opacity) < 0.2) return false;
+        const rect = el.getBoundingClientRect();
+        return rect.width > 12 && rect.height > 12;
+      })
+      .map((el) => {
+        const rect = el.getBoundingClientRect();
+        return { l: rect.left - 18, t: rect.top - 14, r: rect.right + 18, b: rect.bottom + 14 };
+      });
+  };
+  const blocked = (x: number, y: number) => boxes.some((box) => x >= box.l && x <= box.r && y >= box.t && y <= box.b);
+  const dodge = (from: Pt, to: Pt): Pt => {
+    let aim = to;
+    for (const box of boxes) {
+      const inside = aim.x >= box.l && aim.x <= box.r && aim.y >= box.t && aim.y <= box.b;
+      if (!inside && !segmentHits(from, aim, box)) continue;
+      const pad = 36;
+      const corners = [
+        { x: box.l - pad, y: box.t - pad },
+        { x: box.r + pad, y: box.t - pad },
+        { x: box.l - pad, y: box.b + pad },
+        { x: box.r + pad, y: box.b + pad },
+      ];
+      let best = corners[0];
+      let bestD = Infinity;
+      for (const corner of corners) {
+        if (segmentHits(from, corner, box)) continue;
+        const dist = Math.hypot(corner.x - to.x, corner.y - to.y);
+        if (dist < bestD) {
+          bestD = dist;
+          best = corner;
+        }
+      }
+      aim = bestD < Infinity ? best : { x: from.x + (box.l - from.x) * 0.92, y: from.y + (box.t - from.y) * 0.92 };
+    }
+    return aim;
+  };
+  const segmentHits = (from: Pt, to: Pt, box: Box) => {
+    const steps = 6;
+    for (let i = 1; i <= steps; i++) {
+      const x = from.x + (to.x - from.x) * (i / steps);
+      const y = from.y + (to.y - from.y) * (i / steps);
+      if (x >= box.l && x <= box.r && y >= box.t && y <= box.b) return true;
+    }
+    return false;
+  };
+
   const placeArms = () => {
     const rect = drift.getBoundingClientRect();
     const show = chasing() && Number(drift.style.opacity) > 0.2 && rect.width > 8;
     drift.classList.toggle("is-armed", show);
     const sx = rect.left + (318 / 640) * rect.width;
     const sy = rect.top + (250 / 871) * rect.height;
+    const aim = dodge({ x: sx, y: sy }, pointer);
     if (act !== "observe") frozenAngles = null;
     armEls.forEach((img, i) => {
       const arm = ARMS[i];
@@ -256,7 +340,7 @@ export function mountBattle(sfx: Sfx, onWord: (text: string, x: number, y: numbe
       }
       const aw = (arm.w / 640) * rect.width;
       const ah = (arm.h / 871) * rect.height;
-      let ang = Math.atan2(pointer.y - sy, pointer.x - sx) - arm.rest;
+      let ang = Math.atan2(aim.y - sy, aim.x - sx) - arm.rest;
       if (act === "observe") {
         if (!frozenAngles) frozenAngles = [];
         if (frozenAngles[i] == null) frozenAngles[i] = ang;
@@ -270,6 +354,27 @@ export function mountBattle(sfx: Sfx, onWord: (text: string, x: number, y: numbe
       img.style.transformOrigin = `${arm.ox * aw}px ${arm.oy * ah}px`;
       img.style.transform = `translate(${-arm.ox * aw}px, ${-arm.oy * ah}px) rotate(${ang}rad)`;
     });
+  };
+
+  const placeFace = () => {
+    const rect = drift.getBoundingClientRect();
+    const on = Number(drift.style.opacity) > 0.2 && rect.width > 8;
+    face.classList.toggle("is-on", on);
+    if (!on) return;
+    const headW = rect.width * 0.28;
+    const headH = rect.height * 0.17;
+    face.style.left = `${rect.left + rect.width * 0.33}px`;
+    face.style.top = `${rect.top + rect.height * 0.05}px`;
+    face.style.width = `${headW}px`;
+    face.style.height = `${headH}px`;
+    const hover = pointer.x >= rect.left && pointer.x <= rect.right && pointer.y >= rect.top && pointer.y <= rect.bottom;
+    face.classList.toggle("is-look", hover);
+    const ex = hover ? clamp((pointer.x - (rect.left + rect.width * 0.46)) / (rect.width * 0.28), -1, 1) : 0;
+    const ey = hover ? clamp((pointer.y - (rect.top + rect.height * 0.1)) / (rect.height * 0.18), -1, 1) : 0;
+    const pupil = eye.firstElementChild as HTMLElement | null;
+    const dx = ex * Math.min(14, headW * 0.12);
+    const dy = ey * Math.min(10, headH * 0.14);
+    if (pupil) pupil.style.transform = `translate(calc(-50% + ${dx}px), calc(-50% + ${dy}px))`;
   };
 
   const drawMarks = () => {
@@ -334,6 +439,7 @@ export function mountBattle(sfx: Sfx, onWord: (text: string, x: number, y: numbe
       for (let i = 0; i < 26; i++) {
         const x = (0.12 + ((i * 0.137) % 0.76)) * w + Math.sin(t * 0.55 + i) * 7;
         const y = (0.1 + ((i * 0.173) % 0.72)) * h + Math.cos(t * 0.42 + i * 1.3) * 6;
+        if (blocked(x, y)) continue;
         ctx.globalAlpha = 0.28 + (i % 4) * 0.1;
         ctx.fillStyle = i % 3 === 0 ? "#E0261F" : progress < 0.24 ? "#F3EEE3" : "#2A2928";
         ctx.fillRect(x, y, 3 + (i % 3), 2 + (i % 2));
@@ -347,6 +453,7 @@ export function mountBattle(sfx: Sfx, onWord: (text: string, x: number, y: numbe
       const driftX = act === "intrusion" ? t * 0.03 : t * 0.012;
       const x = ((0.06 + i * 0.11 + driftX) % 1) * w;
       const y = ((0.15 + ((i * 0.19) % 0.7) + Math.sin(t * 0.35 + i) * 0.03) % 1) * h;
+      if (blocked(x, y)) continue;
       const r = ink ? 7 + (i % 4) * 6 : 10 + (i % 5) * 8;
       const g = ctx.createRadialGradient(x, y, 1, x, y, r);
       const tone = ink ? "11,11,13" : act === "intrusion" ? "224,38,31" : "243,238,227";
@@ -361,6 +468,7 @@ export function mountBattle(sfx: Sfx, onWord: (text: string, x: number, y: numbe
       for (let i = 0; i < 10; i++) {
         const x = (0.55 + ((i * 0.07 + t * 0.04) % 0.4)) * w;
         const y = (0.2 + ((i * 0.13) % 0.55)) * h + Math.sin(t * 3 + i) * 4;
+        if (blocked(x, y)) continue;
         ctx.globalAlpha = 0.35 + (Math.sin(t * 6 + i) > 0 ? 0.4 : 0);
         ctx.fillStyle = i % 2 ? "#E0261F" : "#F3EEE3";
         ctx.fillRect(x, y, 4, 3);
@@ -377,13 +485,32 @@ export function mountBattle(sfx: Sfx, onWord: (text: string, x: number, y: numbe
       const freed = id === "kakoi" || id === "still" || id === "return";
       root.classList.toggle("is-freed", freed);
       const ringLock = id === "kakoi" && p >= 0.06 && p < 0.28;
-      wiii.style.opacity = id === "clash" && p < 0.3 ? "1" : "0";
+      const scarf = id === "kakoi" && p < 0.26;
+      wiii.style.opacity = id === "clash" && p < 0.3 ? "1" : scarf ? "1" : "0";
       drift.style.opacity = id === "intrusion" ? "1" : id === "clash" && p < 0.3 ? "0.92" : id === "neko" && p < 0.42 ? "0.85" : ringLock ? "0.95" : "0";
       drift.classList.toggle("is-frozen", ringLock);
-      if (id === "clash" && p < 0.3) {
+      if (scarf) {
+        const tipX = window.innerWidth * 0.36;
+        const tipY = window.innerHeight * 0.58;
+        const w = wiii.offsetWidth || 360;
+        const h = wiii.offsetHeight || 340;
+        wiii.style.bottom = "auto";
+        wiii.style.transformOrigin = "72% 80%";
+        wiii.style.transform = "scale(0.72)";
+        wiii.style.left = `${tipX - w * 0.72}px`;
+        wiii.style.top = `${tipY - h * 0.8}px`;
+      } else if (id === "clash" && p < 0.3) {
+        wiii.style.bottom = "0";
+        wiii.style.top = "";
+        wiii.style.left = "0";
+        wiii.style.transformOrigin = "";
         wiii.style.transform = `translate(${-18 + p * 110}vw, 8vh)`;
-      } else if (id === "return") {
-        wiii.style.opacity = "0";
+      } else {
+        wiii.style.bottom = "0";
+        wiii.style.top = "";
+        wiii.style.left = "0";
+        wiii.style.transformOrigin = "";
+        wiii.style.transform = "";
       }
       if (id === "intrusion") drift.style.transform = "translate(-4vw, 4vh)";
       else if (id === "neko") drift.style.transform = `translate(${-8 - p * 20}vw, 6vh) rotate(${-6 - p * 8}deg)`;
@@ -392,6 +519,8 @@ export function mountBattle(sfx: Sfx, onWord: (text: string, x: number, y: numbe
     },
     draw(now, vel) {
       if (now - lastInput > 5000) root.classList.add("is-idle");
+      collectBoxes();
+      placeFace();
       tips.length = 0;
       const pts = fingerTips();
       for (const pt of pts) tips.push(pt);
