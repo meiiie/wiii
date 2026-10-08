@@ -72,6 +72,15 @@ export function mountBattle(sfx: Sfx, onWord: (text: string, x: number, y: numbe
   let act: ActName = "awaken";
   let progress = 0;
   let pointer: Pt = { x: viewSize().w * 0.72, y: viewSize().h * 0.42 };
+  let aimPointer: Pt = { ...pointer };
+  let poseTick = -1;
+  const holdPose = (now: number) => {
+    const tick = Math.floor(now / 83);
+    if (tick === poseTick) return false;
+    poseTick = tick;
+    aimPointer = { ...pointer };
+    return true;
+  };
   let down: Pt | null = null;
   let downAt = 0;
   let combo: number[] = [];
@@ -167,7 +176,7 @@ export function mountBattle(sfx: Sfx, onWord: (text: string, x: number, y: numbe
       });
     }
     if (hit) {
-      hitUntil = performance.now() + 220;
+      hitUntil = performance.now() + 380;
       drift.classList.add("is-hit");
       window.setTimeout(() => drift.classList.remove("is-hit"), 220);
       for (let i = 0; i < (big ? 18 : 10); i++) {
@@ -424,7 +433,7 @@ export function mountBattle(sfx: Sfx, onWord: (text: string, x: number, y: numbe
     drift.classList.toggle("is-armed", show);
     const sx = layout.x;
     const sy = layout.y;
-    const aim = dodge({ x: sx, y: sy }, pointer);
+      const aim = dodge({ x: sx, y: sy }, aimPointer);
     if (act !== "observe") frozenAngles = null;
     armEls.forEach((img, i) => {
       const arm = ARMS[i];
@@ -471,10 +480,10 @@ export function mountBattle(sfx: Sfx, onWord: (text: string, x: number, y: numbe
     face.style.transformOrigin = "0 0";
     face.style.transform = `rotate(${ang}rad)`;
     const rect = drift.getBoundingClientRect();
-    const hover = pointer.x >= rect.left && pointer.x <= rect.right && pointer.y >= rect.top && pointer.y <= rect.bottom;
+    const hover = aimPointer.x >= rect.left && aimPointer.x <= rect.right && aimPointer.y >= rect.top && aimPointer.y <= rect.bottom;
     face.classList.toggle("is-look", hover);
-    const ex = hover ? clamp((pointer.x - (rect.left + rect.width * 0.46)) / (rect.width * 0.45), -1, 1) : 0;
-    const ey = hover ? clamp((pointer.y - (rect.top + rect.height * 0.1)) / (rect.height * 0.22), -1, 1) : 0;
+    const ex = hover ? clamp((aimPointer.x - (rect.left + rect.width * 0.46)) / (rect.width * 0.45), -1, 1) : 0;
+    const ey = hover ? clamp((aimPointer.y - (rect.top + rect.height * 0.1)) / (rect.height * 0.22), -1, 1) : 0;
     const pupil = eye.firstElementChild as HTMLElement | null;
     if (pupil) pupil.style.transform = `translate(calc(-50% + ${ex * 3.5}px), calc(-50% + ${ey * 2.5}px))`;
     eye.style.left = `${((0.438 - 0.36) / 0.24) * maskW}px`;
@@ -583,7 +592,10 @@ export function mountBattle(sfx: Sfx, onWord: (text: string, x: number, y: numbe
 
   return {
     setAct(id, p) {
-      if (id !== act) frozenTips = null;
+      if (id !== act) {
+        frozenTips = null;
+        poseTick = -1;
+      }
       act = id;
       progress = p;
       const freed = id === "kakoi" || id === "still" || id === "return";
@@ -640,15 +652,16 @@ export function mountBattle(sfx: Sfx, onWord: (text: string, x: number, y: numbe
     },
     draw(now, vel) {
       if (now - lastInput > 5000) root.classList.add("is-idle");
+      const posed = holdPose(now);
       collectBoxes();
-      placeFace();
+      if (posed) placeFace();
       tips.length = 0;
       const pts = fingerTips();
       for (const pt of pts) tips.push(pt);
       if (ctx) {
         ctx.clearRect(0, 0, viewSize().w, viewSize().h);
         drawSpeed(vel);
-        placeArms();
+        if (posed) placeArms();
         drawShed();
         drawLife(now);
         drawMarks();
@@ -684,6 +697,11 @@ export function mountBattle(sfx: Sfx, onWord: (text: string, x: number, y: numbe
       const sparkPt = trail[0] ?? pointer;
       spark.style.transform = `translate(${sparkPt.x}px, ${sparkPt.y}px)`;
       const freed = root.classList.contains("is-freed");
+      if (!posed) {
+        if (performance.now() < hitUntil) drift.classList.add("is-hit");
+        else drift.classList.remove("is-hit");
+        return;
+      }
       ghosts.forEach((ghost, i) => {
         const src = trail[Math.min(trail.length - 1, 2 + i * 2)] ?? sparkPt;
         if (freed) {
@@ -694,7 +712,7 @@ export function mountBattle(sfx: Sfx, onWord: (text: string, x: number, y: numbe
         ghost.style.opacity = chasing() ? String(0.26 - i * 0.06) : "0";
         ghost.style.transform = `translate(${src.x + 10}px, ${src.y + 8}px)`;
       });
-      if (performance.now() < hitUntil) drift.classList.add("is-hit");
+      drift.classList.toggle("is-hit", performance.now() < hitUntil);
     },
   };
 }

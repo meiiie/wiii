@@ -74,6 +74,14 @@ export async function start(): Promise<void> {
   let eyeSparked = false;
   let eyeClosed = false;
   let flakeLanded = false;
+  let cold = true;
+  let coldEyeUntil = 0;
+  const coldFrom = performance.now();
+  const flashTimes: number[] = [];
+  let cutTimers: number[] = [];
+  let lastFlash = -1e9;
+  let endLatch: number | null = null;
+  document.documentElement.classList.add("is-cold");
   const battle = mountBattle(sfx, (text, x, y) => {
     fx.strike(x, y, text, -4, "micro");
   });
@@ -113,6 +121,7 @@ export async function start(): Promise<void> {
   let shown = acts[0];
   let lastAct: ActName = "awaken";
   let slammed = -1;
+  let nekoBurst = false;
   const colophon = document.getElementById("colophon") as HTMLElement;
   const queued: { beat: Beat; at: number }[] = [];
   let shook = false;
@@ -167,6 +176,13 @@ export async function start(): Promise<void> {
       el.classList.toggle("is-residue", !burst);
       nekoLine.hidden = burst;
       nekoNext.hidden = !burst;
+      if (burst !== nekoBurst) {
+        nekoBurst = burst;
+        const plate = burst ? nekoNext : nekoLine;
+        plate.classList.remove("is-struck");
+        void plate.offsetWidth;
+        plate.classList.add("is-struck");
+      }
       if (narrow()) {
         const wait = el.querySelector<HTMLElement>(".splash.residue img");
         const jump = el.querySelector<HTMLElement>(".splash.burst img");
@@ -352,7 +368,76 @@ export async function start(): Promise<void> {
     }
   };
 
+  const liftSnow = () => {
+    if (snow.parentElement !== document.body) document.body.append(snow);
+    if (hero.parentElement !== document.body) document.body.append(hero);
+  };
+  const strikeType = (pin: HTMLElement) => {
+    const plate = [...pin.querySelectorAll<HTMLElement>(".plate")].find((el) => !el.hidden);
+    if (!plate) return;
+    plate.classList.remove("is-struck");
+    void plate.offsetWidth;
+    plate.classList.add("is-struck");
+  };
+  const endCold = (reveal: boolean) => {
+    if (!cold) return;
+    cold = false;
+    document.documentElement.classList.remove("is-cold");
+    if (!reveal) return;
+    coldEyeUntil = performance.now() + 900;
+    sfx.crystal();
+    strikeType(acts[0].pin);
+  };
+  const playCut = () => {
+    const root = document.documentElement;
+    for (const timer of cutTimers) window.clearTimeout(timer);
+    cutTimers = [];
+    root.classList.remove("is-cut-black", "is-cut-ink", "is-cut-wipe", "is-hitstop");
+    root.classList.add("is-cut-black", "is-hitstop");
+    const later = (ms: number, fn: () => void) => {
+      cutTimers.push(window.setTimeout(fn, ms));
+    };
+    later(40, () => {
+      root.classList.remove("is-cut-black", "is-hitstop");
+      const flash = flashTimes.every((t) => performance.now() - t > 420);
+      if (flash) {
+        lastFlash = performance.now();
+        flashTimes.push(lastFlash);
+        root.classList.add("is-cut-ink");
+      } else root.classList.add("is-cut-wipe");
+    });
+    later(80, () => {
+      root.classList.remove("is-cut-ink", "is-cut-black");
+      root.classList.add("is-cut-wipe");
+    });
+    later(150, () => root.classList.remove("is-cut-black", "is-cut-ink", "is-cut-wipe", "is-hitstop"));
+  };
+  const stabilizeEnd = () => {
+    const el = document.documentElement;
+    const y = Math.round(window.scrollY);
+    const view = el.clientHeight;
+    const max = el.scrollHeight - view;
+    if (max <= 0) return;
+    if (endLatch === null) {
+      if (max - y <= 1) endLatch = y;
+      return;
+    }
+    if (y < endLatch - 12) {
+      endLatch = null;
+      el.style.minHeight = "";
+      return;
+    }
+    if (y >= max - 1 && y > endLatch + 8) endLatch = y;
+    const need = endLatch + view;
+    if (el.scrollHeight < need) el.style.minHeight = `${need}px`;
+    const legal = el.scrollHeight - el.clientHeight;
+    if (endLatch > legal) endLatch = Math.round(legal);
+    const current = Math.round(window.scrollY);
+    if (Math.abs(current - endLatch) > 0 && Math.abs(current - endLatch) <= 6) window.scrollTo(0, endLatch);
+  };
+
   const draw = (now: number) => {
+    if (cold && window.scrollY > 8) endCold(false);
     const viewingColo = window.scrollY + 24 >= colophon.offsetTop;
     document.documentElement.classList.toggle("is-colophon", viewingColo);
     if (viewingColo) {
@@ -386,8 +471,11 @@ export async function start(): Promise<void> {
       brand.classList.remove("is-pulse");
       void brand.offsetWidth;
       brand.classList.add("is-pulse");
+      if (!cold) playCut();
+      strikeType(act.pin);
       lastAct = act.id;
     }
+    if (cold) liftSnow();
     render[act.id](act.p);
     battle.setAct(act.id, act.p);
     if (act.id === "kakoi") seatRing(act.p);
@@ -446,7 +534,18 @@ export async function start(): Promise<void> {
       : act.id === "return" && act.p > 0.08 && act.p < 0.62
         ? (act.p - 0.08) / 0.54
         : -1;
-    if (flakeT >= 0) {
+    if (cold) {
+      const elapsed = now - coldFrom;
+      if (elapsed < 1700) hero.style.opacity = "0";
+      else {
+        const t = clamp01((elapsed - 1700) / 420);
+        const y = -24 + t * (box.h * 0.36 + 24);
+        hero.style.opacity = "1";
+        hero.style.transform = `translate(${box.w * (narrow() ? 0.5 : 0.42)}px, ${y}px)`;
+        hero.style.setProperty("--path", `${Math.max(16, y)}px`);
+        if (t >= 1) endCold(true);
+      }
+    } else if (flakeT >= 0) {
       const returning = act.id === "return";
       const x = box.w * (returning ? (narrow() ? 0.38 : 0.42) : narrow() ? 0.5 : 0.42);
       const landY = returning ? box.h * (narrow() ? 0.3 : 0.34) : box.h * 0.34;
@@ -461,7 +560,9 @@ export async function start(): Promise<void> {
       hero.style.opacity = "0";
       hero.style.removeProperty("--path");
     }
-    document.documentElement.classList.toggle("is-eye-open", act.id === "awaken" && act.p >= 0.36 && act.p < 0.72);
+    if (coldEyeUntil && now > coldEyeUntil) coldEyeUntil = 0;
+    const scrollEye = act.id === "awaken" && act.p >= 0.36 && act.p < 0.72;
+    document.documentElement.classList.toggle("is-eye-open", scrollEye || now < coldEyeUntil);
     const shut = act.id === "return" && act.p >= 0.6;
     document.documentElement.classList.toggle("is-eye-shut", shut);
     if (act.id !== "return" || act.p < 0.48) {
@@ -493,7 +594,8 @@ export async function start(): Promise<void> {
       scarf,
     });
     const audio = weatherAudio();
-    sfx.wind(audio.strength, audio.ember);
+    if (cold && sfx.enabled) sfx.wind(0.42, false);
+    else sfx.wind(audio.strength, audio.ember);
     battle.draw(now, vel);
     if (!fx.holding) {
       shade.style.opacity = "0";
@@ -513,10 +615,25 @@ export async function start(): Promise<void> {
     }
   };
 
+  window.__WIII = {
+    strikes: 0,
+    flashTimes,
+    lenis,
+    scrollToAct(id: string, progress: number) {
+      endCold(false);
+      const el = document.getElementById(id);
+      if (!el) return;
+      const span = Math.max(0, el.offsetHeight - viewSize().h);
+      lenis.scrollTo(el.offsetTop + span * clamp01(progress), { immediate: true, force: true });
+      ScrollTrigger.update();
+    },
+  };
+
   gsap.ticker.lagSmoothing(0);
   gsap.ticker.add((time) => {
     lenis.raf(time * 1000);
     draw(performance.now());
+    stabilizeEnd();
   });
   fx.resize();
   window.addEventListener("resize", () => {
@@ -530,19 +647,6 @@ export async function start(): Promise<void> {
   });
   await document.fonts.ready;
   ScrollTrigger.refresh();
-
-  window.__WIII = {
-    strikes: 0,
-    flashTimes: [],
-    lenis,
-    scrollToAct(id: string, progress: number) {
-      const el = document.getElementById(id);
-      if (!el) return;
-      const span = Math.max(0, el.offsetHeight - viewSize().h);
-      lenis.scrollTo(el.offsetTop + span * clamp01(progress), { immediate: true, force: true });
-      ScrollTrigger.update();
-    },
-  };
 }
 
 declare global {
