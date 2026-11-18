@@ -1,0 +1,339 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Wiii — The battle</title>
+    <meta
+      name="description"
+      content="Wiii, the logo made human, fights Drift, an automation that changes everything without asking. A local-first desktop workspace for working with Neko."
+    />
+    <meta name="theme-color" content="#0B0B0D" id="theme-color" />
+    <meta name="color-scheme" content="dark" />
+    <link rel="canonical" href="https://anime.holilihu.online/" />
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <link rel="preload" as="image" type="image/avif"
+      imagesrcset="/art/kf01_awaken-480.avif 480w, /art/kf01_awaken-768.avif 768w, /art/kf01_awaken-1280.avif 1280w, /art/kf01_awaken-1920.avif 1920w"
+      imagesizes="(max-width: 800px) and (max-aspect-ratio: 16/9) 186.67vh, (max-width: 800px) 105vw, (max-aspect-ratio: 16/9) 240vh, 135vw"
+      media="(max-resolution: 1dppx) and (max-aspect-ratio: 16/9) and (max-height: 800px)" />
+    <link rel="preload" as="image" type="image/avif"
+      imagesrcset="/art/kf01_awaken-480.avif 480w, /art/kf01_awaken-768.avif 768w, /art/kf01_awaken-1280.avif 1280w, /art/kf01_awaken-1920.avif 1920w"
+      imagesizes="(max-width: 800px) and (max-aspect-ratio: 16/9) 186.67vh, (max-width: 800px) 105vw, (max-aspect-ratio: 16/9) 240vh, 135vw"
+      media="(max-resolution: 1dppx) and (min-aspect-ratio: 1.78) and (max-width: 1422px)" />
+    <link rel="preload" as="image" type="image/avif"
+      imagesrcset="/art/kf01_awaken-480.avif 480w, /art/kf01_awaken-768.avif 768w, /art/kf01_awaken-1280.avif 1280w, /art/kf01_awaken-1920.avif 1920w"
+      imagesizes="(max-width: 800px) and (max-aspect-ratio: 16/9) 186.67vh, (max-width: 800px) 105vw, (max-aspect-ratio: 16/9) 240vh, 135vw"
+      media="(max-width: 800px) and (max-aspect-ratio: 16/9) and (max-resolution: 1dppx) and (min-height: 801px) and (max-height: 1028px)" />
+    <meta property="og:title" content="Wiii — The battle" />
+    <meta
+      property="og:description"
+      content="One spark. Wiii closes the ring. Drift does not get the cursor."
+    />
+    <meta property="og:type" content="website" />
+    <meta property="og:url" content="https://anime.holilihu.online/" />
+    <meta property="og:image" content="https://anime.holilihu.online/og.png" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="Wiii — The battle" />
+    <meta name="twitter:description" content="One spark. Wiii closes the ring. Drift does not get the cursor." />
+    <meta name="twitter:image" content="https://anime.holilihu.online/og.png" />
+  </head>
+  <body>
+    <a class="skip" href="#content">Skip to content</a>
+    <p id="strike-live" class="sr" aria-live="polite"></p>
+    <div id="world">
+      <canvas id="wash" data-decor aria-hidden="true"></canvas>
+      <canvas id="fxc" data-decor aria-hidden="true"></canvas>
+      <div id="shade" aria-hidden="true"></div>
+      <div id="flash" aria-hidden="true"></div>
+      <div id="cold" aria-hidden="true"></div>
+      <div id="cut" aria-hidden="true"></div>
+      <div id="smear" aria-hidden="true"></div>
+      <div id="grain" data-decor aria-hidden="true"></div>
+      <canvas id="snow" data-decor aria-hidden="true"></canvas>
+      <i id="hero-flake" data-decor aria-hidden="true"></i>
+      <div id="glyph" aria-hidden="true"></div>
+      <div id="spark" class="motion-only" data-decor aria-hidden="true"></div>
+      <div id="ghosts" class="motion-only" data-drift data-decor aria-hidden="true"><i></i><i></i><i></i></div>
+      <img
+        id="wiii-cut"
+        class="fighter motion-only"
+        data-decor
+        src="/art/cut-wiii-420.webp"
+        srcset="/art/cut-wiii-420.webp 420w, /art/cut-wiii-720.webp 720w, /art/cut-wiii-960.webp 960w, /art/cut-wiii-1440.webp 1440w"
+        sizes="min(42vw, 480px)"
+        decoding="async"
+        width="733"
+        height="679"
+        alt="Wiii, full figure, cream hair and charcoal scarf, cut out for the fight."
+      />
+      <div id="drift-face" class="motion-only" data-drift data-decor aria-hidden="true">
+        <i id="drift-eye"><b></b></i>
+        <svg id="mask-crack" viewBox="0 0 100 100">
+          <path class="c1" d="M58 16 L46 32" />
+          <path class="c2" d="M46 32 L72 44" />
+          <path class="c3" d="M72 44 L30 56" />
+          <path class="c4" d="M30 56 L78 72" />
+          <path class="c5" d="M78 72 L8 96" />
+        </svg>
+      </div>
+      <div id="motif" class="motion-only" data-decor aria-hidden="true"></div>
+      <img
+        id="drift-cut"
+        class="fighter motion-only"
+        data-drift
+        data-decor
+        src="/art/cut-drift-360.webp"
+        srcset="/art/cut-drift-360.webp 360w, /art/cut-drift-640.webp 640w, /art/cut-drift-840.webp 840w, /art/cut-drift-1280.webp 1280w, /art/cut-drift-1920.webp 1920w"
+        sizes="(max-width: 800px) min(202vw, 1152px), min(36vw, 420px)"
+        decoding="async"
+        width="640"
+        height="871"
+        alt="Drift, full figure, white cracked mask and cursor-arms, cut out for the fight."
+      />
+      <div id="drift-arms" class="motion-only" data-drift data-decor aria-hidden="true"></div>
+
+      <header class="chrome">
+        <a class="brand" href="#act-awaken">
+          <svg class="brand-mark" viewBox="0 0 256 256" role="img" aria-label="Neko Peek">
+            <path fill="#2A2928" d="M28 148C20 104 43 70 82 57c38-13 91-10 125 16 28 22 37 60 25 94-14 42-53 62-105 61-54-1-91-30-99-80Z"/>
+            <path fill="#F5F0E6" d="M61 133c-7-22-6-53 1-77 5-18 18-25 34-15 21-11 49-14 76-8 10-18 28-18 37 1 10 21 12 52 4 78-8 26-36 42-72 43-36 1-70-7-80-22Z"/>
+            <path fill="#454241" d="M31 136c31 23 72 38 117 41 33 2 61-7 84-29 3 24-7 47-29 62-23 16-59 22-100 16-43-6-71-31-77-63-2-10 0-19 5-27Z"/>
+            <g id="neko-eyes">
+              <ellipse cx="111" cy="103" rx="10" ry="15" fill="#2A2928"/>
+              <ellipse cx="157" cy="100" rx="10" ry="15" fill="#2A2928"/>
+            </g>
+          </svg>
+          <span>Wiii</span>
+        </a>
+        <p class="readout" aria-hidden="true"><span id="act-label">00 Awaken</span><span id="frame-label">F 0001</span></p>
+      </header>
+
+      <nav class="stamps" aria-label="Acts">
+        <a href="#act-awaken" aria-label="Awaken">00</a>
+        <a href="#act-intrusion" aria-label="Intrusion">01</a>
+        <a href="#act-clash" aria-label="Clash">02</a>
+        <a href="#act-observe" aria-label="Observe">03</a>
+        <a href="#act-neko" aria-label="Neko">04</a>
+        <a href="#act-kakoi" aria-label="Kakoi">05</a>
+        <a href="#act-still" aria-label="Still">06</a>
+        <a href="#act-return" aria-label="Return">07</a>
+      </nav>
+      <button id="sound" type="button" aria-pressed="false"><span aria-hidden="true"></span> Sound off</button>
+      <p class="how motion-only">
+        <span class="how__mouse">Click to strike. Hold, then release, to dash.</span>
+        <span class="how__touch">Tap to strike. Hold to dash.</span>
+      </p>
+
+      <main id="content">
+        <section class="act act--ink" id="act-awaken" data-act="awaken">
+          <div class="act__pin">
+            <figure class="splash">
+              <picture>
+                <source type="image/avif" srcset="/art/kf01_awaken-480.avif 480w, /art/kf01_awaken-768.avif 768w, /art/kf01_awaken-1280.avif 1280w, /art/kf01_awaken-1920.avif 1920w, /art/kf01_awaken-2560.avif 2560w" sizes="(max-width: 800px) and (max-aspect-ratio: 16/9) 186.67vh, (max-width: 800px) 105vw, (max-aspect-ratio: 16/9) 240vh, 135vw" />
+                <source type="image/webp" srcset="/art/kf01_awaken-480.webp 480w, /art/kf01_awaken-768.webp 768w, /art/kf01_awaken-1280.webp 1280w, /art/kf01_awaken-1920.webp 1920w, /art/kf01_awaken-2560.webp 2560w" sizes="(max-width: 800px) and (max-aspect-ratio: 16/9) 186.67vh, (max-width: 800px) 105vw, (max-aspect-ratio: 16/9) 240vh, 135vw" />
+                <img src="/art/kf01_awaken-1280.webp" width="1280" height="720" alt="Wiii in profile, cream hair and cat-ear tufts, a spark lighting in his dark eye against black." fetchpriority="high" />
+              </picture>
+            </figure>
+            <p class="tate" lang="ja">覚醒</p>
+            <div class="plate plate--awaken plate--poster">
+              <p class="kicker">00 — The spark</p>
+              <h1>The spark is your cursor.</h1>
+              <p>Wiii is a local-first desktop workspace for working with Neko. You decide what it can access and change.</p>
+            </div>
+          </div>
+        </section>
+
+        <section class="act act--ink" id="act-intrusion" data-act="intrusion">
+          <div class="act__pin">
+            <figure class="splash">
+              <picture>
+                <source type="image/avif" srcset="/art/kf02_intrusion-480.avif 480w, /art/kf02_intrusion-768.avif 768w, /art/kf02_intrusion-1280.avif 1280w, /art/kf02_intrusion-1920.avif 1920w, /art/kf02_intrusion-2560.avif 2560w" sizes="(max-width: 800px) and (max-aspect-ratio: 16/9) 186.67vh, (max-width: 800px) 105vw, (max-aspect-ratio: 16/9) 227.56vh, 128vw" />
+                <source type="image/webp" srcset="/art/kf02_intrusion-480.webp 480w, /art/kf02_intrusion-768.webp 768w, /art/kf02_intrusion-1280.webp 1280w, /art/kf02_intrusion-1920.webp 1920w, /art/kf02_intrusion-2560.webp 2560w" sizes="(max-width: 800px) and (max-aspect-ratio: 16/9) 186.67vh, (max-width: 800px) 105vw, (max-aspect-ratio: 16/9) 227.56vh, 128vw" />
+                <img src="/art/kf02_intrusion-1280.webp" width="1280" height="720" alt="Drift, masked, reaches red cursor-fingers into floating pages while Wiii stands small in the dark." />
+              </picture>
+            </figure>
+            <p class="tate" lang="ja">侵入</p>
+            <div class="plate plate--intrusion plate--torn">
+              <p class="kicker">01 — Drift</p>
+              <h2>It changes everything without asking.</h2>
+              <p>A local project does not require a Wiii Service account. You decide what the agent can access and change. Model providers may require their own account.</p>
+            </div>
+          </div>
+        </section>
+
+        <section class="act act--ink" id="act-clash" data-act="clash">
+          <div class="act__pin">
+            <figure class="splash">
+              <picture>
+                <source type="image/avif" srcset="/art/kf03_clash-480.avif 480w, /art/kf03_clash-768.avif 768w, /art/kf03_clash-1280.avif 1280w, /art/kf03_clash-1920.avif 1920w, /art/kf03_clash-2560.avif 2560w" sizes="(max-width: 800px) and (max-aspect-ratio: 16/9) 186.67vh, (max-width: 800px) 105vw, (max-aspect-ratio: 16/9) 234.67vh, 132vw" />
+                <source type="image/webp" srcset="/art/kf03_clash-480.webp 480w, /art/kf03_clash-768.webp 768w, /art/kf03_clash-1280.webp 1280w, /art/kf03_clash-1920.webp 1920w, /art/kf03_clash-2560.webp 2560w" sizes="(max-width: 800px) and (max-aspect-ratio: 16/9) 186.67vh, (max-width: 800px) 105vw, (max-aspect-ratio: 16/9) 234.67vh, 132vw" />
+                <img src="/art/kf03_clash-1280.webp" width="1280" height="720" alt="Wiii dashes in, scarf trailing, as Drift's cursor-arms fill the black behind him." loading="lazy" decoding="async" />
+              </picture>
+            </figure>
+            <div class="impact-seq" id="impact-seq">
+              <picture>
+                <source type="image/avif" srcset="/art/kf04_impact-480.avif 480w, /art/kf04_impact-768.avif 768w, /art/kf04_impact-1280.avif 1280w, /art/kf04_impact-1920.avif 1920w, /art/kf04_impact-2560.avif 2560w" sizes="(max-aspect-ratio: 16/9) 177.78vh, 100vw" />
+                <img id="impact-plate" class="impact-plate" src="/art/kf04_impact-1280.webp" srcset="/art/kf04_impact-480.webp 480w, /art/kf04_impact-768.webp 768w, /art/kf04_impact-1280.webp 1280w, /art/kf04_impact-1920.webp 1920w, /art/kf04_impact-2560.webp 2560w" sizes="(max-aspect-ratio: 16/9) 177.78vh, 100vw" width="1280" height="720" alt="Inverted impact frame: Wiii's fist meets Drift's mask in a red burst and white speed lines." loading="lazy" decoding="async" />
+              </picture>
+              <div class="shards" id="impact-shards" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i></div>
+            </div>
+            <p class="ono ono--clash" lang="ja" aria-hidden="true">ズバッ</p>
+            <p class="tate" lang="ja">衝突</p>
+            <div class="plate plate--clash plate--smash">
+              <p class="kicker">02 — The work</p>
+              <h2 class="smash"><span>The work stays</span><span>in the folder.</span></h2>
+            </div>
+            <div class="panels" id="clash-panels">
+              <p class="panel"><strong>Project</strong><em>Choose a folder.</em></p>
+              <p class="panel"><strong>Session</strong><em>The sessions that belong to it.</em></p>
+              <p class="panel"><strong>Tools</strong><em>Công cụ beside the conversation.</em></p>
+            </div>
+          </div>
+        </section>
+
+        <section class="act act--ink" id="act-observe" data-act="observe">
+          <div class="act__pin">
+            <figure class="splash">
+              <picture>
+                <source type="image/avif" srcset="/art/kf05_observe-480.avif 480w, /art/kf05_observe-768.avif 768w, /art/kf05_observe-1280.avif 1280w, /art/kf05_observe-1920.avif 1920w, /art/kf05_observe-2560.avif 2560w" sizes="(max-width: 800px) and (max-aspect-ratio: 16/9) 341.34vh, (max-width: 800px) 192vw, (max-aspect-ratio: 16/9) 216.89vh, 122vw" />
+                <source type="image/webp" srcset="/art/kf05_observe-480.webp 480w, /art/kf05_observe-768.webp 768w, /art/kf05_observe-1280.webp 1280w, /art/kf05_observe-1920.webp 1920w, /art/kf05_observe-2560.webp 2560w" sizes="(max-width: 800px) and (max-aspect-ratio: 16/9) 341.34vh, (max-width: 800px) 192vw, (max-aspect-ratio: 16/9) 216.89vh, 122vw" />
+                <img src="/art/kf05_observe-1280.webp" width="1280" height="720" alt="Time stops. Wiii stands calm while Drift's cursor-arms freeze inches from him." loading="lazy" decoding="async" />
+              </picture>
+            </figure>
+            <div class="halftone" aria-hidden="true"></div>
+            <p class="tate" lang="ja">観測</p>
+            <div class="plate plate--observe plate--band">
+              <h2>Observation is not control.</h2>
+            </div>
+          </div>
+        </section>
+
+        <section class="act act--ink" id="act-neko" data-act="neko">
+          <div class="act__pin">
+            <figure class="splash residue" id="neko-residue">
+              <picture>
+                <source type="image/avif" srcset="/art/kf05_observe-480.avif 480w, /art/kf05_observe-768.avif 768w, /art/kf05_observe-1280.avif 1280w, /art/kf05_observe-1920.avif 1920w, /art/kf05_observe-2560.avif 2560w" sizes="(max-width: 800px) and (max-aspect-ratio: 16/9) 405.34vh, (max-width: 800px) 228vw, (max-aspect-ratio: 16/9) 177.78vh, 100vw" />
+                <source type="image/webp" srcset="/art/kf05_observe-480.webp 480w, /art/kf05_observe-768.webp 768w, /art/kf05_observe-1280.webp 1280w, /art/kf05_observe-1920.webp 1920w, /art/kf05_observe-2560.webp 2560w" sizes="(max-width: 800px) and (max-aspect-ratio: 16/9) 405.34vh, (max-width: 800px) 228vw, (max-aspect-ratio: 16/9) 177.78vh, 100vw" />
+                <img src="/art/kf05_observe-1280.webp" width="1280" height="720" alt="The freeze holds. Drift's arms are still inches away, the moment before Neko moves." loading="lazy" decoding="async" />
+              </picture>
+            </figure>
+            <figure class="splash burst">
+              <picture>
+                <source type="image/avif" srcset="/art/kf06_neko_burst-480.avif 480w, /art/kf06_neko_burst-768.avif 768w, /art/kf06_neko_burst-1280.avif 1280w, /art/kf06_neko_burst-1920.avif 1920w, /art/kf06_neko_burst-2560.avif 2560w" sizes="(max-width: 800px) and (max-aspect-ratio: 16/9) 376.89vh, (max-width: 800px) 212vw, (max-aspect-ratio: 16/9) 209.78vh, 118vw" />
+                <source type="image/webp" srcset="/art/kf06_neko_burst-480.webp 480w, /art/kf06_neko_burst-768.webp 768w, /art/kf06_neko_burst-1280.webp 1280w, /art/kf06_neko_burst-1920.webp 1920w, /art/kf06_neko_burst-2560.webp 2560w" sizes="(max-width: 800px) and (max-aspect-ratio: 16/9) 376.89vh, (max-width: 800px) 212vw, (max-aspect-ratio: 16/9) 209.78vh, 118vw" />
+                <img src="/art/kf06_neko_burst-1280.webp" width="1280" height="720" alt="Neko, the small cream cat, bursts from the scarf and snaps one of Drift's cursor-arms away." loading="lazy" decoding="async" />
+              </picture>
+            </figure>
+            <p class="ono ono--neko" lang="ja" aria-hidden="true">トンッ</p>
+            <p class="tate" lang="ja">猫</p>
+            <div class="plate plate--neko plate--brush" id="neko-line">
+              <h2>Taking control waits.</h2>
+              <p>It does not undo what already left.</p>
+            </div>
+            <div class="plate plate--neko-next plate--diag" id="neko-next">
+              <h2>Neko Core is the default.</h2>
+              <p>Existing harness choices stay intact.</p>
+            </div>
+          </div>
+        </section>
+
+        <section class="act act--ink" id="act-kakoi" data-act="kakoi">
+          <div class="act__pin">
+            <figure class="splash residue" id="kakoi-residue">
+              <picture>
+                <source type="image/avif" srcset="/art/kf06_neko_burst-480.avif 480w, /art/kf06_neko_burst-768.avif 768w, /art/kf06_neko_burst-1280.avif 1280w, /art/kf06_neko_burst-1920.avif 1920w, /art/kf06_neko_burst-2560.avif 2560w" sizes="(max-aspect-ratio: 16/9) 177.78vh, 100vw" />
+                <source type="image/webp" srcset="/art/kf06_neko_burst-480.webp 480w, /art/kf06_neko_burst-768.webp 768w, /art/kf06_neko_burst-1280.webp 1280w, /art/kf06_neko_burst-1920.webp 1920w, /art/kf06_neko_burst-2560.webp 2560w" sizes="(max-aspect-ratio: 16/9) 177.78vh, 100vw" />
+                <img src="/art/kf06_neko_burst-1280.webp" width="1280" height="720" alt="Residue of the Neko burst, held for a cut before the ring closes." loading="lazy" decoding="async" />
+              </picture>
+            </figure>
+            <figure class="splash burst">
+              <picture>
+                <source type="image/avif" srcset="/art/kf07_kakoi-480.avif 480w, /art/kf07_kakoi-768.avif 768w, /art/kf07_kakoi-1280.avif 1280w, /art/kf07_kakoi-1920.avif 1920w, /art/kf07_kakoi-2560.avif 2560w" sizes="(max-width: 800px) and (max-aspect-ratio: 16/9) 369.78vh, (max-width: 800px) 208vw, (max-aspect-ratio: 16/9) 238.23vh, 134vw" />
+                <source type="image/webp" srcset="/art/kf07_kakoi-480.webp 480w, /art/kf07_kakoi-768.webp 768w, /art/kf07_kakoi-1280.webp 1280w, /art/kf07_kakoi-1920.webp 1920w, /art/kf07_kakoi-2560.webp 2560w" sizes="(max-width: 800px) and (max-aspect-ratio: 16/9) 369.78vh, (max-width: 800px) 208vw, (max-aspect-ratio: 16/9) 238.23vh, 134vw" />
+                <img src="/art/kf07_kakoi-1280.webp" width="1280" height="720" alt="The charcoal scarf becomes a brushed ring. Inside, the world is cream. Drift is locked outside. The mark 囲 sits behind Wiii." loading="lazy" decoding="async" />
+              </picture>
+            </figure>
+            <div class="blackout" id="kakoi-black" aria-hidden="true"></div>
+            <svg class="ring-draw" id="kakoi-ring" viewBox="0 0 1000 1000" aria-hidden="true">
+              <defs>
+                <filter id="brush-edge" x="-20%" y="-20%" width="140%" height="140%">
+                  <feTurbulence type="fractalNoise" baseFrequency="0.035" numOctaves="2" seed="4" result="n" />
+                  <feDisplacementMap in="SourceGraphic" in2="n" scale="14" />
+                </filter>
+              </defs>
+              <path id="ring-stroke" d="M500 78C760 62 930 220 942 470C956 760 760 940 500 928C230 916 58 730 70 470C82 200 250 96 500 78Z" />
+              <path id="ring-inner" d="M500 118C730 104 890 250 900 470C912 720 740 890 500 880C260 868 108 700 118 470C128 230 280 132 500 118Z" />
+            </svg>
+            <p class="ono ono--kakoi" lang="ja" aria-hidden="true">囲</p>
+            <p class="tate" lang="ja">囲</p>
+            <div class="domain" id="domain">
+              <p class="rule">A project folder, and the sessions that belong to it.</p>
+              <p class="rule">Tools in view, beside the conversation.</p>
+              <p class="rule" id="rule-harness">A missing harness is not a failed check. Look in Tổng quan → Quản lý harness.</p>
+              <p class="rule">An interrupted action is not automatically repeated when its outcome is unknown.</p>
+              <p class="rule">Computer is optional. Wiii Service is optional. Neither is required to begin.</p>
+            </div>
+          </div>
+        </section>
+
+        <section class="act act--paper" id="act-still" data-act="still">
+          <div class="act__pin">
+            <figure class="splash">
+              <picture>
+                <source type="image/avif" srcset="/art/kf08_still-480.avif 480w, /art/kf08_still-768.avif 768w, /art/kf08_still-1280.avif 1280w, /art/kf08_still-1920.avif 1920w, /art/kf08_still-2560.avif 2560w" sizes="(max-aspect-ratio: 16/9) 184.89vh, 104vw" />
+                <source type="image/webp" srcset="/art/kf08_still-480.webp 480w, /art/kf08_still-768.webp 768w, /art/kf08_still-1280.webp 1280w, /art/kf08_still-1920.webp 1920w, /art/kf08_still-2560.webp 2560w" sizes="(max-aspect-ratio: 16/9) 184.89vh, 104vw" />
+                <img src="/art/kf08_still-1280.webp" width="1280" height="720" alt="Wiii from behind on white paper, mask shards on the ground, one small spark in his hand." loading="lazy" decoding="async" />
+              </picture>
+            </figure>
+            <div class="ghost-ring" data-drift data-decor aria-hidden="true"></div>
+            <p class="tate" lang="ja">間</p>
+            <div class="plate plate--still plate--tate">
+              <h2>Computer is optional.</h2>
+              <p>Wiii Service is optional. Neither is required to begin.</p>
+            </div>
+          </div>
+        </section>
+
+        <section class="act act--ink" id="act-return" data-act="return">
+          <div class="act__pin">
+            <figure class="splash">
+              <picture>
+                <source type="image/avif" srcset="/art/kf01_awaken-480.avif 480w, /art/kf01_awaken-768.avif 768w, /art/kf01_awaken-1280.avif 1280w, /art/kf01_awaken-1920.avif 1920w, /art/kf01_awaken-2560.avif 2560w" sizes="(max-width: 800px) and (max-aspect-ratio: 16/9) 387.56vh, (max-width: 800px) 218vw, (max-aspect-ratio: 16/9) 288vh, 162vw" />
+                <source type="image/webp" srcset="/art/kf01_awaken-480.webp 480w, /art/kf01_awaken-768.webp 768w, /art/kf01_awaken-1280.webp 1280w, /art/kf01_awaken-1920.webp 1920w, /art/kf01_awaken-2560.webp 2560w" sizes="(max-width: 800px) and (max-aspect-ratio: 16/9) 387.56vh, (max-width: 800px) 218vw, (max-aspect-ratio: 16/9) 288vh, 162vw" />
+                <img src="/art/kf01_awaken-1280.webp" width="1280" height="720" alt="Night again. Wiii's eye holds the spark, the same dark the story opened on." loading="lazy" decoding="async" />
+              </picture>
+            </figure>
+            <p class="tate" lang="ja">還</p>
+            <div class="plate plate--return plate--night">
+              <p class="kicker">07 — The cursor</p>
+              <h2>The spark goes back to the cursor.</h2>
+            </div>
+          </div>
+        </section>
+        <footer class="colophon" id="colophon">
+          <svg class="ink-stroke" viewBox="0 0 720 64" aria-hidden="true">
+            <path d="M8 42C70 14 140 54 230 28C310 6 390 50 490 26C570 8 640 38 712 22" />
+          </svg>
+          <p class="colophon__title">The spark goes back to the cursor.</p>
+          <div class="colophon__credits">
+            <p>Built by <a href="https://holilihu.online">HoLiLiHu</a>.</p>
+            <p>Original characters © HoLiLiHu</p>
+          </div>
+          <ul class="colophon__facts">
+            <li>The core product is AGPL-3.0-only. A separate commercial license is available. <span class="mono">sdk/</span> is Apache-2.0. The licenses do not grant the Wiii name.</li>
+            <li>Latest published release: Wiii 1.3.0, Windows x64 unsigned installer, tag <span class="mono">wiii-v1.3.0</span>, with SHA-256 and a release manifest. Linux and macOS have no public installer in that release. Checksums verify bytes, not publisher identity.</li>
+            <li>Vietnamese is the primary interface language. Neko Core is installed separately.</li>
+            <li>Computer is an experimental persistent Linux desktop through Docker Desktop, on the same user workstation. It is not a sandbox.</li>
+          </ul>
+          <p class="links">
+            <a href="https://github.com/meiiie/wiii">github.com/meiiie/wiii</a>
+            <a href="https://holilihu.online">holilihu.online</a>
+          </p>
+        </footer>
+      </main>
+    </div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

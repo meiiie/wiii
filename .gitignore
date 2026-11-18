@@ -70,6 +70,7 @@ parts/
 var/
 
 # === Temp / generated ===
+site/anime/qa-out/
 _find_untested.py
 docx_output.txt
 test_*.txt
