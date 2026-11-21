@@ -19,6 +19,12 @@ their respective owners.
 | Material inside `sdk/` with an Apache SPDX header or covered by `sdk/LICENSE` | Apache License 2.0 (`Apache-2.0`) |
 | Third-party, vendored, generated, research-reference, or externally sourced material | Its own license and notices |
 
+`wiii-desktop/src/neko-chill/completion-sound.ts` is adapted from Neko Core
+and retains its `AGPL-3.0-only` license and attribution. The full license text
+is shipped in [`LICENSES/AGPL-3.0-only.txt`](LICENSES/AGPL-3.0-only.txt).
+The MIT license for original Wiii material does not relicense this adaptation
+or the separately bundled Neko Core runtime.
+
 The `sdk/` path is a hard licensing boundary. The FastAPI service, WiiiRunner,
 desktop application, and their internal clients are part of the MIT-licensed
 product unless a file carries an explicit different license. There is no
