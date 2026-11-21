@@ -418,12 +418,14 @@ export default function NekoChillApp(props: ComponentProps<typeof NekoChillScree
 }
 
 function NekoChillScreen({
+  active = true,
   onOpenManaged = NEKO_CHILL_OPEN_MANAGED_NOOP,
   onOpenConnections,
   onOpenWork = () => {},
   showWorkNavigation = false,
   taskLaunch = null,
 }: {
+  active?: boolean;
   onOpenManaged?: () => void;
   onOpenConnections?: () => void;
   onOpenWork?: () => void;
@@ -702,6 +704,7 @@ function NekoChillScreen({
   ]);
 
   useEffect(() => {
+    if (!active) return;
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.defaultPrevented || event.isComposing || event.altKey || event.shiftKey || !(event.ctrlKey || event.metaKey)) return;
       const key = event.key.toLowerCase();
@@ -716,7 +719,7 @@ function NekoChillScreen({
     };
     window.addEventListener("keydown", onKeyDown, true);
     return () => window.removeEventListener("keydown", onKeyDown, true);
-  }, []);
+  }, [active]);
 
   useEffect(() => {
     if (compactSidebar) setSidebarOpen(false);
@@ -923,6 +926,7 @@ function NekoChillScreen({
   const restoreWorkspaceFocus = useCallback(() => workspaceToggleRef.current?.focus(), []);
 
   useEffect(() => {
+    if (!active) return;
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.defaultPrevented || event.isComposing || event.shiftKey
         || !(event.ctrlKey || event.metaKey) || !event.altKey
@@ -935,7 +939,7 @@ function NekoChillScreen({
     };
     window.addEventListener("keydown", onKeyDown, true);
     return () => window.removeEventListener("keydown", onKeyDown, true);
-  }, [handleToggleSessionWorkspace, session?.workspace, toggleProjectWorkspace, workspaceAvailable]);
+  }, [active, handleToggleSessionWorkspace, session?.workspace, toggleProjectWorkspace, workspaceAvailable]);
 
   const titleWorkspaceToggle = session?.workspace || (projectHome && projectWorkspaceRoot) ? (
     <button
@@ -993,7 +997,7 @@ function NekoChillScreen({
       <TitleBar
         minimal
         browserVisible
-        leading={<>{sidebarToggle}<NekoMenuBar ready={hydrated}
+        leading={<>{sidebarToggle}<NekoMenuBar active={active} ready={hydrated}
           sidebarOpen={sidebarOpen} workspaceOpen={titleWorkspaceOpen} workspaceAvailable={workspaceAvailable}
           onNewSession={handleNewSession} onCreateProject={openProjectDialog} onSearch={openCommandCenter}
           onToggleSidebar={() => setSidebarOpen((value) => !value)}

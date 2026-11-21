@@ -79,18 +79,23 @@ function LocalWorkbenchScreens() {
   };
   const onOpenManaged = () => { void openSurface("service"); };
   const onOpenConnections = () => { void openSurface("connect"); };
+  const localSurface = surface === "service" || surface === "connect" ? returnSurface : surface;
   return (
     <>
+      <div className="h-full" hidden={surface === "service" || surface === "connect"}>
+        {localSurface === "work" ? (
+          <WiiiAdeApp active={surface === "work"} onOpenManaged={onOpenManaged} onOpenConnections={onOpenConnections} />
+        ) : <NekoChillApp
+          active={surface === "neko"}
+          onOpenManaged={onOpenManaged}
+          onOpenConnections={onOpenConnections}
+          showWorkNavigation
+          onOpenWork={() => void openSurface("work")}
+        />}
+      </div>
       {surface === "service" || surface === "connect" ? (
         <WiiiServiceSurface view={surface} onBack={() => setSurface(returnSurface)} onOpenConnect={onOpenConnections} />
-      ) : surface === "work" ? (
-        <WiiiAdeApp onOpenManaged={onOpenManaged} onOpenConnections={onOpenConnections} />
-      ) : <NekoChillApp
-        onOpenManaged={onOpenManaged}
-        onOpenConnections={onOpenConnections}
-        showWorkNavigation
-        onOpenWork={() => void openSurface("work")}
-      />}
+      ) : null}
       {navigationError ? (
         <p role="status" data-testid="work-navigation-status"
           className="fixed bottom-4 left-1/2 z-50 w-[calc(100%-2rem)] max-w-lg -translate-x-1/2 rounded-xl border border-[var(--nk-border)] bg-[var(--nk-composer)] px-4 py-3 text-[12px] leading-5 text-[var(--nk-text-2)] shadow-lg">

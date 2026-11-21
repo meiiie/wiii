@@ -258,7 +258,8 @@ export default function WiiiAdeApp(props: ComponentProps<typeof WiiiAdeScreen>) 
   return <NekoRuntimeScope><WiiiAdeScreen {...props} /></NekoRuntimeScope>;
 }
 
-function WiiiAdeScreen({ onOpenManaged = () => {}, onOpenConnections }: {
+function WiiiAdeScreen({ active = true, onOpenManaged = () => {}, onOpenConnections }: {
+  active?: boolean;
   onOpenManaged?: () => void;
   onOpenConnections?: () => void;
 }) {
@@ -456,6 +457,7 @@ function WiiiAdeScreen({ onOpenManaged = () => {}, onOpenConnections }: {
     return (
       <>
         <NekoChillApp
+          active={active}
           onOpenManaged={onOpenManaged}
           onOpenConnections={onOpenConnections}
           showWorkNavigation
