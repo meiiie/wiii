@@ -132,7 +132,7 @@ export function activePromptIdAtScroll(
 
 interface NekoPromptRailProps {
   messages: NekoMessage[];
-  scrollRef: RefObject<HTMLDivElement>;
+  scrollRef: RefObject<HTMLDivElement | null>;
   resolveMessageOffset: (messageIndex: number) => number | null;
   onJump: (landmark: NekoPromptLandmark) => void;
 }
