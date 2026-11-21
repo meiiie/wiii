@@ -66,6 +66,13 @@ function openDiagnostics() {
     .getByRole("button", { name: "Chẩn đoán" }));
 }
 
+function expectMatchingProviderStatus(provider: string, status: string) {
+  const card = screen.getByRole("button", { name: new RegExp(provider) });
+  expect(within(card).getByText(status)).toBeTruthy();
+  const detail = screen.getByText("Chi tiết kết nối").closest("aside")!;
+  expect(within(detail).getAllByText(status).some((node) => !node.closest("details"))).toBe(true);
+}
+
 const mockBuildWiiiConnectProviderCallbackUrl = vi.mocked(buildWiiiConnectProviderCallbackUrl);
 const mockApplyWiiiConnectFacebookPost = vi.mocked(applyWiiiConnectFacebookPost);
 const mockCreateWiiiConnectProviderAuthorizationUrl = vi.mocked(createWiiiConnectProviderAuthorizationUrl);
@@ -1109,6 +1116,17 @@ describe("WiiiConnectPage", () => {
   });
 
   it("renders activation readiness gates without exposing provider secrets", async () => {
+    mockFetchWiiiConnectProviderConnections.mockResolvedValue({
+      version: "wiii_connect_connection_list.v1",
+      status: "blocked",
+      reason: "provider_not_agent_ready",
+      provider_slug: "gmail",
+      provider_kind: "composio",
+      connection_count: 0,
+      connections: [],
+      provider: { status: "blocked" },
+      storage: { persistent: true },
+    });
     mockFetchWiiiConnectProviders.mockResolvedValue({
       version: "wiii_connect_provider_registry.v1",
       adapter_version: "wiii_connect_adapter.v1",
@@ -1177,6 +1195,7 @@ describe("WiiiConnectPage", () => {
     fireEvent.click(screen.getByRole("button", { name: /Gmail/i }));
 
     expect(await screen.findByTestId("wiii-connect-readiness-panel")).toBeTruthy();
+    await waitFor(() => expectMatchingProviderStatus("Gmail", "Chưa kết nối"));
     expect(await screen.findByTestId("wiii-connect-lifecycle-panel")).toBeTruthy();
     await waitFor(() => {
       expect(screen.getByTestId("wiii-connect-next-action").textContent).toContain(
@@ -2020,6 +2039,7 @@ describe("WiiiConnectPage", () => {
     expect(screen.getByTestId("wiii-connect-next-action").textContent).toContain(
       "Đang chờ OAuth hoàn tất",
     );
+    expectMatchingProviderStatus("Facebook", "Đang chờ xác nhận");
     expect(container.textContent).not.toContain("https://composio.example/connect/safe");
     expect(container.textContent).not.toContain("connection_ref");
     expect(container.textContent).not.toContain("access_token");
@@ -2173,6 +2193,7 @@ describe("WiiiConnectPage", () => {
 
     await waitFor(() => {
       expect(screen.getByTestId("wiii-connect-connection-flow-state").getAttribute("data-state")).toBe("expired");
+      expectMatchingProviderStatus("Facebook", "Kết nối hết hạn");
     });
     expect(screen.getByTestId("wiii-connect-next-action").textContent).toContain("reconnect");
     expect(container.textContent).not.toContain("wcn_expired_1");

@@ -32,6 +32,7 @@ import type {
   ProviderFilter,
 } from "./connect-types";
 import { ConnectionDetailPanel } from "./ConnectionDetailPanel";
+import { ProviderConnectionStatus } from "./ProviderConnectionStatus";
 import { StatusPill } from "./ConnectStatus";
 import {
   defaultActivationActionSlug,
@@ -571,7 +572,14 @@ export function ConnectionCatalog({
                       </p>
                     </div>
                   </div>
-                  <StatusPill tone={card.tone}>{card.status}</StatusPill>
+                  <ProviderConnectionStatus card={card}
+                    readiness={providerReadinessStates[card.providerSlug]?.response}
+                    providerConnection={primaryProviderConnection(providerConnectionLists[card.providerSlug]?.response)}
+                    connectionList={providerConnectionLists[card.providerSlug]}
+                    authorizationDecision={authorizationDecisions[card.providerSlug]}
+                    authorizationLoading={authorizationLoadingSlug === card.providerSlug}
+                    authorizationError={authorizationErrors[card.providerSlug]}
+                    disconnectState={disconnectStates[card.providerSlug]} />
                 </div>
                 {card.description && <p className="mt-3 line-clamp-2 text-sm text-text-secondary">
                   {card.description}

@@ -32,7 +32,7 @@ import {
   sessionDecisionTone,
 } from "./provider-readiness";
 import { ProviderLifecyclePanel } from "./ProviderLifecyclePanel";
-import { providerConnectionFlow } from "./provider-lifecycle";
+import { ProviderConnectionStatus } from "./ProviderConnectionStatus";
 
 export function ConnectionDetailPanel({
   card,
@@ -117,19 +117,6 @@ export function ConnectionDetailPanel({
     Boolean(providerConnectionRef(providerConnection)) &&
     providerConnection?.state !== "disabled" &&
     Boolean(onDisconnectConnection);
-  const flow = providerConnectionFlow({
-    card, readiness, providerConnection, connectionList, authorizationDecision,
-    authorizationLoading, authorizationError, disconnectState,
-  });
-  const flowLabels = {
-    disconnected: "Chưa kết nối",
-    authorizing: "Đang xác thực",
-    waiting: "Đang chờ xác nhận",
-    connected: "Đã kết nối",
-    expired: "Kết nối hết hạn",
-    error: "Không thể kết nối",
-    disconnecting: "Đang ngắt kết nối",
-  };
 
   return (
     <aside className="rounded-lg border border-[var(--border)] bg-surface p-4">
@@ -143,9 +130,10 @@ export function ConnectionDetailPanel({
             <p className="mt-1 text-sm text-text-secondary">{card.description}</p>
           </div>
         </div>
-        <StatusPill tone={card.provider === "wiii_native" ? card.tone : flow.tone}>
-          {card.provider === "wiii_native" ? card.status : flowLabels[flow.status]}
-        </StatusPill>
+        <ProviderConnectionStatus card={card} readiness={readiness} providerConnection={providerConnection}
+          connectionList={connectionList} authorizationDecision={authorizationDecision}
+          authorizationLoading={authorizationLoading} authorizationError={authorizationError}
+          disconnectState={disconnectState} />
       </div>
 
       {providerConnection && (
