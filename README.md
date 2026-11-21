@@ -8,7 +8,7 @@
   <a href="https://github.com/meiiie/wiii/releases">Downloads</a> ·
   <a href="docs/releases/WIII_WINDOWS_QUICK_START.md">Windows guide</a> ·
   <a href="https://github.com/meiiie/wiii/issues">Feedback</a> ·
-  <a href="LICENSE">AGPL-3.0-only</a>
+  <a href="LICENSE">MIT</a>
 </p>
 
 Wiii is a local-first desktop workspace for working with Neko, your AI
@@ -19,7 +19,7 @@ Built by **The Wiii Lab**. Vietnamese is the primary interface language.
 
 <p>
   <a href="https://github.com/meiiie/wiii/actions/workflows/test-desktop.yml"><img src="https://github.com/meiiie/wiii/actions/workflows/test-desktop.yml/badge.svg" alt="Desktop tests" /></a>
-  <a href="LICENSE"><img src="https://img.shields.io/github/license/meiiie/wiii" alt="AGPL-3.0-only license" /></a>
+  <a href="LICENSE"><img src="https://img.shields.io/github/license/meiiie/wiii" alt="MIT license" /></a>
 </p>
 
 ## Start with a project
@@ -158,8 +158,8 @@ runtime or permission boundaries. Small, reproducible fixes are welcome.
 
 ## License
 
-Wiii's core product is **AGPL-3.0-only**, with a separate commercial license
-available. Independently implemented code under `sdk/` is **Apache-2.0**.
+Wiii's core product is **MIT** licensed. No separate commercial license is
+required. Independently implemented code under `sdk/` is **Apache-2.0**.
 The code licenses do not grant rights to the Wiii name or branding.
 
 See [LICENSING.md](LICENSING.md), [COMMERCIAL-LICENSE.md](COMMERCIAL-LICENSE.md)

@@ -22,7 +22,7 @@ from typing import Iterable
 
 
 ROOT = Path(__file__).resolve().parents[2]
-CORE_LICENSE = "AGPL-3.0-only"
+CORE_LICENSE = "MIT"
 SDK_LICENSE = "Apache-2.0"
 LICENSE_SOURCE_PATHS = (
     "LICENSE",
@@ -177,6 +177,12 @@ def _detected_license(text: str, marker: str, expected: str) -> str:
 def collect_license_metadata(root: Path = ROOT) -> dict[str, str]:
     root_license = (root / "LICENSE").read_text(encoding="utf-8")
     licensing = (root / "LICENSING.md").read_text(encoding="utf-8")
+    core_license_rows = re.findall(
+        r"^\|\s*Original project material outside `sdk/`, unless a file says otherwise\s*"
+        r"\|[^|\n]*`([^`\n]+)`[^|\n]*\|[ \t]*$",
+        licensing,
+        re.MULTILINE,
+    )
     commercial = (root / "COMMERCIAL-LICENSE.md").read_text(encoding="utf-8")
     readme = (root / "README.md").read_text(encoding="utf-8")
     sdk_license = (root / "sdk/LICENSE").read_text(encoding="utf-8")
@@ -199,15 +205,15 @@ def collect_license_metadata(root: Path = ROOT) -> dict[str, str]:
 
     return {
         "LICENSE": _detected_license(
-            root_license, "GNU AFFERO GENERAL PUBLIC LICENSE", CORE_LICENSE
+            root_license, "MIT License", CORE_LICENSE
         ),
-        "LICENSING.md#core": _detected_license(licensing, CORE_LICENSE, CORE_LICENSE),
+        "LICENSING.md#core": core_license_rows[0] if len(core_license_rows) == 1 else "missing",
         "LICENSING.md#sdk": _detected_license(licensing, SDK_LICENSE, SDK_LICENSE),
         "COMMERCIAL-LICENSE.md#core": _detected_license(
             commercial, CORE_LICENSE, CORE_LICENSE
         ),
         "README.md#badge": _detected_license(
-            readme, 'alt="AGPL-3.0-only license"', CORE_LICENSE
+            readme, 'alt="MIT license"', CORE_LICENSE
         ),
         "sdk/LICENSE": _detected_license(
             sdk_license, "Apache License", SDK_LICENSE

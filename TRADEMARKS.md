@@ -5,8 +5,8 @@ Meiiie, operating the project under The Wiii Lab brand, claims rights in the
 (the "Marks"). These marks are not declared registered marks unless an
 official registration says so.
 
-The AGPL and Apache licenses cover copyright and patent permissions in their
-respective code. They do not grant permission to use the Marks.
+The MIT and Apache licenses govern their respective code. They do not grant
+permission to use the Marks.
 
 You may truthfully refer to Wiii, link to the official project, accurately
 state compatibility, and retain factual attribution on an unmodified official
