@@ -880,7 +880,12 @@ fn neko_config_sets_dream_mode(home: &Path) -> bool {
         .iter()
         .filter_map(|path| std::fs::read(path).ok())
         .filter_map(|bytes| serde_json::from_slice::<serde_json::Value>(&bytes).ok())
-        .any(|config| config.get("dream_mode").is_some_and(|mode| !mode.is_null()))
+        .any(|config| {
+            matches!(
+                config.get("dream_mode").and_then(|mode| mode.as_str()),
+                Some("auto" | "manual" | "off")
+            )
+        })
 }
 
 /// Reject executable-name collisions such as the unrelated Linux `neko`
@@ -1718,6 +1723,8 @@ mod tests {
         std::fs::create_dir_all(home.join(".neko-core")).unwrap();
         assert!(!neko_config_sets_dream_mode(&home));
         std::fs::write(home.join(".neko-core").join("config.json"), r#"{"model":"m"}"#).unwrap();
+        assert!(!neko_config_sets_dream_mode(&home));
+        std::fs::write(home.join("neko.json"), r#"{"dream_mode":"sometimes"}"#).unwrap();
         assert!(!neko_config_sets_dream_mode(&home));
         std::fs::write(home.join("neko.json"), r#"{"dream_mode":"off"}"#).unwrap();
         assert!(neko_config_sets_dream_mode(&home));
