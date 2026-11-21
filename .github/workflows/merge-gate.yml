@@ -406,11 +406,17 @@ jobs:
             librsvg2-dev \
             patchelf \
             xdg-utils \
-            webkit2gtk-driver \
             xvfb \
             xdotool \
             bubblewrap \
             dbus
+          # Ubuntu 26.04 renamed webkit2gtk-driver to webkitgtk-webdriver.
+          if apt-cache show webkitgtk-webdriver >/dev/null 2>&1; then
+            sudo apt-get install -y webkitgtk-webdriver
+          else
+            sudo apt-get install -y webkit2gtk-driver
+          fi
+          command -v WebKitWebDriver
 
       - name: Allow Bubblewrap user namespaces for Neko containment
         shell: bash
