@@ -1,7 +1,7 @@
 /**
  * Domain API module
  */
-import type { DomainSummary } from "./types";
+import type { DomainSummary } from "./types/organizations";
 import { getClient } from "./client";
 
 /** List all registered domains */
@@ -13,4 +13,3 @@ export async function listDomains(): Promise<DomainSummary[]> {
   );
   return Array.isArray(response) ? response : [];
 }
-

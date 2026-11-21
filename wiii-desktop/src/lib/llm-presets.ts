@@ -1,4 +1,4 @@
-import type { AppSettings } from "@/api/types";
+import type { AppSettings } from "@/api/types/conversation";
 
 export type LlmProvider = "google" | "zhipu" | "openai" | "openrouter" | "nvidia" | "ollama";
 

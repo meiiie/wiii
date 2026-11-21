@@ -2,14 +2,14 @@
  * Provider/runtime selector store for per-request chat routing.
  */
 import { create } from "zustand";
+import type { AppSettings } from "@/api/types/conversation";
 import type {
-  AppSettings,
   LlmStatusProvider,
   LlmStatusResponse,
   ModelCatalogEntry,
   ProviderDisabledReasonCode,
   ProviderSelectabilityState,
-} from "@/api/types";
+} from "@/api/types/llm";
 import { getClient } from "@/api/client";
 import { useSettingsStore } from "@/stores/settings-store";
 

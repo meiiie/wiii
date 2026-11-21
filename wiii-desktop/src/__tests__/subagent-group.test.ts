@@ -9,7 +9,7 @@ import type {
   ThinkingBlockData,
   SubagentGroupBlockData,
   AggregationSummary,
-} from "@/api/types";
+} from "@/api/types/content-blocks";
 import { _parseParallelTargets } from "@/hooks/useSSEStream";
 
 // Reset store before each test

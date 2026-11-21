@@ -3,7 +3,7 @@
  * Sprint 166: FileText icon, title, snippet, relevance bar, page badge, citation.
  */
 import { FileText } from "lucide-react";
-import type { PreviewItemData } from "@/api/types";
+import type { PreviewItemData } from "@/api/types/content-blocks";
 
 interface Props {
   item: PreviewItemData;

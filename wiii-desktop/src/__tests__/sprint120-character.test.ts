@@ -5,7 +5,7 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import { useCharacterStore, BLOCK_LABELS, MOOD_LABELS, MOOD_COLORS, MOOD_EMOJI } from "@/stores/character-store";
 import { useUIStore } from "@/stores/ui-store";
-import type { MoodType, CharacterBlockInfo } from "@/api/types";
+import type { MoodType, CharacterBlockInfo } from "@/api/types/character";
 
 // Mock the API module
 vi.mock("@/api/character", () => ({

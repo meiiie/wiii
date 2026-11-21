@@ -3,7 +3,11 @@ import { isNekoTaskScopeMapping } from "../task-scope-mapping";
 import { canonicalRootsEqual } from "../drivers/acp/task-protocol";
 import { v4 as uuidv4 } from "uuid";
 import { openAssistant, toToolBlock, appendOwnedSessionEvent, lastBlock } from "./session-projections";
-import type { ToolExecutionBlockData, ThinkingBlockData, AnswerBlockData } from "@/api/types";
+import type {
+  ToolExecutionBlockData,
+  ThinkingBlockData,
+  AnswerBlockData,
+} from "@/api/types/content-blocks";
 import { providerProcessExitDetail, sessionHasVisibleModelOutput } from "../session-status";
 import { useNekoWorkspaceStore } from "./neko-workspace-store";
 import { useCompletionNoticeStore } from "./completion-notice-store";

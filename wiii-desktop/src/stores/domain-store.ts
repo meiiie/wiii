@@ -2,7 +2,7 @@
  * Domain store — available domains, active domain.
  */
 import { create } from "zustand";
-import type { DomainSummary } from "@/api/types";
+import type { DomainSummary } from "@/api/types/organizations";
 import { listDomains } from "@/api/domains";
 import { DEFAULT_DOMAIN } from "@/lib/constants";
 

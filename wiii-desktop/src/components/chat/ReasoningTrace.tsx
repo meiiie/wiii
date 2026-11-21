@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { ChevronRight, AlertTriangle } from "lucide-react";
-import type { ReasoningTrace as ReasoningTraceType, ReasoningStep } from "@/api/types";
+import type { ReasoningTrace as ReasoningTraceType, ReasoningStep } from "@/api/types/chat";
 
 interface ReasoningTraceProps {
   trace: ReasoningTraceType;

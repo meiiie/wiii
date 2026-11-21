@@ -15,7 +15,11 @@
  */
 import { describe, it, expect, beforeEach } from "vitest";
 import { useChatStore } from "@/stores/chat-store";
-import type { ContentBlock, ThinkingBlockData, ActionTextBlockData } from "@/api/types";
+import type {
+  ContentBlock,
+  ThinkingBlockData,
+  ActionTextBlockData,
+} from "@/api/types/content-blocks";
 
 // Reset store between tests
 beforeEach(() => {

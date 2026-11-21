@@ -6,7 +6,7 @@
  */
 import { useState } from "react";
 import { ChevronDown, ExternalLink, Globe } from "lucide-react";
-import type { SourceInfo } from "@/api/types";
+import type { SourceInfo } from "@/api/types/chat";
 import { useUIStore } from "@/stores/ui-store";
 
 const MAX_VISIBLE = 3;

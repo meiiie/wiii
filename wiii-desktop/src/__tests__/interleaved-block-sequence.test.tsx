@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { fireEvent, render, screen, within } from "@testing-library/react";
-import type { ContentBlock } from "@/api/types";
+import type { ContentBlock } from "@/api/types/content-blocks";
 import { InterleavedBlockSequence } from "@/components/chat/InterleavedBlockSequence";
 import { useCodeStudioStore } from "@/stores/code-studio-store";
 

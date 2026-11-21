@@ -1,4 +1,4 @@
-import type { ArtifactData } from "@/api/types";
+import type { ArtifactData } from "@/api/types/artifacts";
 
 export function resolveArtifactFileUrl(
   artifact: ArtifactData,

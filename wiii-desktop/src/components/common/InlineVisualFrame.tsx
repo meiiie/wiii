@@ -1,5 +1,5 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { VisualRuntimeManifest, VisualShellVariant } from "@/api/types";
+import type { VisualRuntimeManifest, VisualShellVariant } from "@/api/types/artifacts";
 import {
   buildVisualFrameDocument,
   frameLabel,

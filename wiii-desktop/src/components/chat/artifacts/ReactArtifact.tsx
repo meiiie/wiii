@@ -8,7 +8,7 @@
 import { lazy, Suspense, useState } from "react";
 import { createSandpackConfig } from "@/lib/sandpack-runtime";
 import { MarkdownRenderer } from "@/components/common/MarkdownRenderer";
-import type { ArtifactData } from "@/api/types";
+import type { ArtifactData } from "@/api/types/artifacts";
 
 interface Props {
   artifact: ArtifactData;

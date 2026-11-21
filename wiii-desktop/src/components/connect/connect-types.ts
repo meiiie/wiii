@@ -7,8 +7,8 @@ import type {
   WiiiConnectFacebookPostPreviewResponse,
   WiiiConnectProviderConnectionListResponse,
   WiiiConnectProviderDisconnectResponse,
-  WiiiConnectRuntimeConnection,
-} from "@/api/types";
+} from "@/api/types/wiii-connect";
+import type { WiiiConnectRuntimeConnection } from "@/api/types/runtime-diagnostics";
 import type { CapabilityStatusItemId, CapabilityStatusTone } from "@/lib/capability-status";
 
 export type ConnectTab = "catalog" | "connections" | "paths" | "runtime";

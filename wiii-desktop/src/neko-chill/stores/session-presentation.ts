@@ -2,7 +2,7 @@
 import { SemanticStreamBuffer } from "@/lib/semantic-stream-buffer";
 import { markWiiiPerformance } from "@/lib/performance-telemetry";
 import { openAssistant, lastBlock } from "./session-projections";
-import type { ThinkingBlockData, AnswerBlockData } from "@/api/types";
+import type { ThinkingBlockData, AnswerBlockData } from "@/api/types/content-blocks";
 import { v4 as uuidv4 } from "uuid";
 import { persistSessionDebounced } from "../persistence";
 import type { SessionStoreApi } from "./session-store-types";

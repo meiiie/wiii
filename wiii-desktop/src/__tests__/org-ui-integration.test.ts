@@ -8,7 +8,7 @@ import { useDomainStore } from "@/stores/domain-store";
 import { useChatStore } from "@/stores/chat-store";
 import { useOrgStore } from "@/stores/org-store";
 import { PERSONAL_ORG_ID } from "@/lib/constants";
-import type { OrganizationSummary, DomainSummary } from "@/api/types";
+import type { OrganizationSummary, DomainSummary } from "@/api/types/organizations";
 
 // Mock API + storage
 vi.mock("@/api/organizations", () => ({

@@ -19,7 +19,7 @@ import type {
   AdminAuthEvent,
   GdprExportResponse,
   GdprForgetResponse,
-} from "@/api/types";
+} from "@/api/types/admin";
 import {
   getAdminDashboard,
   searchAdminUsers,

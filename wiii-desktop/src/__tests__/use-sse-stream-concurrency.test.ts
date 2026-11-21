@@ -10,7 +10,8 @@ import { useCharacterStore } from "@/stores/character-store";
 import { usePageContextStore } from "@/stores/page-context-store";
 import { useHostContextStore } from "@/stores/host-context-store";
 import { useModelStore } from "@/stores/model-store";
-import type { ToolExecutionBlockData, VisualPayload } from "@/api/types";
+import type { ToolExecutionBlockData } from "@/api/types/content-blocks";
+import type { VisualPayload } from "@/api/types/artifacts";
 import { sendMessageStream } from "@/api/chat";
 import {
   fetchWiiiConnectFacebookPages,

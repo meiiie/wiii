@@ -9,7 +9,7 @@ import {
   clearContext,
 } from "@/api/context";
 import { CONTEXT_POLL_INTERVAL } from "@/lib/constants";
-import type { ContextInfoResponse } from "@/api/types";
+import type { ContextInfoResponse } from "@/api/types/service-state";
 
 export type ContextStatus = "unknown" | "green" | "yellow" | "orange" | "red";
 

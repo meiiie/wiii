@@ -4,7 +4,7 @@
  */
 import { describe, it, expect } from "vitest";
 import { FACT_TYPE_LABELS } from "@/stores/memory-store";
-import type { MemoryItem } from "@/api/types";
+import type { MemoryItem } from "@/api/types/service-state";
 
 // Pure filtering logic extracted for testing (mirrors MemoryTab useMemo)
 function filterMemories(

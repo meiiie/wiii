@@ -16,15 +16,14 @@ import {
 import type { LucideIcon } from "lucide-react";
 import type {
   ActionTextBlockData,
-  ArtifactBlockData,
   ContentBlock,
   PreviewBlockData,
   ScreenshotBlockData,
   ThinkingBlockData,
-  ThinkingLevel,
   ToolExecutionBlockData,
-  VisualBlockData,
-} from "@/api/types";
+} from "@/api/types/content-blocks";
+import type { ArtifactBlockData, VisualBlockData } from "@/api/types/artifacts";
+import type { ThinkingLevel } from "@/api/types/conversation";
 import { MarkdownRenderer } from "@/components/common/MarkdownRenderer";
 import { NODE_LABELS } from "@/lib/reasoning-labels";
 import { useCodeStudioStore } from "@/stores/code-studio-store";

@@ -7,7 +7,7 @@
  * All renderers are lazy-loaded for zero base impact.
  */
 import { lazy, Suspense } from "react";
-import type { ArtifactData } from "@/api/types";
+import type { ArtifactData } from "@/api/types/artifacts";
 import { ErrorBoundary } from "@/components/common/ErrorBoundary";
 
 // Lazy-load renderers (code-split per type)

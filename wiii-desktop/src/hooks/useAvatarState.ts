@@ -15,7 +15,7 @@ import { useChatStore } from "@/stores/chat-store";
 import { useUIStore } from "@/stores/ui-store";
 import { useCharacterStore } from "@/stores/character-store";
 import type { AvatarState } from "@/lib/avatar/types";
-import type { MoodType } from "@/api/types";
+import type { MoodType } from "@/api/types/character";
 import type { SoulEmotionData } from "@/stores/character-store";
 
 /** Complete decay duration for "complete" state (ms) */

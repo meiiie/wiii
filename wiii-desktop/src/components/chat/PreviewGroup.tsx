@@ -11,7 +11,7 @@
  */
 import { useRef, useCallback, useState, useEffect } from "react";
 import { ChevronLeft, ChevronRight, Globe } from "lucide-react";
-import type { PreviewBlockData } from "@/api/types";
+import type { PreviewBlockData } from "@/api/types/content-blocks";
 import { useUIStore } from "@/stores/ui-store";
 import { PreviewCard } from "./PreviewCard";
 

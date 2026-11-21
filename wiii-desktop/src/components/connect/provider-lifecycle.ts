@@ -4,7 +4,7 @@ import type {
   WiiiConnectAuthorizationUrlDecision,
   WiiiConnectConnectionLifecycleDecision,
   WiiiConnectProviderConnectionRecord,
-} from "@/api/types";
+} from "@/api/types/wiii-connect";
 import type { CapabilityStatusTone } from "@/lib/capability-status";
 import { compactText, statusLabel } from "./connect-display";
 import type {

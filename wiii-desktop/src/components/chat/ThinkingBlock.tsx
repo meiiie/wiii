@@ -11,10 +11,11 @@ import {
   BookOpen,
   Wrench,
 } from "lucide-react";
-import type { ToolCallInfo } from "@/api/types";
+import type { ToolCallInfo } from "@/api/types/chat";
 import { MarkdownRenderer } from "@/components/common/MarkdownRenderer";
 
-import type { ThinkingLevel, ThinkingSummaryMode } from "@/api/types";
+import type { ThinkingLevel } from "@/api/types/conversation";
+import type { ThinkingSummaryMode } from "@/api/types/artifacts";
 import { TOOL_LABELS, PHASE_LABELS } from "@/lib/reasoning-labels";
 
 interface ThinkingBlockProps {

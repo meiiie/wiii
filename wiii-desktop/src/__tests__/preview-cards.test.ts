@@ -12,8 +12,8 @@ import type {
   PreviewItemData,
   PreviewBlockData,
   PreviewType,
-  SSEEventType,
-} from "@/api/types";
+} from "@/api/types/content-blocks";
+import type { SSEEventType } from "@/api/types/sse";
 
 // ---- Helpers ----
 

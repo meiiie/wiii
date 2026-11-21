@@ -8,7 +8,11 @@
  */
 import { beforeEach, describe, expect, it } from "vitest";
 import { useChatStore } from "@/stores/chat-store";
-import type { ContentBlock, ThinkingBlockData, ToolExecutionBlockData } from "@/api/types";
+import type {
+  ContentBlock,
+  ThinkingBlockData,
+  ToolExecutionBlockData,
+} from "@/api/types/content-blocks";
 
 beforeEach(() => {
   useChatStore.setState({

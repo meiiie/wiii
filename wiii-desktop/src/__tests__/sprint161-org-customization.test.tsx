@@ -12,7 +12,7 @@ import {
   resetBranding,
   DEFAULT_BRANDING,
 } from "@/lib/org-branding";
-import type { OrgBranding, OrgSettings } from "@/api/types";
+import type { OrgBranding, OrgSettings } from "@/api/types/organizations";
 
 // ============================================================================
 // Helpers

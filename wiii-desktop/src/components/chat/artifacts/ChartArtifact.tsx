@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Download } from "lucide-react";
-import type { ArtifactData } from "@/api/types";
+import type { ArtifactData } from "@/api/types/artifacts";
 import { useSettingsStore } from "@/stores/settings-store";
 import { resolveArtifactFileUrl } from "@/lib/artifact-file";
 

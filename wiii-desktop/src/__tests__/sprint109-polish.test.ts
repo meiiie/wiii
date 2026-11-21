@@ -4,7 +4,7 @@
  */
 import { describe, it, expect } from "vitest";
 import { DOMAIN_ICONS, DOMAIN_LABELS, DOMAIN_BADGES } from "@/lib/domain-config";
-import type { ChatResponseData } from "@/api/types";
+import type { ChatResponseData } from "@/api/types/chat";
 
 // ===== Domain Config =====
 

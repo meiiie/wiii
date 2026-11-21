@@ -1,6 +1,6 @@
 import { useEffect, useMemo } from "react";
 import { ArrowRightLeft, RotateCcw } from "lucide-react";
-import type { Message } from "@/api/types";
+import type { Message } from "@/api/types/conversation";
 import { useToastStore } from "@/stores/toast-store";
 import { useModelStore, type RequestModelProvider } from "@/stores/model-store";
 import { resolveModelSwitchPrompt } from "@/lib/model-switch-prompt";

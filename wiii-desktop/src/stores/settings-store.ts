@@ -9,7 +9,7 @@
  * - Legacy mode role restricted to student/teacher (no admin escalation)
  */
 import { create } from "zustand";
-import type { AppSettings } from "@/api/types";
+import type { AppSettings } from "@/api/types/conversation";
 import {
   DEFAULT_SERVER_URL,
   DEFAULT_USER_ROLE,

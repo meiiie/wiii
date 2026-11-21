@@ -1,7 +1,7 @@
 import type {
   WiiiConnectEffectiveActionInventoryResponse,
   WiiiConnectEffectiveActionRecord,
-} from "@/api/types";
+} from "@/api/types/wiii-connect";
 import type { CapabilityStatusTone } from "@/lib/capability-status";
 import { compactText, formatDateTime, pathList } from "./connect-display";
 import type { ProviderActionInventoryState } from "./connect-types";

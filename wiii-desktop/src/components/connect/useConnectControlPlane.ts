@@ -7,9 +7,9 @@ import type {
   SemanticMemoryWriteDoctorHistoryReport,
   SemanticMemoryWriteDoctorReport,
   WiiiConnectDoctorReport,
-  WiiiConnectProviderRegistryEntry,
   WiiiConnectRuntimeSnapshot,
-} from "@/api/types";
+} from "@/api/types/runtime-diagnostics";
+import type { WiiiConnectProviderRegistryEntry } from "@/api/types/wiii-connect";
 import {
   fetchRecentRuntimeFlowDoctor,
   fetchRecentSemanticMemoryDoctor,

@@ -10,10 +10,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { createElement } from "react";
 import { render, screen, fireEvent } from "@testing-library/react";
-import type {
-  PreviewItemData,
-  PreviewBlockData,
-} from "@/api/types";
+import type { PreviewItemData, PreviewBlockData } from "@/api/types/content-blocks";
 
 // ---- Polyfills for jsdom (missing browser APIs) ----
 

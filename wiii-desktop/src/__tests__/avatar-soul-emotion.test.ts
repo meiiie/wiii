@@ -10,14 +10,14 @@ import { describe, it, expect, beforeEach } from "vitest";
 describe("SSE emotion dispatch", () => {
   it("dispatches emotion event to handler", async () => {
     // Test that "emotion" is a valid SSEEventType via type-level check
-    const emotionType: import("@/api/types").SSEEventType = "emotion";
+    const emotionType: import("@/api/types/sse").SSEEventType = "emotion";
     expect(emotionType).toBe("emotion");
   });
 
   it("SSEEmotionEvent interface has required fields", async () => {
-    const { } = await import("@/api/types");
+    const { } = await import("@/api/types/sse");
     // Type-level test — if this compiles, the interface exists
-    const event: import("@/api/types").SSEEmotionEvent = {
+    const event: import("@/api/types/sse").SSEEmotionEvent = {
       mood: "warm",
       face: { blush: 0.3 },
       intensity: 0.8,

@@ -10,7 +10,7 @@
  * Lazy loading: Pyodide core (~7 MB gzip) is only loaded on first use.
  */
 
-import type { ExecutionResult } from "@/api/types";
+import type { ExecutionResult } from "@/api/types/artifacts";
 export type { ExecutionResult };
 
 type WorkerMessage =

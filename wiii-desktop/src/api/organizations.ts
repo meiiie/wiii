@@ -5,8 +5,8 @@ import type {
   OrganizationSummary,
   OrgSettings,
   OrgPermissionsResponse,
-  AdminAuthEventsResponse,
-} from "./types";
+} from "./types/organizations";
+import type { AdminAuthEventsResponse } from "./types/admin";
 import { getClient } from "./client";
 
 /** List all organizations (admin) */

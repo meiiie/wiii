@@ -9,7 +9,8 @@ import {
   Server,
   Workflow,
 } from "lucide-react";
-import type { WiiiConnectProviderRegistryEntry, WiiiConnectRuntimeSnapshot } from "@/api/types";
+import type { WiiiConnectProviderRegistryEntry } from "@/api/types/wiii-connect";
+import type { WiiiConnectRuntimeSnapshot } from "@/api/types/runtime-diagnostics";
 import type { CapabilityStatusViewModel } from "@/lib/capability-status";
 import {
   categoryLabelById,

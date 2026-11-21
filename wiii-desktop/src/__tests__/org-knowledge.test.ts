@@ -61,7 +61,11 @@ vi.mock("@/lib/constants", () => ({
   PERSONAL_ORG_ID: "personal",
 }));
 
-import type { OrgDocument, OrgDocumentStatus, OrgDocumentListResponse } from "@/api/types";
+import type {
+  OrgDocument,
+  OrgDocumentStatus,
+  OrgDocumentListResponse,
+} from "@/api/types/knowledge";
 
 // ---------------------------------------------------------------------------
 // 1. OrgDocument Type Tests

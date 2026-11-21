@@ -1,17 +1,16 @@
 import React, { useMemo, useState } from "react";
 import { AlertTriangle } from "lucide-react";
+import type { ArtifactBlockData, VisualBlockData } from "@/api/types/artifacts";
 import type {
-  ArtifactBlockData,
   ContentBlock,
   PreviewBlockData,
   ScreenshotBlockData,
   SubagentGroupBlockData,
   ThinkingBlockData,
-  ThinkingLevel,
   ThinkingPhase,
   ToolExecutionBlockData,
-  VisualBlockData,
-} from "@/api/types";
+} from "@/api/types/content-blocks";
+import type { ThinkingLevel } from "@/api/types/conversation";
 import { MarkdownRenderer } from "@/components/common/MarkdownRenderer";
 import {
   ReasoningInterval,

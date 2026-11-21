@@ -3,7 +3,7 @@ import type {
   RuntimeFlowDoctorHistoryReport,
   RuntimeFlowDoctorReport,
   RuntimeFlowSessionEventPruneReport,
-} from "@/api/types";
+} from "@/api/types/runtime-diagnostics";
 import type { CapabilityStatusTone } from "@/lib/capability-status";
 import { formatDateTime } from "./connect-display";
 import { StatusPill } from "./ConnectStatus";

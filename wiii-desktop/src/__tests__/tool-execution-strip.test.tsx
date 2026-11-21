@@ -1,7 +1,7 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import { beforeEach, describe, expect, it } from "vitest";
 import { ToolExecutionStrip } from "@/components/chat/ToolExecutionStrip";
-import type { ToolExecutionBlockData } from "@/api/types";
+import type { ToolExecutionBlockData } from "@/api/types/content-blocks";
 import { useCodeStudioStore } from "@/stores/code-studio-store";
 
 describe("ToolExecutionStrip", () => {

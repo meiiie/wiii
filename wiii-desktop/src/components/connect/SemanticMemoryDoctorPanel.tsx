@@ -2,7 +2,7 @@ import { Database } from "lucide-react";
 import type {
   SemanticMemoryWriteDoctorHistoryReport,
   SemanticMemoryWriteDoctorReport,
-} from "@/api/types";
+} from "@/api/types/runtime-diagnostics";
 import { formatDateTime } from "./connect-display";
 import { StatusPill } from "./ConnectStatus";
 import {

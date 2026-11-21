@@ -4,7 +4,7 @@
  * Keeps LazyImage helper for external use.
  */
 import { useRef, useEffect, useState } from "react";
-import type { PreviewItemData } from "@/api/types";
+import type { PreviewItemData } from "@/api/types/content-blocks";
 import { PreviewCardRenderer } from "./previews";
 
 interface PreviewCardProps {

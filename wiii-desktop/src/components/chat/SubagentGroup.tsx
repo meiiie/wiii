@@ -9,8 +9,8 @@ import type {
   SubagentGroupBlockData,
   ThinkingBlockData,
   AggregationSummary,
-  ThinkingLevel,
-} from "@/api/types";
+} from "@/api/types/content-blocks";
+import type { ThinkingLevel } from "@/api/types/conversation";
 import { ThinkingBlock } from "./ThinkingBlock";
 
 const AGENT_LABELS: Record<string, string> = {

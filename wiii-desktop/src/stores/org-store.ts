@@ -12,7 +12,8 @@
  * the org is auto-detected from the hostname — no org selector needed.
  */
 import { create } from "zustand";
-import type { OrganizationSummary, OrgSettings, AdminContext } from "@/api/types";
+import type { OrganizationSummary, OrgSettings } from "@/api/types/organizations";
+import type { AdminContext } from "@/api/types/admin";
 import { listOrganizations, getOrgSettings, getOrgPermissions } from "@/api/organizations";
 import { getAdminContext } from "@/api/admin";
 import { PERSONAL_ORG_ID } from "@/lib/constants";

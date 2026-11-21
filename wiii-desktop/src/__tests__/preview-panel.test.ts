@@ -10,10 +10,7 @@ import { describe, it, expect, beforeEach } from "vitest";
 import { useChatStore } from "@/stores/chat-store";
 import { useUIStore } from "@/stores/ui-store";
 import { useSettingsStore } from "@/stores/settings-store";
-import type {
-  PreviewItemData,
-  PreviewBlockData,
-} from "@/api/types";
+import type { PreviewItemData, PreviewBlockData } from "@/api/types/content-blocks";
 
 // ---- Helpers ----
 

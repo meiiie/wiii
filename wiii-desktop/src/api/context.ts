@@ -7,7 +7,7 @@ import type {
   ContextInfoResponse,
   CompactResponse,
   ClearContextResponse,
-} from "./types";
+} from "./types/service-state";
 
 /** Fetch context utilization info for a session. */
 export async function fetchContextInfo(

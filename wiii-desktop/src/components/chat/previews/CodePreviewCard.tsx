@@ -5,7 +5,7 @@
 import { useState } from "react";
 import { Code, Copy, Check } from "lucide-react";
 import { MarkdownRenderer } from "@/components/common/MarkdownRenderer";
-import type { PreviewItemData } from "@/api/types";
+import type { PreviewItemData } from "@/api/types/content-blocks";
 
 interface Props {
   item: PreviewItemData;

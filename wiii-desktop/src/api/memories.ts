@@ -4,7 +4,11 @@
  * DELETE /memories/{user_id} (bulk clear).
  */
 import { getClient } from "./client";
-import type { MemoryListResponse, DeleteMemoryResponse, ClearMemoriesResponse } from "./types";
+import type {
+  MemoryListResponse,
+  DeleteMemoryResponse,
+  ClearMemoriesResponse,
+} from "./types/service-state";
 
 /** Fetch all memories for a user. */
 export async function fetchMemories(

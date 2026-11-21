@@ -9,7 +9,8 @@
  * Backend uses code_studio_context.active_session for quality/session decisions.
  */
 import { create } from "zustand";
-import type { ChatCodeStudioContext, VisualPayload } from "@/api/types";
+import type { ChatCodeStudioContext } from "@/api/types/chat";
+import type { VisualPayload } from "@/api/types/artifacts";
 
 export const MAX_RETAINED_CODE_STUDIO_SESSIONS = 12;
 export const MAX_RETAINED_CODE_STUDIO_VERSIONS = 20;

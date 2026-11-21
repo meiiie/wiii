@@ -36,7 +36,7 @@ import { PointyModeToggle } from "./PointyModeToggle";
 import { CapabilityStatusBar } from "./CapabilityStatusBar";
 import { MentionPicker } from "./MentionPicker";
 import { MentionMirror } from "./MentionMirror";
-import type { ChatDocumentAttachment, ChatDocumentContext, ImageInput } from "@/api/types";
+import type { ChatDocumentAttachment, ChatDocumentContext, ImageInput } from "@/api/types/chat";
 
 const MAX_IMAGE_ATTACHMENTS = 5;
 const MAX_IMAGE_SIZE_BYTES = 10 * 1024 * 1024;

@@ -4,7 +4,7 @@ import type {
   RuntimeFlowDoctorSubagentSummary,
   SemanticMemoryWriteDoctorReport,
   WiiiConnectDoctorReport,
-} from "@/api/types";
+} from "@/api/types/runtime-diagnostics";
 import type { CapabilityStatusTone } from "@/lib/capability-status";
 import { compactText } from "./connect-display";
 

@@ -11,7 +11,7 @@
  *  3. All Tailwind/CSS references use var(--accent) etc. — instant theme update
  *  4. resetBranding() restores Wiii platform defaults
  */
-import type { OrgBranding } from "@/api/types";
+import type { OrgBranding } from "@/api/types/organizations";
 
 /** Wiii platform default branding (matches globals.css :root) */
 export const DEFAULT_BRANDING: OrgBranding = {

@@ -1,7 +1,9 @@
 import { useState, useCallback, memo, lazy, Suspense } from "react";
 import { motion } from "motion/react";
 import { Check, Copy, FileText, Film, Pencil, RefreshCw, ThumbsDown, ThumbsUp } from "lucide-react";
-import type { ContentBlock, Message, MoodType } from "@/api/types";
+import type { ContentBlock } from "@/api/types/content-blocks";
+import type { Message } from "@/api/types/conversation";
+import type { MoodType } from "@/api/types/character";
 import type { AvatarState, SoulEmotionData } from "@/lib/avatar/types";
 import { MarkdownRenderer } from "@/components/common/MarkdownRenderer";
 import { WiiiAvatar } from "@/components/common/WiiiAvatar";
@@ -456,7 +458,7 @@ function BlockRenderer({
 }: {
   blocks: ContentBlock[];
   showThinking: boolean;
-  thinkingLevel?: import("@/api/types").ThinkingLevel;
+  thinkingLevel?: import("@/api/types/conversation").ThinkingLevel;
   onSuggestedQuestion?: (q: string) => void;
   message: Message;
 }) {

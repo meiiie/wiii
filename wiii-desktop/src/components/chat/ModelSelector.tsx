@@ -10,7 +10,7 @@ import {
   type RequestModelProvider,
 } from "@/stores/model-store";
 import { useChatStore } from "@/stores/chat-store";
-import type { ModelCatalogEntry } from "@/api/types";
+import type { ModelCatalogEntry } from "@/api/types/llm";
 
 const PROVIDER_ICONS: Record<string, typeof Cpu> = {
   auto: Sparkles,

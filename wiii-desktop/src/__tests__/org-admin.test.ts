@@ -37,7 +37,7 @@ vi.mock("@/lib/constants", () => ({
 
 import { useOrgStore } from "@/stores/org-store";
 import { useUIStore } from "@/stores/ui-store";
-import type { AdminContext } from "@/api/types";
+import type { AdminContext } from "@/api/types/admin";
 
 // ---------------------------------------------------------------------------
 // 1. AdminContext Type Tests

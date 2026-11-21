@@ -3,7 +3,7 @@
  * Sprint 166: Google favicon, title, snippet, domain, date badge.
  */
 import { Globe } from "lucide-react";
-import type { PreviewItemData } from "@/api/types";
+import type { PreviewItemData } from "@/api/types/content-blocks";
 
 interface Props {
   item: PreviewItemData;

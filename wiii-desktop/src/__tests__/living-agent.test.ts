@@ -13,7 +13,7 @@ import type {
   HeartbeatTriggerResult,
   WiiiMoodType,
   SkillStatus,
-} from "@/api/types";
+} from "@/api/types/character";
 
 // Reset store before each test
 beforeEach(() => {

@@ -3,11 +3,8 @@
  */
 import { describe, it, expect, beforeEach } from "vitest";
 import { useChatStore } from "@/stores/chat-store";
-import type {
-  ContentBlock,
-  ScreenshotBlockData,
-  SSEBrowserScreenshotEvent,
-} from "@/api/types";
+import type { ContentBlock, ScreenshotBlockData } from "@/api/types/content-blocks";
+import type { SSEBrowserScreenshotEvent } from "@/api/types/sse";
 
 // ===== Type tests =====
 
