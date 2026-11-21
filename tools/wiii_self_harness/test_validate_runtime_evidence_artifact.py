@@ -9,7 +9,7 @@ import unittest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import validate_runtime_evidence_artifact as artifact_validator
-import validate_runtime_evidence_registry as registry_validator
+import runtime_evidence_registry as registry_validator
 
 
 AS_OF = artifact_validator._parse_timestamp("2026-06-01T12:00:00+00:00")
