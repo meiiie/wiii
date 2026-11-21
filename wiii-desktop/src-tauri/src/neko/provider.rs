@@ -852,13 +852,14 @@ impl ResolvedProvider {
     }
 
     /// Automatic Dream adds a background model request per turn, so the bundled
-    /// runtime keeps it off unless the user opts in with `NEKO_DREAM_MODE`.
+    /// runtime uses `manual` (saved notes still load; no automatic requests)
+    /// unless the user opts in with `NEKO_DREAM_MODE`.
     fn command_with_inherited_dream_mode(&self, user_set_dream_mode: bool) -> Command {
         let mut command = Command::new(&self.program);
         if self.bundled {
             command.env("NEKO_AUTO_UPDATE", "0");
             if !user_set_dream_mode {
-                command.env("NEKO_DREAM_MODE", "off");
+                command.env("NEKO_DREAM_MODE", "manual");
             }
         }
         command
@@ -1196,7 +1197,7 @@ mod tests {
         let overrides: Vec<_> = command.get_envs().collect();
         assert_eq!(overrides.len(), 2);
         assert!(overrides.contains(&("NEKO_AUTO_UPDATE".as_ref(), Some("0".as_ref()))));
-        assert!(overrides.contains(&("NEKO_DREAM_MODE".as_ref(), Some("off".as_ref()))));
+        assert!(overrides.contains(&("NEKO_DREAM_MODE".as_ref(), Some("manual".as_ref()))));
         resolved.bundled = false;
         assert_eq!(
             resolved
