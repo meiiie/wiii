@@ -12,6 +12,8 @@ RUNTIME_JSON_READER_MODULES = (
     "validate_runtime_evidence_registry.py",
     "validate_runtime_evidence_artifact.py",
     "report_runtime_evidence_coverage.py",
+    *(path.relative_to(SCRIPT_DIR).as_posix()
+      for path in sorted((SCRIPT_DIR / "runtime_evidence_registry").glob("*.py"))),
 )
 
 
