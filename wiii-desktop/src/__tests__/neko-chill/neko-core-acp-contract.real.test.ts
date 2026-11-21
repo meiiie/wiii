@@ -190,7 +190,10 @@ describe.skipIf(!BINARY)("Neko Core ACP task-v1 contract (real binary)", () => {
 
   it("refuses a stale receipt without admitting a prompt", async () => {
     const h = driverFor({ resumeSessionId: sessionId, expectedReceipt: firstReceipt });
-    await expect(h.driver.start()).rejects.toThrow();
+    await expect(h.driver.start()).rejects.toMatchObject({
+      name: "NekoTaskProtocolError",
+      reason: "activation-mismatch",
+    });
     expect(h.admitted).toHaveLength(0);
     await expect(h.driver.prompt("must not run")).rejects.toThrow();
     await h.driver.dispose();

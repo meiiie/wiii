@@ -848,7 +848,9 @@ impl ResolvedProvider {
     /// A bundled runtime follows Wiii's release lifecycle. This overrides only
     /// the child environment; the user's standalone Neko settings stay intact.
     pub(crate) fn command(&self) -> Command {
-        self.command_with_inherited_dream_mode(std::env::var_os("NEKO_DREAM_MODE").is_some())
+        self.command_with_inherited_dream_mode(
+            std::env::var_os("NEKO_DREAM_MODE").is_some_and(|value| !value.is_empty()),
+        )
     }
 
     /// Automatic Dream adds a background model request per turn, so the bundled
@@ -1692,6 +1694,29 @@ mod tests {
         };
         super::linux_containment::force_unavailable_for_test(false);
         assert_eq!(error.kind(), io::ErrorKind::Unsupported);
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn linux_bwrap_child_receives_command_environment() {
+        if !super::linux_containment::containment_available() {
+            return;
+        }
+        let resolved = ResolvedProvider {
+            definition: definition("neko").unwrap(),
+            program: PathBuf::from("/usr/bin/env"),
+            version: Some("neko-core 1.9.3".into()),
+            bundled: true,
+        };
+        let mut command = resolved.command_with_inherited_dream_mode(false);
+        command.stdout(std::process::Stdio::piped());
+        let mut child = spawn_owned(&mut command).expect("bwrap spawn");
+        let mut stdout = String::new();
+        io::Read::read_to_string(child.child.stdout.as_mut().unwrap(), &mut stdout).unwrap();
+        assert!(child.child.wait().unwrap().success());
+        let lines: Vec<&str> = stdout.lines().collect();
+        assert!(lines.contains(&"NEKO_DREAM_MODE=manual"), "{stdout}");
+        assert!(lines.contains(&"NEKO_AUTO_UPDATE=0"), "{stdout}");
     }
 
     #[cfg(target_os = "linux")]
