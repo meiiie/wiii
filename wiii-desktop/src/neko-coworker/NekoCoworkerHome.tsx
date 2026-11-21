@@ -57,7 +57,7 @@ export function signalInboxCardState(state: SignalInboxViewState): {
   if (state === "unavailable") {
     return {
       value: "Chưa kiểm tra được",
-      detail: "Máy làm việc vẫn hoạt động bình thường",
+      detail: "Thử kiểm tra lại",
       attention: false,
     };
   }
@@ -254,15 +254,11 @@ export function NekoCoworkerHome({ projects }: { projects: NekoProject[] }) {
           </div>
           <div className="min-w-0 flex-1">
             <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-[var(--nk-text-3)]">
-              {coworker.roleLabel} · AI
+              {coworker.roleLabel}
             </p>
             <h1 className="mt-1 text-[24px] font-semibold tracking-[-0.03em] text-[var(--nk-text)]">
               {coworkerWorkstationTitle(coworker)}
             </h1>
-            <p className="mt-1 max-w-2xl text-[12px] leading-5 text-[var(--nk-text-3)]">
-              Một máy làm việc bền vững của Neko. Hồ sơ Browser và ứng dụng thuộc về Neko;
-              mỗi Project chỉ được gắn vào khi bạn cấp quyền và có thể thu hồi bất cứ lúc nào.
-            </p>
           </div>
           <button
             type="button"
@@ -276,12 +272,12 @@ export function NekoCoworkerHome({ projects }: { projects: NekoProject[] }) {
           </button>
         </header>
 
-        <section className="mt-7 grid gap-3 md:grid-cols-2 lg:grid-cols-4">
+        <section className="mt-6 grid gap-4 border-y border-[var(--nk-border)] py-4 sm:grid-cols-2 lg:grid-cols-4">
           <SummaryCard
             icon={Monitor}
             label="Máy làm việc"
             value={status?.environmentId ? "Đã thiết lập" : "Chưa thiết lập"}
-            detail={status?.environment?.operatingSystem ?? "Linux · Debian 12"}
+            detail={status?.environment?.operatingSystem ?? ""}
           />
           <SummaryCard
             icon={Folder}
@@ -313,12 +309,10 @@ export function NekoCoworkerHome({ projects }: { projects: NekoProject[] }) {
           <div className="flex items-center justify-between border-b border-[var(--nk-border)] px-4 py-3">
             <div>
               <h2 className="text-[12.5px] font-semibold text-[var(--nk-text)]">Quyền truy cập Project</h2>
-              <p className="mt-0.5 text-[10px] text-[var(--nk-text-3)]">
-                Neko trên máy Đồng nghiệp chỉ thấy thư mục đã cấp quyền bên dưới — khác với phiên Chill trong sidebar.
-              </p>
+              {showChillSeparation ? <p role="status" data-testid="coworker-chill-separation-honesty" className="mt-1 text-[11px] text-[var(--nk-text-3)]">{COWORKER_CHILL_SEPARATION_VI}</p> : null}
             </div>
             <span className="rounded-md bg-[var(--nk-overlay)] px-2 py-1 text-[9px] font-medium text-[var(--nk-text-3)]">
-              Read + Write
+              Đọc &amp; ghi
             </span>
           </div>
           <div className="v3-divide-y v3-divide-nk-border">
@@ -329,7 +323,7 @@ export function NekoCoworkerHome({ projects }: { projects: NekoProject[] }) {
               const active = activeKey === actionKey;
               const busy = busyProject === actionKey;
               return (
-                <div key={`${projectId}:${root.path}`} className="flex items-center gap-3 px-4 py-3">
+                <div key={`${projectId}:${root.path}`} className="flex flex-wrap items-center gap-3 px-4 py-3">
                   <span className="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-[var(--nk-overlay)]">
                     <Folder aria-hidden="true" className="h-3.5 w-3.5 text-[var(--nk-text-3)]" />
                   </span>
@@ -370,7 +364,7 @@ export function NekoCoworkerHome({ projects }: { projects: NekoProject[] }) {
                       className="h-7 rounded-md border border-[var(--nk-border)] px-2.5 text-[9.5px] font-medium text-[var(--nk-text-2)] hover:bg-[var(--nk-overlay)] disabled:opacity-40"
                       onClick={() => void runProjectAction(actionKey, () => grant(projectRef))}
                     >
-                      Cấp quyền
+                      Cấp quyền đọc &amp; ghi
                     </button>
                   )}
                 </div>
@@ -464,7 +458,9 @@ export function NekoCoworkerHome({ projects }: { projects: NekoProject[] }) {
             ) : null}
           </div>
 
-          <div className="grid border-t border-[var(--nk-border)] bg-[var(--nk-inset)]/45 md:grid-cols-3 md:v3-divide-x md:v3-divide-nk-border">
+          <details className="border-t border-[var(--nk-border)] px-4 py-3">
+            <summary className="cursor-pointer text-[11px] text-[var(--nk-text-3)]">Lưu trữ &amp; dữ liệu</summary>
+            <div className="mt-2 grid md:grid-cols-3">
             <StorageFact
               icon={HardDriveDownload}
               label="Ứng dụng & hệ thống"
@@ -483,18 +479,10 @@ export function NekoCoworkerHome({ projects }: { projects: NekoProject[] }) {
               value="Ở nguyên vị trí gốc"
               detail="Wiii gắn thư mục đang mở, không tạo bản sao"
             />
-          </div>
+            </div>
+          </details>
         </section>
 
-        {showChillSeparation ? (
-          <p
-            role="status"
-            data-testid="coworker-chill-separation-honesty"
-            className="mt-4 rounded-xl border border-[var(--nk-warning)]/35 bg-[var(--nk-warning)]/8 px-3 py-2.5 text-[10px] leading-4 text-[var(--nk-text-2)]"
-          >
-            {COWORKER_CHILL_SEPARATION_VI}
-          </p>
-        ) : null}
 
         {!nativeComputer ? (
           <p
@@ -556,7 +544,7 @@ function SummaryCard({
 }) {
   return (
     <div
-      className={`rounded-2xl border bg-[var(--nk-composer)] px-4 py-4 ${attention ? "border-[var(--nk-warning)]/45 shadow-[0_8px_24px_rgba(166,107,32,0.08)]" : "border-[var(--nk-border)]"}`}
+      className="min-w-0 px-1"
       data-attention={attention || undefined}
       data-testid={testId}
       aria-live={testId ? "polite" : undefined}
@@ -565,8 +553,8 @@ function SummaryCard({
         <Icon aria-hidden="true" className={`h-3.5 w-3.5 ${attention ? "text-[var(--nk-warning)]" : ""}`} />
         {label}
       </div>
-      <p className="mt-3 truncate text-[13px] font-semibold text-[var(--nk-text)]">{value}</p>
-      <p className="mt-1 truncate text-[9.5px] text-[var(--nk-ghost)]">{detail}</p>
+      <p className="mt-2 truncate text-[13px] font-medium text-[var(--nk-text)]" title={value}>{value}</p>
+      {detail ? <p className="mt-1 truncate text-[10.5px] text-[var(--nk-text-3)]" title={detail}>{detail}</p> : null}
     </div>
   );
 }

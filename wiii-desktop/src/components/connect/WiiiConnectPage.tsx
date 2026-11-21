@@ -8,7 +8,6 @@ import {
   PlugZap,
   RefreshCw,
   Route,
-  ShieldCheck,
 } from "lucide-react";
 import { type FullPageTab, FullPageView } from "@/components/layout/FullPageView";
 import {
@@ -146,7 +145,6 @@ export function WiiiConnectPage({ onClose, backLabel }: { onClose?: () => void; 
   return (
     <FullPageView
       title="Kết nối"
-      subtitle="Tài khoản và ứng dụng của Neko"
       icon={<PlugZap size={18} />}
       tabs={tabs}
       activeTab={activeTab}
@@ -155,13 +153,10 @@ export function WiiiConnectPage({ onClose, backLabel }: { onClose?: () => void; 
       backLabel={backLabel}
     >
       <div className="v3-space-y-6" data-testid="wiii-connect-page">
-        <section>
+        {activeTab === "runtime" && <section>
           <div className="mb-4 flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
             <div>
-              <h1 className="text-xl font-semibold text-text">Neko được phép làm việc ở đâu?</h1>
-              <p className="mt-1 max-w-3xl text-sm text-text-secondary">
-                Kết nối tài khoản, xem chính xác quyền Neko đang có và thu hồi quyền bất cứ lúc nào.
-              </p>
+              <h1 className="text-xl font-semibold text-text">Chẩn đoán kết nối</h1>
             </div>
             <StatusPill tone={snapshotTone}>
               {snapshot ? `${stats.ready}/${stats.total} sẵn sàng` : "Chưa có dữ liệu"}
@@ -218,28 +213,7 @@ export function WiiiConnectPage({ onClose, backLabel }: { onClose?: () => void; 
               }
             />
           </div>
-        </section>
-
-        {focusProviderSlug === "gmail" && activeTab === "catalog" ? (
-          <section
-            className="rounded-xl border border-primary/20 bg-primary/5 px-4 py-3"
-            data-testid="gmail-connection-guide"
-          >
-            <div className="flex items-start gap-3">
-              <span className="mt-0.5 grid h-8 w-8 shrink-0 place-items-center rounded-full bg-surface text-primary">
-                <ShieldCheck size={16} aria-hidden="true" />
-              </span>
-              <div className="min-w-0">
-                <h2 className="text-sm font-semibold text-text">Kết nối Gmail thử nghiệm của Neko</h2>
-                <p className="mt-1 max-w-3xl text-sm leading-5 text-text-secondary">
-                  Gmail đang đăng nhập trong Máy của Neko không tự cấp quyền API. Hãy bấm
-                  “Kết nối Gmail”, chọn đúng tài khoản Google đó và chấp thuận quyền đọc.
-                  Wiii không sao chép cookie Chrome; bạn có thể ngắt kết nối ngay tại đây.
-                </p>
-              </div>
-            </div>
-          </section>
-        ) : null}
+        </section>}
 
         {activeTab === "catalog" && (
           <ConnectionCatalog

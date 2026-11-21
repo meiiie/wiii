@@ -22,9 +22,9 @@ export function ExecutionReceiptCard({ session }: { session: NekoSession }) {
   const unknownLabel = live?.status === "unsupported" ? "Chưa hỗ trợ receipt này"
     : live?.status === "unverified" ? "Chưa xác minh được receipt" : "Chưa có dữ liệu";
   return (
-    <section aria-label="Thực thi Neko" data-testid="execution-receipt-card"
+    <details aria-label="Thực thi Neko" data-testid="execution-receipt-card"
       className="mt-3 rounded-xl border border-[var(--nk-border)] bg-[var(--nk-composer)] p-3">
-      <h2 className="text-[10.5px] font-semibold uppercase tracking-wide text-[var(--nk-text-3)]">Thực thi Neko</h2>
+      <summary className="cursor-pointer text-[11px] font-medium text-[var(--nk-text-3)]">Thực thi Neko</summary>
       <p className="mb-2 mt-1 text-[10px] leading-4 text-[var(--nk-ghost)]">
         {!scoped ? "Phiên thủ công/cũ — chưa có receipt tác vụ."
           : reported ? "Thông tin agent báo cáo cho phiên đang chạy."
@@ -51,6 +51,6 @@ export function ExecutionReceiptCard({ session }: { session: NekoSession }) {
       <p className="mt-2 text-[10px] leading-4 text-[var(--nk-ghost)]">
         Thư mục liên kết tác vụ; quyền truy cập do host/runtime kiểm soát. Receipt không xác nhận cô lập OS hay hoạt động không chiếm focus.
       </p>
-    </section>
+    </details>
   );
 }

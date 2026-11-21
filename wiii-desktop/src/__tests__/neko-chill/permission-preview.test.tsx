@@ -44,7 +44,7 @@ function session(overrides: Partial<PermissionPreviewSession> = {}): PermissionP
     ...overrides,
   };
 }
-const noData = "Chưa có dữ liệu công cụ hoặc mục tiêu được liên kết cho yêu cầu này.";
+const noData = "Chưa có thông tin thao tác.";
 
 describe("permission preview evidence", () => {
   it("keeps an unlinked request honest instead of inferring command or target from its title", () => {
@@ -121,7 +121,7 @@ describe("permission preview evidence", () => {
     render(<PermissionCard request={request} onResolve={vi.fn()} session={state} />);
     const preview = screen.getByTestId("permission-preview");
     expect(within(preview).getByText("Run dangerous-looking-title C:/fake-target")).toBeTruthy();
-    expect(within(preview).getByText("Chưa có mục tiêu được cung cấp.")).toBeTruthy();
+    expect(within(preview).getByText("Chưa có mục tiêu.")).toBeTruthy();
     expect(preview.textContent).not.toContain("secret-command");
     expect(preview.textContent).not.toContain("secret-result");
     expect(within(preview).queryByText("Thao tác")).toBeNull();
@@ -187,7 +187,7 @@ describe("permission preview evidence", () => {
     const preview = screen.getByTestId("permission-preview");
     expect(preview.querySelectorAll("li")).toHaveLength(5);
     expect(preview.textContent!.length).toBeLessThan(2800);
-    expect(within(preview).getByText("Thông tin dài đã được rút gọn để xem trước.")).toBeTruthy();
+    expect(within(preview).getByText("Bản xem trước đã rút gọn.")).toBeTruthy();
     expect(screen.getByTestId("permission-card").className).toContain("[overflow-wrap:anywhere]");
     expect(container.querySelectorAll("button")).toHaveLength(2);
   });
@@ -218,7 +218,7 @@ describe("permission preview evidence", () => {
       options: [{ ...request.options[0], label: huge }, request.options[1]],
     }} onResolve={onResolve} />);
     expect(screen.getByText(noData)).toBeTruthy();
-    expect(screen.getByText("Thông tin dài đã được rút gọn để xem trước.")).toBeTruthy();
+    expect(screen.getByText("Bản xem trước đã rút gọn.")).toBeTruthy();
     const buttons = screen.getAllByRole("button");
     expect(buttons.map((button) => button.textContent!.length)).toEqual([7, 161]);
     fireEvent.click(buttons[1]);
@@ -272,9 +272,9 @@ describe("permission option scope and dispatch compatibility", () => {
     const buttons = screen.getAllByRole("button");
     expect(buttons.map((button) => button.textContent)).toEqual(["Từ chối", "Không cho phép nữa", "Khác", "Một lần", "Cho phép lâu dài"]);
     const description = (button: HTMLElement) => document.getElementById(button.getAttribute("aria-describedby")!)?.textContent;
-    expect(description(screen.getByRole("button", { name: "Cho phép lâu dài" }))).toBe("Chỉ áp dụng cho yêu cầu này.");
-    expect(description(screen.getByRole("button", { name: "Một lần" }))).toContain("Phạm vi áp dụng cụ thể chưa được agent cung cấp.");
-    expect(description(screen.getByRole("button", { name: "Khác" }))).toBe("Phạm vi áp dụng chưa được agent cung cấp.");
+    expect(description(screen.getByRole("button", { name: "Cho phép lâu dài" }))).toBe("Chỉ lần này");
+    expect(description(screen.getByRole("button", { name: "Một lần" }))).toBe("Lâu dài · chưa rõ phạm vi");
+    expect(description(screen.getByRole("button", { name: "Khác" }))).toBe("Chưa rõ phạm vi");
     fireEvent.click(screen.getByRole("button", { name: "Một lần" }));
     expect(onResolve).toHaveBeenCalledWith("allow-persistent-id");
   });
@@ -317,6 +317,6 @@ describe("permission option scope and dispatch compatibility", () => {
     render(<><PermissionCard request={request} onResolve={vi.fn()} /><PermissionCard request={{ ...request, requestId: "permission-b" }} onResolve={vi.fn()} /></>);
     const ids = screen.getAllByRole("button").map((button) => button.getAttribute("aria-describedby"));
     expect(new Set(ids).size).toBe(ids.length);
-    for (const id of ids) expect(document.getElementById(id!)?.textContent).toBe("Chỉ áp dụng cho yêu cầu này.");
+    for (const id of ids) expect(document.getElementById(id!)?.textContent).toBe("Chỉ lần này");
   });
 });

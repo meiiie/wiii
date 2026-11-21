@@ -737,9 +737,7 @@ describe("WiiiConnectPage", () => {
 
     render(<WiiiConnectPage />);
 
-    expect(screen.getByTestId("gmail-connection-guide").textContent).toContain(
-      "không tự cấp quyền API",
-    );
+    expect(screen.queryByTestId("gmail-connection-guide")).toBeNull();
     expect(await screen.findByText("Danh mục đã đồng bộ")).toBeTruthy();
     expect(await screen.findByRole("button", { name: "Kết nối qua Wiii" })).toBeTruthy();
     expect((await screen.findAllByText("Gmail thử nghiệm của Neko.")).length).toBeGreaterThan(0);

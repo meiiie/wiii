@@ -184,9 +184,6 @@ function NewTaskForm({
         <h1 className="text-[29px] font-normal tracking-[-0.03em]" style={{ fontFamily: "var(--font-serif)" }}>
           Bạn muốn hoàn thành việc gì?
         </h1>
-        <p className="mt-2 max-w-[620px] text-[13px] leading-5 text-[var(--nk-text-2)]">
-          Wiii giữ mục tiêu và tiêu chí. Neko Chill sẽ điều hành agent trong môi trường bạn chọn.
-        </p>
 
         <div className="mt-8 v3-space-y-6">
           <section>
@@ -200,7 +197,7 @@ function NewTaskForm({
               <span className="grid h-9 w-9 place-items-center rounded-lg bg-[var(--nk-inset)] text-[var(--nk-text-2)]"><FolderOpen aria-hidden="true" className="h-4 w-4" /></span>
               <span className="min-w-0 flex-1">
                 <strong className="block truncate text-[13.5px] font-medium">{workspace?.name ?? "Mở một thư mục dự án"}</strong>
-                <small className="block truncate text-[11.5px] text-[var(--nk-text-3)]">{workspace?.path ?? "Mã nguồn vẫn ở trên máy này"}</small>
+                {workspace?.path ? <small className="block truncate text-[11.5px] text-[var(--nk-text-3)]">{workspace.path}</small> : null}
               </span>
               <span className="text-[11px] text-[var(--nk-text-3)]">{workspace ? "Đổi" : "Chọn"}</span>
             </button>
@@ -220,8 +217,9 @@ function NewTaskForm({
             />
           </section>
 
-          <section>
-            <label htmlFor="wiii-task-criteria" className="mb-2 block text-[11.5px] font-semibold uppercase tracking-wide text-[var(--nk-text-3)]">Tiêu chí chấp nhận <span className="font-normal normal-case text-[var(--nk-ghost)]">· tùy chọn, mỗi dòng một tiêu chí</span></label>
+          <details>
+            <summary className="cursor-pointer text-[12px] font-medium text-[var(--nk-text-3)]">Tiêu chí chấp nhận · tùy chọn</summary>
+            <label htmlFor="wiii-task-criteria" className="mb-2 mt-3 block text-[11.5px] text-[var(--nk-text-3)]">Mỗi dòng một tiêu chí</label>
             <textarea
               id="wiii-task-criteria"
               rows={3}
@@ -230,7 +228,7 @@ function NewTaskForm({
               placeholder={"Đăng nhập hiện tại không regression\nTypeScript và test đều pass"}
               className="w-full resize-none rounded-xl border border-[var(--nk-border)] bg-[var(--nk-composer)] px-4 py-3 text-[13px] leading-5 v3-outline-none placeholder:text-[var(--nk-ghost)] focus:ring-2 focus:ring-[var(--nk-focus-soft)]"
             />
-          </section>
+          </details>
         </div>
 
         {error ? <p className="mt-4 text-[12px] text-[var(--nk-danger)]">{error}</p> : null}
@@ -507,7 +505,7 @@ function WiiiAdeScreen({ active = true, onOpenManaged = () => {}, onOpenConnecti
               <button key={project.id} type="button" className={`flex h-8 w-full items-center gap-2 rounded-lg px-2.5 text-left text-[12.5px] ${selectedProjectId === project.id ? "bg-[var(--nk-item-active)]" : "hover:bg-[var(--nk-overlay)]"}`} onClick={() => { setSelectedProjectId(project.id); setSelectedTaskId(null); setNewTask(false); }}>
                 <Folder aria-hidden="true" className="h-3.5 w-3.5 text-[var(--nk-text-3)]" /><span className="min-w-0 flex-1 truncate">{project.name}</span><ChevronRight aria-hidden="true" className="h-3 w-3 text-[var(--nk-ghost)]" />
               </button>
-            )) : <p className="px-2 py-2 text-[11.5px] leading-5 text-[var(--nk-ghost)]">Project xuất hiện khi bạn tạo công việc đầu tiên.</p>}
+            )) : <p className="px-2 py-2 text-[11.5px] leading-5 text-[var(--nk-ghost)]">Chưa có dự án</p>}
           </div>
           <div className="border-t border-[var(--nk-border)] p-2">
             <button type="button" data-testid="open-neko" className="flex min-h-10 w-full items-center gap-2 rounded-lg px-2.5 text-left hover:bg-[var(--nk-overlay)]" onClick={() => openNeko()}><Bot aria-hidden="true" className="h-3.5 w-3.5 text-[var(--nk-text-3)]" /><span><strong className="block text-[12.5px] font-medium">Chat và dự án</strong><small className="block text-[10px] text-[var(--nk-ghost)]">Trò chuyện và theo dõi agent · Neko</small></span></button>
@@ -541,11 +539,10 @@ function WiiiAdeScreen({ active = true, onOpenManaged = () => {}, onOpenConnecti
                 <section className="rounded-2xl border border-[var(--nk-border)] bg-[var(--nk-composer)] p-5">
                   <h2 className="text-[12px] font-semibold uppercase tracking-wide text-[var(--nk-text-3)]">Tiêu chí chấp nhận</h2>
                   {selectedSpec?.acceptanceCriteria.length ? <>
-                    <p className="mt-2 text-[11.5px] leading-5 text-[var(--nk-text-3)]">Danh sách yêu cầu, chưa phải kết quả kiểm chứng.</p>
                     <ol aria-label="Tiêu chí cần đáp ứng" className="mt-4 list-decimal v3-space-y-3 pl-5 marker:text-[var(--nk-ghost)]">
                       {selectedSpec.acceptanceCriteria.map((criterion, index) => <li key={`${index}:${criterion}`} className="pl-1 text-[13px] leading-5">{criterion}</li>)}
                     </ol>
-                  </> : <p className="mt-3 text-[12.5px] text-[var(--nk-text-3)]">Chưa có tiêu chí riêng. Mục tiêu Task vẫn là yêu cầu gốc.</p>}
+                  </> : <p className="mt-3 text-[12.5px] text-[var(--nk-text-3)]">Chưa có tiêu chí riêng.</p>}
                 </section>
                 <aside className="rounded-2xl border border-[var(--nk-border)] bg-[var(--nk-raised)] p-5">
                   <h2 className="text-[12px] font-semibold uppercase tracking-wide text-[var(--nk-text-3)]">Thực thi</h2>

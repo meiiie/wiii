@@ -177,7 +177,6 @@ describe("Wiii task-first desktop shell", () => {
     const requirements = screen.getByRole("list", { name: "Tiêu chí cần đáp ứng" });
     expect(requirements.querySelectorAll("li")).toHaveLength(2);
     expect(requirements.querySelector(".lucide-circle-check")).toBeNull();
-    expect(screen.getByText("Danh sách yêu cầu, chưa phải kết quả kiểm chứng.")).toBeTruthy();
   });
 
   it.each([true, false])("keeps unknown-outcome guidance visible without a runtime (session present: %s)", async (hasSession) => {

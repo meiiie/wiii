@@ -49,17 +49,16 @@ export function WiiiServiceSurface({ view, onBack, onOpenConnect }: {
         <button className={buttonClass} onClick={onBack}>Quay lại Neko</button>
         <header>
           <h1 className="text-2xl font-semibold">Wiii Service</h1>
-          <p className="mt-2 text-sm text-[var(--nk-text-2)]">Tài khoản, tổ chức và kết nối của bạn.</p>
         </header>
         <section className="v3-space-y-5 rounded-2xl border border-[var(--nk-border)] bg-[var(--nk-composer)] p-6" aria-label="Tài khoản Wiii Service">
           <div>
             <h2 className="font-medium">{user?.name || settings.display_name || "Tài khoản API"}</h2>
             {user?.email && <p className="text-sm text-[var(--nk-text-2)]">{user.email}</p>}
           </div>
-          <dl className="v3-space-y-2 text-sm">
-            <div><dt className="text-[var(--nk-text-2)]">Máy chủ Service</dt><dd className="break-all">{settings.server_url}</dd></div>
-            <div><dt className="text-[var(--nk-text-2)]">Trạng thái kết nối</dt><dd role="status">{statusLabel}</dd></div>
-          </dl>
+          <p role="status" className="flex items-center gap-2 text-sm text-[var(--nk-text-2)]">
+            <span aria-hidden="true" className={`h-2 w-2 rounded-full ${status === "connected" ? "bg-[var(--nk-success)]" : status === "degraded" ? "bg-[var(--nk-warning)]" : "bg-[var(--nk-ghost)]"}`} />
+            {statusLabel}
+          </p>
           {organizations.length > 1 && (
             <label className="block text-sm">Tổ chức
               <select className="mt-2 block w-full rounded-lg border border-[var(--nk-border)] bg-[var(--nk-canvas)] p-2"
@@ -80,6 +79,10 @@ export function WiiiServiceSurface({ view, onBack, onOpenConnect }: {
             <button className={buttonClass} onClick={onOpenConnect}>Tài khoản &amp; ứng dụng</button>
             <button className={buttonClass} onClick={() => void logout()}>Đăng xuất</button>
           </div>
+          <details className="border-t border-[var(--nk-border)] pt-4 text-xs text-[var(--nk-text-3)]">
+            <summary className="cursor-pointer">Máy chủ Service</summary>
+            <p className="mt-2 break-all">{settings.server_url}</p>
+          </details>
         </section>
       </div>
       </main>

@@ -471,10 +471,6 @@ export function ConnectionCatalog({
               <PlugZap size={16} className="text-text-secondary" aria-hidden="true" />
               <h2 className="text-sm font-semibold text-text">Ứng dụng và tài khoản</h2>
             </div>
-            <p className="mt-1 max-w-3xl text-sm text-text-secondary">
-              Chọn nơi Neko được phép làm việc. Mỗi kết nối cho biết rõ tài khoản,
-              quyền đang cấp, trạng thái sử dụng và cách ngắt quyền.
-            </p>
           </div>
           <StatusPill tone={providerRegistryLoaded || snapshot ? "ok" : "pending"}>
             {providerRegistryLoaded
@@ -503,9 +499,6 @@ export function ConnectionCatalog({
               aria-pressed={provider === item.id}
             >
               <span>{item.label}</span>
-              <span className="hidden text-xs font-normal text-text-tertiary sm:inline">
-                {item.hint}
-              </span>
             </button>
           ))}
         </div>

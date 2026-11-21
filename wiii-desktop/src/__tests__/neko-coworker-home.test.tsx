@@ -119,7 +119,7 @@ describe("Neko coworker Signal Inbox", () => {
 
     const card = await screen.findByTestId("neko-signal-inbox-summary");
     await waitFor(() => expect(card.textContent).toContain("Chưa kiểm tra được"));
-    expect(card.textContent).toContain("Máy làm việc vẫn hoạt động bình thường");
+    expect(card.textContent).toContain("Thử kiểm tra lại");
     expect(screen.getByRole("button", { name: "Kiểm tra" })).toBeTruthy();
     expect(screen.queryByText("inbox unavailable")).toBeNull();
   });
@@ -145,7 +145,7 @@ describe("Neko coworker Signal Inbox", () => {
     expect(grantsCard.textContent).toMatch(/Project Wiii/);
 
     const banner = await screen.findByTestId("coworker-chill-separation-honesty");
-    expect(banner.textContent).toMatch(/không tự cấp quyền/i);
+    expect(banner.textContent).toMatch(/cần quyền riêng/i);
     expect(screen.getByRole("button", { name: /Cấp quyền/ })).toBeTruthy();
   });
 

@@ -199,6 +199,7 @@ export function ToolDisclosure({ block }: { block: ToolExecutionBlockData }) {
         />
         <span className="shrink-0 font-medium text-[var(--nk-text-2)]">{label}</span>
         {preview ? <span className="min-w-0 flex-1 truncate text-[var(--nk-text-3)]">— {preview}</span> : null}
+        <span className="ml-auto shrink-0 text-[10.5px]">{running ? "Đang chạy" : failed ? "Chưa hoàn tất" : "Xong"}</span>
         <ChevronRight
           aria-hidden="true"
           className="h-3 w-3 shrink-0 transition-transform group-open:rotate-90"
@@ -266,7 +267,8 @@ function ActivityGroup({
           }
         />
         <span className="shrink-0 font-medium text-[var(--nk-text-2)]">{title}</span>
-        <span className="min-w-0 flex-1 truncate text-[var(--nk-ghost)]">· {summary}</span>
+        <span className="sr-only">{summary}</span>
+        <span className="min-w-0 flex-1" />
         <ChevronRight
           aria-hidden="true"
           className="h-3 w-3 shrink-0 transition-transform group-open:rotate-90"

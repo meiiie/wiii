@@ -51,9 +51,8 @@ describe("LoginScreen — optional Wiii Service gateway (#945)", () => {
     const onOpenLocal = vi.fn();
     render(<LoginScreen onOpenLocal={onOpenLocal} />);
     expect(screen.getByRole("heading", { name: "Kết nối Wiii Service" })).toBeTruthy();
-    expect(screen.getByText(/Agent và dự án cục bộ của Wiii vẫn hoạt động/i)).toBeTruthy();
     const escape = await screen.findByTestId("login-neko-chill-escape");
-    expect(escape.textContent).toContain("Tiếp tục với Wiii cục bộ");
+    expect(escape.textContent).toContain("Quay lại Wiii");
 
     fireEvent.click(escape);
     expect(onOpenLocal).toHaveBeenCalledTimes(1);
