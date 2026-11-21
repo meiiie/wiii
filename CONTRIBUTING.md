@@ -59,6 +59,10 @@ Use the equivalent activation/copy commands on macOS or Linux. Configure only
 your own credentials and never commit `.env`, certificates, tokens, session
 stores, or local database files.
 
+From the repository root, run `pip install pre-commit` and `pre-commit install`.
+Run `pre-commit run --all-files` to check backend Ruff rules and repository hygiene.
+Whitespace/EOF fixers are omitted to avoid bulk changes to the existing tree.
+
 ## Engineering rules
 
 - Put authorization, ownership, approval, and tenant enforcement on the server;
