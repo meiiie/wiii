@@ -879,7 +879,10 @@ fn neko_config_sets_dream_mode(home: &Path) -> bool {
     [home.join(".neko-core").join("config.json"), home.join("neko.json")]
         .iter()
         .filter_map(|path| std::fs::read(path).ok())
-        .filter_map(|bytes| serde_json::from_slice::<serde_json::Value>(&bytes).ok())
+        .filter_map(|bytes| {
+            let json = bytes.strip_prefix(b"\xEF\xBB\xBF").unwrap_or(&bytes);
+            serde_json::from_slice::<serde_json::Value>(json).ok()
+        })
         .any(|config| {
             matches!(
                 config.get("dream_mode").and_then(|mode| mode.as_str()),
@@ -1727,6 +1730,8 @@ mod tests {
         std::fs::write(home.join("neko.json"), r#"{"dream_mode":"sometimes"}"#).unwrap();
         assert!(!neko_config_sets_dream_mode(&home));
         std::fs::write(home.join("neko.json"), r#"{"dream_mode":"off"}"#).unwrap();
+        assert!(neko_config_sets_dream_mode(&home));
+        std::fs::write(home.join("neko.json"), b"\xEF\xBB\xBF{\"dream_mode\":\"off\"}").unwrap();
         assert!(neko_config_sets_dream_mode(&home));
         std::fs::remove_file(home.join("neko.json")).unwrap();
         std::fs::write(home.join(".neko-core").join("config.json"), r#"{"dream_mode":"auto"}"#).unwrap();
