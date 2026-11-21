@@ -69,6 +69,28 @@ describe("Neko provider session discovery", () => {
     });
   });
 
+  it("normalizes only trailing diagnostic markers in provider listings", async () => {
+    const titles = ["Imported... [truncated]", "Normal title", "", "... [truncated] inside"];
+    listProviderSessions.mockResolvedValueOnce({
+      providerId: "codex", scope: "all", complete: true, detail: null,
+      sessions: titles.map((title, index) => ({
+        providerId: "codex", nativeSessionId: `title-${index}`, title,
+        workspacePath: null, createdAt: null, updatedAt: null,
+        model: null, state: null, canResume: true,
+      })),
+    });
+    await useNekoProviderSessionStore.getState().refresh([agents[0]], []);
+    expect(useNekoProviderSessionStore.getState().catalogs.codex.sessions.map((session) => session.title))
+      .toEqual(["Imported…", "Normal title", "", "... [truncated] inside"]);
+  });
+
+  it("preserves catalog errors without ingesting sessions", async () => {
+    listProviderSessions.mockRejectedValueOnce(new Error("catalog unavailable"));
+    await useNekoProviderSessionStore.getState().refresh([agents[0]], []);
+    expect(useNekoProviderSessionStore.getState().catalogs.codex.sessions).toEqual([]);
+    expect(useNekoProviderSessionStore.getState().error).toContain("catalog unavailable");
+  });
+
   it("does not replace a newer refresh with a slower old catalog", async () => {
     let finishOld!: (value: unknown) => void;
     listProviderSessions.mockImplementationOnce(() => new Promise((resolve) => { finishOld = resolve; }));

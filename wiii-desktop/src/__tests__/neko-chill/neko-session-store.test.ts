@@ -39,6 +39,7 @@ import { useNekoAgentStore } from "@/neko-chill/stores/neko-agent-store";
 import { useCompletionNoticeStore } from "@/neko-chill/stores/completion-notice-store";
 import { saveStoreStrict } from "@/lib/storage";
 import { getSessionControlNotices } from "@/neko-chill/session-control-status";
+import { persistSessionStrict } from "@/neko-chill/persistence";
 
 const AGENT: DetectedAgent = {
   id: "neko",
@@ -292,6 +293,48 @@ describe("neko-session-store", () => {
     )).rejects.toThrow(/đã có một phiên agent/i);
     expect(starts).toBe(1);
     expect(session(first).kind).toBe("worker");
+  });
+
+  it.each([
+    ["For this smoke test, reply with exactly: NEKO... [truncated]", "For this smoke test, reply with exactly: NEKO…"],
+    ["Unchanged title", "Unchanged title"],
+    ["Literal [truncated] in a title", "Literal [truncated] in a title"],
+    ["Prefix... [truncated] followed by text", "Prefix... [truncated] followed by text"],
+  ])("normalizes upstream session-info title %s", async (title, expected) => {
+    const id = await setup();
+    emit({ type: "session-info", sessionId: id, title });
+    expect(session(id).title).toBe(expected);
+  });
+
+  it.each([null, undefined, "", "   "])("ignores absent or empty upstream title %s", async (title) => {
+    const id = await setup();
+    const previous = session(id).title;
+    emit({ type: "session-info", sessionId: id, title });
+    expect(session(id).title).toBe(previous);
+  });
+
+  it.each([
+    ["Imported... [truncated]", "Imported…"],
+    ["Existing provider session", "Existing provider session"],
+    ["", "Phiên với Neko Core"],
+  ])("normalizes imported and persisted title %s", async (title, expected) => {
+    const id = await useNekoSessionStore.getState().importProviderSession({
+      providerId: "neko", nativeSessionId: "native-title", title,
+      workspacePath: WORKSPACE.path, createdAt: null, updatedAt: null,
+      model: null, state: "saved", canResume: true,
+    }, AGENT, WORKSPACE);
+    expect(session(id).title).toBe(expected);
+    await persistSessionStrict({ ...session(id), title });
+    _setNativeControlReaderForTests(() => ({
+      listSessions: async () => [],
+      readEvents: async (streamId, afterSeq = 0) => ({ streamId, events: [], nextAfterSeq: afterSeq, hasMore: false }),
+    }));
+    try {
+      useNekoSessionStore.setState({ sessions: {}, hydrated: false, hydrating: false });
+      await useNekoSessionStore.getState().hydrate();
+      expect(session(id).title).toBe(title ? expected : "");
+      expect(useNekoSessionStore.getState().hydrationError).toBeNull();
+    } finally { _setNativeControlReaderForTests(undefined); }
   });
 
   it("stores controls, commands, session info, and routes a control change", async () => {
