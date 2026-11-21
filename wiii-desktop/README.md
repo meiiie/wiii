@@ -83,7 +83,7 @@ connection without disabling local files or agents.
 
 ## Quick start
 
-Prerequisites: Node.js 22.12+, Rust stable (at least 1.89), and the
+Prerequisites: Node.js 22.12+, Rust stable (at least 1.90), and the
 [Tauri v2 prerequisites](https://v2.tauri.app/start/prerequisites/).
 
 ```bash

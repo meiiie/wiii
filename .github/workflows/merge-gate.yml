@@ -484,12 +484,9 @@ jobs:
           cache: 'npm'
           cache-dependency-path: wiii-desktop/package-lock.json
 
-      # Cargo 1.100 moved build-script OUT_DIR to target/<profile>/build/<pkg>/<hash>/out, so
-      # tauri-build 2.6 copies bundle resources one level too deep and the dev binary cannot
-      # find the bundled Neko. Pin the last toolchain with the old layout until tauri-build follows.
-      - name: Select Rust 1.99.1
+      - name: Select stable Rust
         shell: bash
-        run: rustup default 1.99.1
+        run: rustup default stable
 
       - name: Restore Cargo cache
         uses: actions/cache@v5
