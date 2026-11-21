@@ -80,6 +80,23 @@ async function elementWithText(driver, css, needle, label, timeoutMs = 30_000) {
   }, label ?? `${css} containing ${needle}`, timeoutMs);
 }
 
+/** Like elementWithText, but only an element that is on screen and not covered, so a click lands on it. */
+async function clickableWithText(driver, css, needle, label, timeoutMs = 30_000) {
+  return until(async () => {
+    const found = await driver.execute(`
+      const [css, needle] = arguments;
+      return [...document.querySelectorAll(css)].find((node) => {
+        const box = node.getBoundingClientRect();
+        if (box.width <= 0 || box.height <= 0 || !(node.innerText || "").includes(needle)) return false;
+        const x = box.left + box.width / 2, y = box.top + box.height / 2;
+        if (x < 0 || y < 0 || x > innerWidth || y > innerHeight) return false;
+        const hit = document.elementFromPoint(x, y);
+        return Boolean(hit && (hit === node || node.contains(hit)));
+      }) ?? null;`, [css, needle]);
+    return elementId(found);
+  }, label ?? `${css} containing ${needle}`, timeoutMs);
+}
+
 async function clickEnabled(driver, id, timeoutMs = 30_000) {
   await until(() => driver.enabled(id), "control to become enabled", timeoutMs);
   await driver.click(id);
@@ -90,12 +107,6 @@ async function typeInto(driver, css, text) {
   await driver.click(id);
   await driver.type(id, text);
   return id;
-}
-
-async function ensureSidebar(driver) {
-  if ((await driver.findAll('[data-testid="session-sidebar"]')).length) return;
-  await driver.click(await elementWithText(driver, "button", "Hiện cây dự án và phiên"));
-  await element(driver, '[data-testid="session-sidebar"]', "session sidebar");
 }
 
 async function focusMainWindow(driver) {
@@ -263,8 +274,9 @@ async function main() {
     await closeApp(driver);
     driver = await launch(base);
     await capture(driver, "after-restart");
-    await ensureSidebar(driver);
-    const row = await elementWithText(driver, ".nk-session-row button", MARKERS.permission, "persisted session in sidebar", 60_000);
+    // The session may be listed in the sidebar, the overview catalog or both, depending on window width.
+    const row = await clickableWithText(driver, '.nk-session-row button, [data-testid="neko-overview"] button',
+      MARKERS.permission, "persisted session in the sidebar or overview", 60_000);
     await driver.click(row);
     await waitText(driver, MARKERS.permissionDone, "restored transcript", 60_000);
     await element(driver, '[data-testid="neko-outbox-row"]', "persisted outbox row", 30_000);
