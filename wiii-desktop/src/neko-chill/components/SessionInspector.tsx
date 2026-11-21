@@ -28,6 +28,7 @@ export function SessionInspector({
   const knowledgeError = useKnowledgeConnectionStore((state) => state.error);
   const connectKnowledge = useKnowledgeConnectionStore((state) => state.connect);
   const disconnectKnowledge = useKnowledgeConnectionStore((state) => state.disconnect);
+  const model = session.controls.find((option) => option.category === "model" && option.kind === "select");
   const controlsDisabled =
     session.status !== "idle" ||
     Boolean(session.pendingPermission) ||
@@ -95,9 +96,9 @@ export function SessionInspector({
               <div className="min-w-0">
                 <dt className="text-[10px] uppercase tracking-wide text-[var(--nk-ghost)]">Model</dt>
                 <dd className="text-[var(--nk-text-2)]">
-                  {session.launchProfile
-                    ? `${session.launchProfile.provider} · ${session.launchProfile.model ?? session.launchProfile.id}`
-                    : "Mặc định của agent"}
+                  {model
+                    ? currentLabel(model)
+                    : session.launchProfile?.model ?? "Mặc định của agent"}
                 </dd>
               </div>
             </div>

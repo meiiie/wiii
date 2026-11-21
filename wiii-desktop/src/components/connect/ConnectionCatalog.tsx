@@ -503,7 +503,7 @@ export function ConnectionCatalog({
           ))}
         </div>
 
-        <div className="mt-4 grid gap-3 lg:grid-cols-[minmax(240px,420px)_1fr]">
+        <div className="mt-4 grid items-start gap-3 lg:grid-cols-[minmax(240px,420px)_1fr]">
           <label className="relative block">
             <span className="sr-only">Tìm kết nối</span>
             <Search
@@ -542,7 +542,7 @@ export function ConnectionCatalog({
         </div>
       </div>
 
-      <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(320px,420px)]">
+      <div className="grid items-start gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(320px,420px)]">
         <div className="grid gap-3 sm:grid-cols-2 2xl:grid-cols-3">
           {filteredCards.map((card) => {
             const Icon = card.icon;
