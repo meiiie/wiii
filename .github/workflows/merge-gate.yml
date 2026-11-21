@@ -390,7 +390,12 @@ jobs:
             libappindicator3-dev \
             librsvg2-dev \
             patchelf \
-            xdg-utils
+            xdg-utils \
+            bubblewrap
+
+      - name: Enable unprivileged bubblewrap namespaces
+        shell: bash
+        run: sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
 
       - name: Select stable Rust with Clippy
         shell: bash
@@ -411,6 +416,8 @@ jobs:
 
       - name: Test native desktop
         working-directory: wiii-desktop/src-tauri
+        env:
+          WIII_REQUIRE_BWRAP: "1"
         run: cargo test --locked
 
       - name: Lint native desktop
@@ -420,6 +427,37 @@ jobs:
       - name: Compile native desktop
         working-directory: wiii-desktop/src-tauri
         run: cargo build --locked
+
+  native-desktop-platform-tests:
+    name: Native Desktop Tests (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    needs: detect-changes
+    if: needs.detect-changes.outputs.desktop == 'true'
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Select stable Rust
+        shell: bash
+        run: rustup default stable
+
+      - name: Restore Cargo cache
+        uses: actions/cache@v5
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            wiii-desktop/src-tauri/target
+          key: ${{ runner.os }}-native-desktop-${{ hashFiles('wiii-desktop/src-tauri/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-native-desktop-
+
+      - name: Test native desktop
+        working-directory: wiii-desktop/src-tauri
+        run: cargo test --locked
 
   gate-summary:
     name: Gate Summary
@@ -433,6 +471,7 @@ jobs:
       - desktop-gate
       - neko-contract-gate
       - native-desktop-gate
+      - native-desktop-platform-tests
     if: always()
     steps:
       - name: Enforce gate result
