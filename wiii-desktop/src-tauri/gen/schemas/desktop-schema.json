@@ -741,6 +741,12 @@
           "markdownDescription": "Enables the neko_control_session_write command without any pre-configured scope."
         },
         {
+          "description": "Enables the neko_create_quick_chat_workspace command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-neko-create-quick-chat-workspace",
+          "markdownDescription": "Enables the neko_create_quick_chat_workspace command without any pre-configured scope."
+        },
+        {
           "description": "Enables the neko_list_workspace_files command without any pre-configured scope.",
           "type": "string",
           "const": "allow-neko-list-workspace-files",
@@ -1021,6 +1027,12 @@
           "type": "string",
           "const": "deny-neko-control-session-write",
           "markdownDescription": "Denies the neko_control_session_write command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the neko_create_quick_chat_workspace command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-neko-create-quick-chat-workspace",
+          "markdownDescription": "Denies the neko_create_quick_chat_workspace command without any pre-configured scope."
         },
         {
           "description": "Denies the neko_list_workspace_files command without any pre-configured scope.",

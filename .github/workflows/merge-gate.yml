@@ -512,6 +512,13 @@ jobs:
         working-directory: wiii-desktop
         run: npm run tauri -- build --debug --no-bundle --config src-tauri/tauri.neko-bundle.conf.json
 
+      - name: Show the bundled Neko next to the native app
+        working-directory: wiii-desktop
+        shell: bash
+        run: |
+          ls -la .build/neko-bundle src-tauri/target/debug/runtime/neko || true
+          grep -h "rerun-if-changed=.*neko-bundle" src-tauri/target/debug/build/wiii-desktop-*/output | head -5 || true
+
       - name: Run native E2E through tauri-driver
         working-directory: wiii-desktop
         run: >-
