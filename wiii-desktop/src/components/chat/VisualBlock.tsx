@@ -1,9 +1,6 @@
 import { useEffect, useId, useRef, useState } from "react";
 import type { ReactNode } from "react";
-import type {
-  VisualBlockData,
-  VisualPayload,
-} from "@/api/types";
+import type { VisualBlockData, VisualPayload } from "@/api/types/artifacts";
 import { motion, AnimatePresence } from "motion/react";
 import { useReducedMotion } from "@/hooks/useReducedMotion";
 import { useChatStore } from "@/stores/chat-store";

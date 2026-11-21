@@ -12,7 +12,7 @@ import type {
   LivingAgentHeartbeat,
   LivingAgentGoal,
   LivingAgentReflection,
-} from "@/api/types";
+} from "@/api/types/character";
 import {
   getLivingAgentStatus,
   getEmotionalState,

@@ -1,8 +1,8 @@
 import type {
   WiiiConnectRuntimeConnection,
   WiiiConnectRuntimeSnapshot,
-  ChatLifecycleTelemetryEvent,
-} from "@/api/types";
+} from "@/api/types/runtime-diagnostics";
+import type { ChatLifecycleTelemetryEvent } from "@/api/types/chat";
 import type {
   HostCapabilities,
   HostContext,

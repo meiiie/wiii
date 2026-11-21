@@ -7,7 +7,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { useChatStore } from "@/stores/chat-store";
 import { useDomainStore } from "@/stores/domain-store";
 import { useOrgStore } from "@/stores/org-store";
-import type { Conversation } from "@/api/types";
+import type { Conversation } from "@/api/types/conversation";
 
 // Mock storage to prevent Tauri store access
 vi.mock("@/lib/storage", () => ({

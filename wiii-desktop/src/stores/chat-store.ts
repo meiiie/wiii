@@ -14,18 +14,22 @@ import { immer } from "zustand/middleware/immer";
 import { v4 as uuidv4 } from "uuid";
 import { loadStore, saveStore } from "@/lib/storage";
 import { stripWiiiInternalMarkupFromStream } from "@/lib/internal-markup";
+import type { Conversation, Message } from "@/api/types/conversation";
 import type {
-  Conversation,
-  Message,
   SourceInfo,
   ChatResponseMetadata,
   ToolCallInfo,
   ToolResultMetadata,
+  ChatLifecycleTelemetryEvent,
+  ChatDocumentAttachment,
+  ImageInput,
+  SSEChatLifecycleEvent,
+  WidgetFeedbackItem,
+} from "@/api/types/chat";
+import type {
   ContentBlock,
-  DisplayPresentationMeta,
   StreamingStep,
   ThinkingPhase,
-  ThinkingSummaryMode,
   ThinkingBlockData,
   ScreenshotBlockData,
   SubagentGroupBlockData,
@@ -33,21 +37,22 @@ import type {
   AggregationSummary,
   PreviewItemData,
   PreviewBlockData,
+  ToolExecutionBlockData,
+} from "@/api/types/content-blocks";
+import type {
+  DisplayPresentationMeta,
+  ThinkingSummaryMode,
   ArtifactData,
   ArtifactBlockData,
-  ChatLifecycleTelemetryEvent,
-  ToolExecutionBlockData,
-  ChatDocumentAttachment,
-  ImageInput,
-  SSEChatLifecycleEvent,
   VisualPayload,
   VisualBlockData,
   VisualSessionState,
-  WidgetFeedbackItem,
+} from "@/api/types/artifacts";
+import type {
   WiiiConnectRuntimeConnection,
   WiiiConnectRuntimePathCapability,
   WiiiConnectRuntimeSnapshot,
-} from "@/api/types";
+} from "@/api/types/runtime-diagnostics";
 
 const BASE_STORE_NAME = "conversations.json";
 const BASE_STORE_KEY = "conversations";

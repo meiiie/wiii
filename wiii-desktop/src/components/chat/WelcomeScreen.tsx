@@ -14,7 +14,7 @@ import { DOMAIN_ICONS } from "@/lib/domain-config";
 import { WiiiAvatar } from "@/components/common/WiiiAvatar";
 import { useAvatarState } from "@/hooks/useAvatarState";
 import { ChatInput } from "./ChatInput";
-import type { ChatDocumentAttachment, ChatDocumentContext, ImageInput } from "@/api/types";
+import type { ChatDocumentAttachment, ChatDocumentContext, ImageInput } from "@/api/types/chat";
 
 const DOMAIN_SUGGESTIONS: Record<string, string[]> = {
   maritime: [

@@ -3,7 +3,7 @@ import type {
   WiiiConnectAuthorizationUrlDecision,
   WiiiConnectProviderConnectionRecord,
   WiiiConnectSessionStartDecision,
-} from "@/api/types";
+} from "@/api/types/wiii-connect";
 import { compactText, formatDateTime, statusLabel } from "./connect-display";
 import type {
   CatalogCard,

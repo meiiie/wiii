@@ -13,10 +13,7 @@ import { render, screen } from "@testing-library/react";
 import { useChatStore } from "@/stores/chat-store";
 import { useSettingsStore } from "@/stores/settings-store";
 import { ScreenshotBlock } from "@/components/chat/ScreenshotBlock";
-import type {
-  ContentBlock,
-  ScreenshotBlockData,
-} from "@/api/types";
+import type { ContentBlock, ScreenshotBlockData } from "@/api/types/content-blocks";
 
 // Mock blob-url module (happy-dom lacks URL.createObjectURL / atob for arbitrary strings)
 vi.mock("@/lib/blob-url", () => ({

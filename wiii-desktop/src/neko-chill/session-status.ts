@@ -1,4 +1,4 @@
-import type { ContentBlock } from "@/api/types";
+import type { ContentBlock } from "@/api/types/content-blocks";
 import type { NekoSessionEvent } from "./session-events";
 import type { NekoMessage, NekoSessionStatus } from "./stores/neko-session-store";
 

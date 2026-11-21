@@ -62,7 +62,8 @@ import { useSettingsStore, generateAnonymousId } from "@/stores/settings-store";
 import { useAuthStore } from "@/stores/auth-store";
 import type { AuthUser } from "@/stores/auth-store";
 import { useOrgStore } from "@/stores/org-store";
-import type { OrganizationSummary, AppSettings } from "@/api/types";
+import type { OrganizationSummary } from "@/api/types/organizations";
+import type { AppSettings } from "@/api/types/conversation";
 import { PERSONAL_ORG_ID } from "@/lib/constants";
 import {
   sendToParent,

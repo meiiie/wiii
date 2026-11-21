@@ -3,7 +3,7 @@
  * Wraps GET /character/state to fetch Wiii's personality blocks.
  */
 import { getClient } from "./client";
-import type { CharacterStateResponse } from "./types";
+import type { CharacterStateResponse } from "./types/character";
 
 /** Fetch Wiii's current character state (all blocks). */
 export async function fetchCharacterState(): Promise<CharacterStateResponse> {

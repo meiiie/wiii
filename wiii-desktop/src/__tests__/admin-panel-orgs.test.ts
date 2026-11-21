@@ -10,7 +10,7 @@ import type {
   AdminOrgMember,
   AdminDashboard,
   AdminFeatureFlag,
-} from "@/api/types";
+} from "@/api/types/admin";
 
 // Reset store before each test
 beforeEach(() => {

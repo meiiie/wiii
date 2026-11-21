@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { ContentBlock } from "@/api/types";
+import type { ContentBlock } from "@/api/types/content-blocks";
 import {
   getVisibleStreamingBlocks,
   hasRenderableStreamingBlocks,

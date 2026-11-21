@@ -15,11 +15,8 @@ import {
   TerminalSquare,
   Wrench,
 } from "lucide-react";
-import type {
-  SourceInfo,
-  ToolExecutionBlockData,
-  ToolResultMetadata,
-} from "@/api/types";
+import type { SourceInfo, ToolResultMetadata } from "@/api/types/chat";
+import type { ToolExecutionBlockData } from "@/api/types/content-blocks";
 import { TOOL_LABELS } from "@/lib/reasoning-labels";
 import { VisualArtifactCard } from "./VisualArtifactCard";
 import { CodeStudioCard } from "./CodeStudioCard";

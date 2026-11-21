@@ -16,6 +16,13 @@ import type {
   AdminOrgMember,
   AnalyticsOverview,
   LlmUsageAnalytics,
+  UserAnalytics,
+  AdminAuditLogsResponse,
+  AdminAuthEventsResponse,
+  GdprExportResponse,
+  GdprForgetResponse,
+} from "./types/admin";
+import type {
   LlmRuntimeConfig,
   LlmRuntimeAuditRefreshBody,
   LlmRuntimeUpdateBody,
@@ -25,12 +32,7 @@ import type {
   EmbeddingSpaceMigrationPromoteRequest,
   EmbeddingSpaceMigrationRunRequest,
   EmbeddingSpaceMigrationRunResponse,
-  UserAnalytics,
-  AdminAuditLogsResponse,
-  AdminAuthEventsResponse,
-  GdprExportResponse,
-  GdprForgetResponse,
-} from "./types";
+} from "./types/llm";
 import { getClient } from "./client";
 
 const PREFIX = "/api/v1/admin";
@@ -389,7 +391,7 @@ import type {
   ScatterResponse,
   KnowledgeGraphResponse,
   RagFlowResponse,
-} from "./types";
+} from "./types/knowledge";
 
 /** Upload a PDF document to org knowledge base */
 export async function uploadOrgDocument(

@@ -9,7 +9,11 @@ import { ArrowDown, BookOpen, ChevronRight, Command, FolderGit2 } from "lucide-r
 import { NEKO_STARTER_PROMPTS } from "../starter-prompts";
 import { MarkdownRenderer } from "@/components/common/MarkdownRenderer";
 import { NekoActivityIcon, resolveNekoToolIconKind } from "@/components/icons/neko";
-import type { ContentBlock, ThinkingBlockData, ToolExecutionBlockData } from "@/api/types";
+import type {
+  ContentBlock,
+  ThinkingBlockData,
+  ToolExecutionBlockData,
+} from "@/api/types/content-blocks";
 import type { NekoSession } from "../stores/neko-session-store";
 import { getSessionControlNotices, workspaceIsolationLabel, type SessionControlNotice } from "../session-control-status";
 import { PermissionCard } from "./PermissionCard";

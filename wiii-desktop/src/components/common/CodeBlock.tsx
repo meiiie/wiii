@@ -2,7 +2,7 @@ import { useState, useCallback, useEffect, useMemo, useRef, useId } from "react"
 import { Copy, Check, Play, Maximize2, Loader2, WrapText } from "lucide-react";
 import { useUIStore } from "@/stores/ui-store";
 import { RUNNABLE_LANGUAGES, PREVIEWABLE_LANGUAGES, getLanguageDisplayName } from "@/lib/code-languages";
-import type { ArtifactData } from "@/api/types";
+import type { ArtifactData } from "@/api/types/artifacts";
 import { ShikiMinimalHighlighter } from "./ShikiMinimalHighlighter";
 
 export { LANGUAGE_LABELS } from "@/lib/code-languages";

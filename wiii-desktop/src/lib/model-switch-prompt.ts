@@ -2,7 +2,7 @@ import type {
   FailoverMetadata,
   ModelSwitchPrompt,
   ModelSwitchPromptOption,
-} from "@/api/types";
+} from "@/api/types/chat";
 import type { ProviderInfo, RequestModelProvider } from "@/stores/model-store";
 
 const PROVIDER_LABELS: Record<string, string> = {

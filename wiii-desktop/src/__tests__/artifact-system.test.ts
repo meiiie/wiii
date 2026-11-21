@@ -5,12 +5,8 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import { useChatStore } from "@/stores/chat-store";
 import { useUIStore } from "@/stores/ui-store";
-import type {
-  ContentBlock,
-  ArtifactData,
-  ArtifactBlockData,
-  ArtifactType,
-} from "@/api/types";
+import type { ContentBlock } from "@/api/types/content-blocks";
+import type { ArtifactData, ArtifactBlockData, ArtifactType } from "@/api/types/artifacts";
 
 // =============================================================================
 // Helpers

@@ -46,20 +46,17 @@ import { pointAt } from "@/pointy-host/api";
 import { trackVisualTelemetry } from "@/lib/visual-telemetry";
 import { looksDocumentContextFollowupIntent } from "@/lib/document-followup-intent";
 import type { SSEEventHandler } from "@/api/sse";
+import type { AggregationSummary, PreviewItemData, PreviewType } from "@/api/types/content-blocks";
+import type { ArtifactType, DisplayPresentationMeta } from "@/api/types/artifacts";
 import type {
-  AggregationSummary,
-  ArtifactType,
   ChatDocumentAttachment,
   ChatDocumentContext,
   ChatResponseMetadata,
-  Conversation,
-  DisplayPresentationMeta,
   ImageInput,
-  MoodType,
-  PreviewItemData,
-  PreviewType,
   ToolResultMetadata,
-} from "@/api/types";
+} from "@/api/types/chat";
+import type { Conversation } from "@/api/types/conversation";
+import type { MoodType } from "@/api/types/character";
 
 const MAX_SSE_RETRIES = 3;
 const SSE_BACKOFF_MS = 1000; // 1s, 2s, 4s

@@ -96,7 +96,7 @@ describe("Sprint 225: threads.ts API types", () => {
 describe("Sprint 225: ChatResponseMetadata thread_id", () => {
   it("ChatResponseMetadata type accepts thread_id field", () => {
     // Type-level check: if this compiles, the field exists
-    const metadata: import("@/api/types").ChatResponseMetadata = {
+    const metadata: import("@/api/types/chat").ChatResponseMetadata = {
       processing_time: 1.5,
       model: "gemini-3.1-flash-lite-preview",
       agent_type: "rag",
@@ -107,7 +107,7 @@ describe("Sprint 225: ChatResponseMetadata thread_id", () => {
   });
 
   it("thread_id is optional (undefined when not present)", () => {
-    const metadata: import("@/api/types").ChatResponseMetadata = {
+    const metadata: import("@/api/types/chat").ChatResponseMetadata = {
       processing_time: 0.5,
       model: "gemini-3.1-flash-lite-preview",
       agent_type: "chat",
@@ -572,7 +572,7 @@ describe("Sprint 225: chat-store server propagation", () => {
 
 describe("Sprint 225: Conversation type thread_id field", () => {
   it("Conversation interface supports thread_id", () => {
-    const conv: import("@/api/types").Conversation = {
+    const conv: import("@/api/types/conversation").Conversation = {
       id: "test-1",
       title: "Test",
       created_at: "2026-03-04T10:00:00",
@@ -584,7 +584,7 @@ describe("Sprint 225: Conversation type thread_id field", () => {
   });
 
   it("Conversation thread_id is optional", () => {
-    const conv: import("@/api/types").Conversation = {
+    const conv: import("@/api/types/conversation").Conversation = {
       id: "test-2",
       title: "No thread",
       created_at: "2026-03-04T10:00:00",

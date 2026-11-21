@@ -26,7 +26,7 @@ import type {
   AdminAuthEventsResponse,
   GdprExportResponse,
   GdprForgetResponse,
-} from "@/api/types";
+} from "@/api/types/admin";
 
 // Reset stores before each test
 beforeEach(() => {

@@ -1,9 +1,7 @@
 /**
  * Chat API module — sendMessage (SSE streaming), thread management
  */
-import type {
-  ChatRequest,
-} from "./types";
+import type { ChatRequest } from "./types/chat";
 import { parseSSEStream, type SSEEventHandler, type SSEStreamResult } from "./sse";
 import { getClient } from "./client";
 
@@ -33,4 +31,3 @@ export async function sendMessageStream(
   const stream = await client.postStream("/api/v1/chat/stream/v3", request, extraHeaders, abortSignal);
   return parseSSEStream(stream, handlers, abortSignal);
 }
-

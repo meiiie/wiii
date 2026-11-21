@@ -11,7 +11,7 @@ import type {
   WiiiConnectActivationReadinessResponse,
   WiiiConnectOperationApprovalLedger,
   WiiiConnectProviderConnectionRecord,
-} from "@/api/types";
+} from "@/api/types/wiii-connect";
 import {
   applyWiiiConnectFacebookPost,
   fetchWiiiConnectFacebookPages,

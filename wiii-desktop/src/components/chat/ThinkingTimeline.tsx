@@ -4,8 +4,8 @@ import type {
   ContentBlock,
   ThinkingBlockData,
   ActionTextBlockData,
-  ThinkingLevel,
-} from "@/api/types";
+} from "@/api/types/content-blocks";
+import type { ThinkingLevel } from "@/api/types/conversation";
 import { ThinkingBlock } from "./ThinkingBlock";
 import { ActionText } from "./ActionText";
 import { ThinkingJourneyBanner } from "./ThinkingJourneyBanner";

@@ -18,13 +18,13 @@ describe("Sprint 191: Knowledge Visualization Types", () => {
       content_preview: "Some preview text...",
       content_type: "text",
       page_number: 5,
-    } satisfies import("@/api/types").ScatterPoint;
+    } satisfies import("@/api/types/knowledge").ScatterPoint;
     expect(point.x).toBe(1.5);
     expect(point.document_id).toBe("doc-1");
   });
 
   it("ScatterPoint z is optional for 2D", () => {
-    const point: import("@/api/types").ScatterPoint = {
+    const point: import("@/api/types/knowledge").ScatterPoint = {
       x: 0,
       y: 0,
       document_id: "d",
@@ -35,7 +35,7 @@ describe("Sprint 191: Knowledge Visualization Types", () => {
   });
 
   it("ScatterDocument has id, name, color", () => {
-    const doc: import("@/api/types").ScatterDocument = {
+    const doc: import("@/api/types/knowledge").ScatterDocument = {
       id: "doc-1",
       name: "test.pdf",
       color: "#3B82F6",
@@ -44,7 +44,7 @@ describe("Sprint 191: Knowledge Visualization Types", () => {
   });
 
   it("ScatterResponse has points, documents, method, dimensions, computation_ms", () => {
-    const res: import("@/api/types").ScatterResponse = {
+    const res: import("@/api/types/knowledge").ScatterResponse = {
       points: [],
       documents: [],
       method: "pca",
@@ -56,13 +56,13 @@ describe("Sprint 191: Knowledge Visualization Types", () => {
   });
 
   it("KnowledgeGraphNode has node_type document or chunk", () => {
-    const docNode: import("@/api/types").KnowledgeGraphNode = {
+    const docNode: import("@/api/types/knowledge").KnowledgeGraphNode = {
       id: "doc_abc12345",
       label: "Chapter 1",
       node_type: "document",
       document_id: "abc12345-full",
     };
-    const chunkNode: import("@/api/types").KnowledgeGraphNode = {
+    const chunkNode: import("@/api/types/knowledge").KnowledgeGraphNode = {
       id: "chunk_xyz",
       label: "Truncated content...",
       node_type: "chunk",
@@ -74,12 +74,12 @@ describe("Sprint 191: Knowledge Visualization Types", () => {
   });
 
   it("KnowledgeGraphEdge has edge_type contains or similar_to", () => {
-    const containsEdge: import("@/api/types").KnowledgeGraphEdge = {
+    const containsEdge: import("@/api/types/knowledge").KnowledgeGraphEdge = {
       source: "doc_abc",
       target: "chunk_xyz",
       edge_type: "contains",
     };
-    const simEdge: import("@/api/types").KnowledgeGraphEdge = {
+    const simEdge: import("@/api/types/knowledge").KnowledgeGraphEdge = {
       source: "chunk_a",
       target: "chunk_b",
       edge_type: "similar_to",
@@ -90,7 +90,7 @@ describe("Sprint 191: Knowledge Visualization Types", () => {
   });
 
   it("KnowledgeGraphResponse has nodes, edges, mermaid_code", () => {
-    const res: import("@/api/types").KnowledgeGraphResponse = {
+    const res: import("@/api/types/knowledge").KnowledgeGraphResponse = {
       nodes: [],
       edges: [],
       mermaid_code: "graph LR\n  empty[No data]",
@@ -100,7 +100,7 @@ describe("Sprint 191: Knowledge Visualization Types", () => {
   });
 
   it("RagFlowStep has name and duration_ms", () => {
-    const step: import("@/api/types").RagFlowStep = {
+    const step: import("@/api/types/knowledge").RagFlowStep = {
       name: "Embedding",
       duration_ms: 120,
       detail: "768 dimensions",
@@ -109,7 +109,7 @@ describe("Sprint 191: Knowledge Visualization Types", () => {
   });
 
   it("RagFlowChunk grade is relevant, partial, or irrelevant", () => {
-    const chunk: import("@/api/types").RagFlowChunk = {
+    const chunk: import("@/api/types/knowledge").RagFlowChunk = {
       chunk_id: "c1",
       document_id: "d1",
       document_name: "test.pdf",
@@ -124,7 +124,7 @@ describe("Sprint 191: Knowledge Visualization Types", () => {
   });
 
   it("RagFlowResponse has query, steps, chunks, computation_ms", () => {
-    const res: import("@/api/types").RagFlowResponse = {
+    const res: import("@/api/types/knowledge").RagFlowResponse = {
       query: "What is COLREG?",
       steps: [
         { name: "Embedding", duration_ms: 100 },

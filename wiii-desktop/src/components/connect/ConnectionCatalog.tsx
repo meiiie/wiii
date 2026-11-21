@@ -7,9 +7,9 @@ import type {
   WiiiConnectProviderConnectionListResponse,
   WiiiConnectProviderConnectionRecord,
   WiiiConnectProviderRegistryEntry,
-  WiiiConnectRuntimeSnapshot,
   WiiiConnectSessionStartDecision,
-} from "@/api/types";
+} from "@/api/types/wiii-connect";
+import type { WiiiConnectRuntimeSnapshot } from "@/api/types/runtime-diagnostics";
 import {
   buildWiiiConnectProviderCallbackUrl,
   createWiiiConnectProviderAuthorizationUrl,

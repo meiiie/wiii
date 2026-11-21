@@ -19,7 +19,6 @@ import type {
   SSEToolCallEvent,
   SSEToolResultEvent,
   SSEStatusEvent,
-  SSEChatLifecycleEvent,
   SSEThinkingStartEvent,
   SSEThinkingEndEvent,
   SSEDomainNoticeEvent,
@@ -36,7 +35,8 @@ import type {
   SSECodeOpenEvent,
   SSECodeDeltaEvent,
   SSECodeCompleteEvent,
-} from "./types";
+} from "./types/sse";
+import type { SSEChatLifecycleEvent } from "./types/chat";
 
 export interface SSEEventHandler {
   onThinking: (data: SSEThinkingEvent) => void;

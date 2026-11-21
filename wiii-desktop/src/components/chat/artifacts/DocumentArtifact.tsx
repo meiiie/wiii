@@ -6,7 +6,7 @@
  */
 import { Download, FileText } from "lucide-react";
 import { MarkdownRenderer } from "@/components/common/MarkdownRenderer";
-import type { ArtifactData } from "@/api/types";
+import type { ArtifactData } from "@/api/types/artifacts";
 import { useSettingsStore } from "@/stores/settings-store";
 import {
   artifactPreviewSnippet,

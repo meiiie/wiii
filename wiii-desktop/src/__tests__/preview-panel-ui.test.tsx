@@ -13,7 +13,7 @@ import { useChatStore } from "@/stores/chat-store";
 import { useUIStore } from "@/stores/ui-store";
 import { useHostContextStore } from "@/stores/host-context-store";
 import { useToastStore } from "@/stores/toast-store";
-import type { PreviewItemData } from "@/api/types";
+import type { PreviewItemData } from "@/api/types/content-blocks";
 
 vi.mock("@/api/host-actions", () => ({
   submitHostActionAudit: vi.fn().mockResolvedValue({

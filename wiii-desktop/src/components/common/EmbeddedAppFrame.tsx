@@ -1,4 +1,4 @@
-import type { VisualRuntimeManifest, VisualShellVariant } from "@/api/types";
+import type { VisualRuntimeManifest, VisualShellVariant } from "@/api/types/artifacts";
 import { InlineVisualFrame } from "./InlineVisualFrame";
 
 interface EmbeddedAppFrameProps {

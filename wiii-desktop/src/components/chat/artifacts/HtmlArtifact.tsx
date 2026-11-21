@@ -5,7 +5,7 @@
  */
 import { useEffect, useState, useRef } from "react";
 import { wrapInSandboxHtml, createSandboxUrl, listenFromSandbox } from "@/lib/artifact-sandbox";
-import type { ArtifactData } from "@/api/types";
+import type { ArtifactData } from "@/api/types/artifacts";
 
 interface Props {
   artifact: ArtifactData;

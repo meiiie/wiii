@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { render, screen } from "@testing-library/react";
-import type { ThinkingBlockData, ToolExecutionBlockData } from "@/api/types";
+import type { ThinkingBlockData, ToolExecutionBlockData } from "@/api/types/content-blocks";
 import { ReasoningInterval, type ReasoningIntervalViewModel } from "@/components/chat/ReasoningInterval";
 import { useCodeStudioStore } from "@/stores/code-studio-store";
 import { useUIStore } from "@/stores/ui-store";

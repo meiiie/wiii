@@ -11,7 +11,7 @@ import type {
   HeartbeatTriggerResult,
   LivingAgentGoal,
   LivingAgentReflection,
-} from "./types";
+} from "./types/character";
 import { getClient } from "./client";
 
 const PREFIX = "/api/v1/living-agent";

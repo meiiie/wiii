@@ -1,4 +1,4 @@
-import type { VisualShellVariant } from "@/api/types";
+import type { VisualShellVariant } from "@/api/types/artifacts";
 import type {
   VisualFrameKind,
   VisualFrameSizingMode,

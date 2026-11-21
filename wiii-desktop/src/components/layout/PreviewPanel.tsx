@@ -27,7 +27,7 @@ import {
   sourceReferenceLabel,
   type PreviewSourceReference,
 } from "@/lib/source-references";
-import type { PreviewItemData } from "@/api/types";
+import type { PreviewItemData } from "@/api/types/content-blocks";
 import { WorkspacePaneControls } from "./WorkspacePaneControls";
 
 const HOST_PREVIEW_APPROVAL_REQUIRED_MESSAGE =

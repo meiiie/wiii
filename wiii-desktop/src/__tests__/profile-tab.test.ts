@@ -8,7 +8,7 @@ import { describe, it, expect } from "vitest";
 describe("User profile API types", () => {
   it("types.ts exports UserProfile and UserIdentity", async () => {
     // Type-level check: ensure the interfaces exist by importing
-    const types = await import("@/api/types");
+    const types = await import("@/api/types/organizations");
     // UserProfile and UserIdentity are interfaces — they don't exist at runtime,
     // but we can verify the module exports compile
     expect(types).toBeDefined();
@@ -16,7 +16,7 @@ describe("User profile API types", () => {
 
   it("UserProfile interface has required fields", () => {
     // Compile-time type check: create a valid UserProfile object
-    const profile: import("@/api/types").UserProfile = {
+    const profile: import("@/api/types/organizations").UserProfile = {
       id: "u1",
       role: "student",
       is_active: true,
@@ -26,7 +26,7 @@ describe("User profile API types", () => {
   });
 
   it("UserIdentity interface has provider fields", () => {
-    const identity: import("@/api/types").UserIdentity = {
+    const identity: import("@/api/types/organizations").UserIdentity = {
       id: "i1",
       provider: "google",
       provider_sub: "sub123",

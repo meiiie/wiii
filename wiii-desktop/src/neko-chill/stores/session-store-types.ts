@@ -1,5 +1,5 @@
 /** Shared session contracts and Immer-aware action access; no runtime state. */
-import type { ContentBlock } from "@/api/types";
+import type { ContentBlock } from "@/api/types/content-blocks";
 import type { WorkspaceRef } from "../workspace";
 import type { AgentLaunchProfile, DetectedAgent } from "./neko-agent-store";
 import type { NekoTopLevelSessionKind } from "@/neko/session-ownership";

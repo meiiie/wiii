@@ -1,5 +1,8 @@
 import { Activity, AlertTriangle, Lock, Network } from "lucide-react";
-import type { WiiiConnectRuntimeConnection, WiiiConnectRuntimeSnapshot } from "@/api/types";
+import type {
+  WiiiConnectRuntimeConnection,
+  WiiiConnectRuntimeSnapshot,
+} from "@/api/types/runtime-diagnostics";
 import type { CapabilityDashboardSection } from "@/lib/capability-status";
 import { connectionIconBySlug } from "./catalog-data";
 import {

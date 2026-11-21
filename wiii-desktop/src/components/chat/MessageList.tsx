@@ -3,7 +3,8 @@ import { useShallow } from "zustand/react/shallow";
 import { motion } from "motion/react";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { ChevronDown } from "lucide-react";
-import type { ContentBlock, Message } from "@/api/types";
+import type { ContentBlock } from "@/api/types/content-blocks";
+import type { Message } from "@/api/types/conversation";
 import { useChatStore } from "@/stores/chat-store";
 import { useSettingsStore } from "@/stores/settings-store";
 import { useAutoScroll } from "@/hooks/useAutoScroll";
@@ -40,7 +41,7 @@ export function getVisibleStreamingBlocks(
   const includeThinking = shouldRenderReasoningRail(
     blocks,
     showThinking,
-    thinkingLevel as import("@/api/types").ThinkingLevel,
+    thinkingLevel as import("@/api/types/conversation").ThinkingLevel,
   );
   return blocks.filter((block) => {
     if (!hasVisibleThinkingContent(block)) return false;

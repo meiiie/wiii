@@ -12,7 +12,7 @@ import {
   fetchWiiiConnectProviderConnections,
   previewWiiiConnectFacebookPost,
 } from "@/api/wiii-connect";
-import type { ImageInput } from "@/api/types";
+import type { ImageInput } from "@/api/types/chat";
 
 const MAX_SNIPPET_LENGTH = 2000;
 

@@ -4,7 +4,7 @@
  */
 import { create } from "zustand";
 import { fetchMemories, deleteMemory, clearMemories } from "@/api/memories";
-import type { MemoryHealthSummary, MemoryItem } from "@/api/types";
+import type { MemoryHealthSummary, MemoryItem } from "@/api/types/service-state";
 
 /** Vietnamese labels for fact types (Sprint 73: 15 FactTypes). */
 export const FACT_TYPE_LABELS: Record<string, string> = {

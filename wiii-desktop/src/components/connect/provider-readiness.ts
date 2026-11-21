@@ -6,7 +6,7 @@ import type {
   WiiiConnectProviderConnectionRecord,
   WiiiConnectProviderDisconnectResponse,
   WiiiConnectSessionStartDecision,
-} from "@/api/types";
+} from "@/api/types/wiii-connect";
 import type { CapabilityStatusTone } from "@/lib/capability-status";
 import { compactText } from "./connect-display";
 import type { CatalogCard } from "./connect-types";

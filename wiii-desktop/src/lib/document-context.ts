@@ -3,7 +3,7 @@ import type {
   ChatDocumentContext,
   ChatDocumentContextAttachment,
   ImageInput,
-} from "@/api/types";
+} from "@/api/types/chat";
 import type {
   DocumentContextEmbeddedAsset,
   DocumentContextExtractedImage,

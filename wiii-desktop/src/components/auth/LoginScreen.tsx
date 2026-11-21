@@ -10,7 +10,7 @@ import { useState, useEffect, useRef } from "react";
 import { useSettingsStore } from "@/stores/settings-store";
 import { useAuthStore } from "@/stores/auth-store";
 import type { AuthUser } from "@/stores/auth-store";
-import type { AppSettings } from "@/api/types";
+import type { AppSettings } from "@/api/types/conversation";
 import { WiiiMascot } from "@/components/common/WiiiMascot";
 import { TitleBar } from "@/components/layout/TitleBar";
 import {

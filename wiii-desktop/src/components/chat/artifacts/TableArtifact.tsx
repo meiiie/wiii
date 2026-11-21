@@ -1,6 +1,6 @@
 import { useState, useMemo } from "react";
 import { ArrowUpDown, Download, Table2 } from "lucide-react";
-import type { ArtifactData } from "@/api/types";
+import type { ArtifactData } from "@/api/types/artifacts";
 import { useSettingsStore } from "@/stores/settings-store";
 import { resolveArtifactFileUrl } from "@/lib/artifact-file";
 

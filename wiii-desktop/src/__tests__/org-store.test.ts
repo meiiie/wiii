@@ -6,7 +6,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { useOrgStore, detectOrgFromSubdomain } from "@/stores/org-store";
 import { PERSONAL_ORG_ID } from "@/lib/constants";
-import type { OrganizationSummary } from "@/api/types";
+import type { OrganizationSummary } from "@/api/types/organizations";
 
 // Mock the organizations API
 vi.mock("@/api/organizations", () => ({

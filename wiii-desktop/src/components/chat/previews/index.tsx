@@ -2,7 +2,7 @@
  * Preview card registry and router.
  * Sprint 166: Dispatches rendering to specialized preview cards based on preview_type.
  */
-import type { PreviewItemData } from "@/api/types";
+import type { PreviewItemData } from "@/api/types/content-blocks";
 import { DocumentPreviewCard } from "./DocumentPreviewCard";
 import { ProductPreviewCard } from "./ProductPreviewCard";
 import { WebPreviewCard } from "./WebPreviewCard";

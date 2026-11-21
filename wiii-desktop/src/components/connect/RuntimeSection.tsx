@@ -14,7 +14,7 @@ import type {
   SemanticMemoryWriteDoctorHistoryReport,
   SemanticMemoryWriteDoctorReport,
   WiiiConnectDoctorReport,
-} from "@/api/types";
+} from "@/api/types/runtime-diagnostics";
 import type { CapabilityStatusTone, RuntimePathSnapshot } from "@/lib/capability-status";
 import type {
   RuntimeFlowLedgerViewModel,

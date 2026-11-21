@@ -23,11 +23,7 @@ import { useSSEStream } from "@/hooks/useSSEStream";
 import { slideDown } from "@/lib/animations";
 import { MessageList } from "./MessageList";
 import { ChatInput } from "./ChatInput";
-import type {
-  ChatDocumentAttachment,
-  ChatDocumentContext,
-  ImageInput,
-} from "@/api/types";
+import type { ChatDocumentAttachment, ChatDocumentContext, ImageInput } from "@/api/types/chat";
 
 const WelcomeScreen = lazy(async () => {
   const mod = await import("./WelcomeScreen");

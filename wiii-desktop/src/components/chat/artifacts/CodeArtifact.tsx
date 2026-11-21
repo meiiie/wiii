@@ -10,7 +10,7 @@
 import { useState, useCallback } from "react";
 import { Play, Loader2, CheckCircle2, XCircle } from "lucide-react";
 import { MarkdownRenderer } from "@/components/common/MarkdownRenderer";
-import type { ArtifactData } from "@/api/types";
+import type { ArtifactData } from "@/api/types/artifacts";
 
 interface Props {
   artifact: ArtifactData;

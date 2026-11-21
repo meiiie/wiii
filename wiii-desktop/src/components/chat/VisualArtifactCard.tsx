@@ -16,7 +16,7 @@ import {
   Loader2,
   Palette,
 } from "lucide-react";
-import type { ToolExecutionBlockData } from "@/api/types";
+import type { ToolExecutionBlockData } from "@/api/types/content-blocks";
 
 interface VisualArtifactCardProps {
   block: ToolExecutionBlockData;

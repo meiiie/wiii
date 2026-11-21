@@ -3,7 +3,7 @@
  * Sprint 166: Large og_image, title, og_description snippet, domain.
  */
 import { Link } from "lucide-react";
-import type { PreviewItemData } from "@/api/types";
+import type { PreviewItemData } from "@/api/types/content-blocks";
 
 interface Props {
   item: PreviewItemData;

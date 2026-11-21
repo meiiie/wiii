@@ -1,5 +1,5 @@
 import { CheckCircle2, ChevronDown, LoaderCircle } from "lucide-react";
-import type { ContentBlock, ThinkingPhase } from "@/api/types";
+import type { ContentBlock, ThinkingPhase } from "@/api/types/content-blocks";
 
 type JourneyStatus = "active" | "completed";
 

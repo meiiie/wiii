@@ -1,4 +1,7 @@
-import type { WiiiConnectRuntimePathCapability, WiiiConnectRuntimeSnapshot } from "@/api/types";
+import type {
+  WiiiConnectRuntimePathCapability,
+  WiiiConnectRuntimeSnapshot,
+} from "@/api/types/runtime-diagnostics";
 import {
   capabilityAttentionPath,
   capabilityPathStatusSummary,

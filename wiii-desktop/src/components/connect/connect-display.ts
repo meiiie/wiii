@@ -1,5 +1,8 @@
 /** Shared presentation helpers, including connector-secret redaction. */
-import type { WiiiConnectRuntimeConnection, WiiiConnectRuntimeSnapshot } from "@/api/types";
+import type {
+  WiiiConnectRuntimeConnection,
+  WiiiConnectRuntimeSnapshot,
+} from "@/api/types/runtime-diagnostics";
 import type { CapabilityStatusTone } from "@/lib/capability-status";
 
 export const statusToneClasses: Record<CapabilityStatusTone, string> = {

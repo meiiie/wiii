@@ -1,9 +1,5 @@
-import type {
-  ChatResponseMetadata,
-  Message,
-  RuntimeFlowLedger,
-  RuntimeFlowTrace,
-} from "@/api/types";
+import type { ChatResponseMetadata, RuntimeFlowLedger, RuntimeFlowTrace } from "@/api/types/chat";
+import type { Message } from "@/api/types/conversation";
 
 export interface RuntimeFlowTraceRow {
   label: string;

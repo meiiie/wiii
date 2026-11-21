@@ -1,6 +1,6 @@
 /** Pure transcript, control, and durable-journal projections. */
 import type { NekoMessage, NekoSession } from "./session-store-types";
-import type { ContentBlock, ToolExecutionBlockData } from "@/api/types";
+import type { ContentBlock, ToolExecutionBlockData } from "@/api/types/content-blocks";
 import type { DriverActivity, DriverConfigOption } from "../drivers/types";
 import type { NekoSessionEvent, NekoSessionEventData } from "../session-events";
 import { appendSessionEvent } from "../session-events";

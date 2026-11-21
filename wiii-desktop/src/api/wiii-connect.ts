@@ -2,12 +2,6 @@ import { getClient } from "./client";
 import type {
   WiiiConnectActivationReadinessResponse,
   WiiiConnectAuthorizationUrlDecision,
-  RuntimeFlowDoctorHistoryReport,
-  RuntimeFlowDoctorReport,
-  RuntimeFlowSessionEventPruneReport,
-  SemanticMemoryWriteDoctorHistoryReport,
-  SemanticMemoryWriteDoctorReport,
-  WiiiConnectDoctorReport,
   WiiiConnectFacebookPagesResponse,
   WiiiConnectFacebookPostApplyResponse,
   WiiiConnectFacebookPostPreviewResponse,
@@ -17,10 +11,18 @@ import type {
   WiiiConnectProviderDisconnectResponse,
   WiiiConnectProviderScopeGrantResponse,
   WiiiConnectProviderRegistryResponse,
-  WiiiConnectRuntimeSnapshot,
   WiiiConnectSessionStartBody,
   WiiiConnectSessionStartDecision,
-} from "./types";
+} from "./types/wiii-connect";
+import type {
+  RuntimeFlowDoctorHistoryReport,
+  RuntimeFlowDoctorReport,
+  RuntimeFlowSessionEventPruneReport,
+  SemanticMemoryWriteDoctorHistoryReport,
+  SemanticMemoryWriteDoctorReport,
+  WiiiConnectDoctorReport,
+  WiiiConnectRuntimeSnapshot,
+} from "./types/runtime-diagnostics";
 
 export async function fetchWiiiConnectProviders(): Promise<WiiiConnectProviderRegistryResponse> {
   return getClient().get<WiiiConnectProviderRegistryResponse>("/api/v1/wiii-connect/providers");

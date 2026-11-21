@@ -2,7 +2,7 @@ import type {
   WiiiConnectActivationReadinessResponse,
   WiiiConnectAuthorizationUrlDecision,
   WiiiConnectProviderConnectionRecord,
-} from "@/api/types";
+} from "@/api/types/wiii-connect";
 import { statusDotClasses, statusToneClasses } from "./connect-display";
 import type {
   CatalogCard,

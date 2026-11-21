@@ -5,7 +5,7 @@
  * Sprint 162b: Base64→Blob URL conversion for memory optimization.
  */
 import { useState, useEffect, useRef, useMemo } from "react";
-import type { ScreenshotBlockData } from "@/api/types";
+import type { ScreenshotBlockData } from "@/api/types/content-blocks";
 import { base64ToBlobUrl, revokeBlobUrl } from "@/lib/blob-url";
 
 export function ScreenshotBlock({ block }: { block: ScreenshotBlockData }) {

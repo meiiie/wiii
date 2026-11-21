@@ -18,7 +18,7 @@ import {
   saveStore,
   saveStoreStrict,
 } from "@/lib/storage";
-import type { ContentBlock } from "@/api/types";
+import type { ContentBlock } from "@/api/types/content-blocks";
 import type { NekoMessage, NekoSession } from "./stores/neko-session-store";
 import type { DriverCommand, DriverConfigOption } from "./drivers/types";
 import type { AgentLaunchProfile } from "./stores/neko-agent-store";

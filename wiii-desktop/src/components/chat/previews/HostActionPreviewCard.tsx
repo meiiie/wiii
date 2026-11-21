@@ -1,5 +1,5 @@
 import { Eye, FilePenLine, ClipboardCheck, Rocket, Send } from "lucide-react";
-import type { PreviewItemData } from "@/api/types";
+import type { PreviewItemData } from "@/api/types/content-blocks";
 
 interface Props {
   item: PreviewItemData;

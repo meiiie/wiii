@@ -4,11 +4,7 @@
  */
 import { create } from "zustand";
 import { fetchCharacterState } from "@/api/character";
-import type {
-  CharacterBlockInfo,
-  CharacterCardInfo,
-  MoodType,
-} from "@/api/types";
+import type { CharacterBlockInfo, CharacterCardInfo, MoodType } from "@/api/types/character";
 
 /** Vietnamese labels for character block types. */
 export const BLOCK_LABELS: Record<string, string> = {

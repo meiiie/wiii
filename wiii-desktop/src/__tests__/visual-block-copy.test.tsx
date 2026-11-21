@@ -1,7 +1,7 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { VisualBlock } from "@/components/chat/VisualBlock";
-import type { VisualBlockData, VisualPayload } from "@/api/types";
+import type { VisualBlockData, VisualPayload } from "@/api/types/artifacts";
 import { useChatStore } from "@/stores/chat-store";
 import { useCodeStudioStore } from "@/stores/code-studio-store";
 import { useUIStore } from "@/stores/ui-store";

@@ -4,7 +4,7 @@
  * Sprint 192: Added activeView for full-page admin/settings layout.
  */
 import { create } from "zustand";
-import type { ArtifactData } from "@/api/types";
+import type { ArtifactData } from "@/api/types/artifacts";
 
 /** Sprint 192: Main content view — chat or full-page admin/settings */
 export type ActiveView =
