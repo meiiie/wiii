@@ -1014,15 +1014,31 @@ class RuntimeEvidenceRegistryTests(unittest.TestCase):
 
             workflow_path = repo_root / sample["requirements"][0]["workflow"]
             workflow = workflow_path.read_text(encoding="utf-8")
-            _write(
-                workflow_path,
+            manual_workflow = (
                 workflow[:workflow.index("  pull_request:")]
-                + workflow[workflow.index("  workflow_dispatch:"):],
+                + workflow[workflow.index("  workflow_dispatch:"):]
             )
+            commented_workflow = manual_workflow.replace(
+                "\npermissions:", "\n# Evidence workflow triggers\npermissions:",
+            )
+            _write(workflow_path, commented_workflow)
             result = registry.validate_registry(
                 sample, repo_root=repo_root, registry_path=repo_root / "registry.json",
             )
             self.assertTrue(result.ok, result.errors)
+
+            _write(
+                workflow_path,
+                commented_workflow.replace(
+                    "\npermissions:",
+                    "\n  schedule:\n    - cron: '0 0 * * *'\n\npermissions:",
+                ),
+            )
+            result = registry.validate_registry(
+                sample, repo_root=repo_root, registry_path=repo_root / "registry.json",
+            )
+            self.assertFalse(result.ok)
+            self.assertTrue(any("manual-only workflow" in error for error in result.errors))
 
     def test_pull_request_target_fails_closed(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:

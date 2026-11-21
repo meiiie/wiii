@@ -456,13 +456,14 @@ def _workflow_top_level_block(workflow_text: str, key: str) -> list[str]:
     )
     if start is None:
         return []
-    end = len(lines)
-    for index in range(start + 1, len(lines)):
-        line = lines[index]
-        if line and not line.startswith(" "):
-            end = index
+    block = [lines[start]]
+    for line in lines[start + 1:]:
+        if line.lstrip().startswith("#"):
+            continue
+        if line.strip() and not line.startswith(" "):
             break
-    return lines[start:end]
+        block.append(line)
+    return block
 
 
 def _workflow_top_level_key_count(workflow_text: str, key: str) -> int:
