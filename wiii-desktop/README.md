@@ -75,7 +75,7 @@ connection without disabling local files or agents.
 | Technology | Role |
 | --- | --- |
 | Tauri 2 + Rust | Native shell, sidecars, secure IPC, tray, and installer |
-| React 18 + TypeScript | Application UI and typed product contracts |
+| React 19 + TypeScript | Application UI and typed product contracts |
 | Vite 8 | Development and production builds |
 | Zustand + Immer | Local state and persistence boundaries |
 | Vitest 4 + Playwright | Unit, component, contract, and browser verification |
