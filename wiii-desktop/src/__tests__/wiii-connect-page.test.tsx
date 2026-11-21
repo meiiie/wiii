@@ -1164,9 +1164,11 @@ describe("WiiiConnectPage", () => {
 
     expect(await screen.findByTestId("wiii-connect-readiness-panel")).toBeTruthy();
     expect(screen.getByTestId("wiii-connect-lifecycle-panel")).toBeTruthy();
-    expect(screen.getByTestId("wiii-connect-next-action").textContent).toContain(
-      "Mở OAuth/Connect Link với provider",
-    );
+    await waitFor(() => {
+      expect(screen.getByTestId("wiii-connect-next-action").textContent).toContain(
+        "Mở OAuth/Connect Link với provider",
+      );
+    });
     expect(screen.getByText("Hoàn tất OAuth/Connect Link")).toBeTruthy();
     expect(screen.getByText("Activation readiness")).toBeTruthy();
     expect(screen.getByText("Connect-ready")).toBeTruthy();
@@ -1378,11 +1380,13 @@ describe("WiiiConnectPage", () => {
     fireEvent.click(screen.getByRole("button", { name: /Facebook/i }));
 
     expect(await screen.findByText("Connection thật")).toBeTruthy();
-    expect(screen.getAllByText("Wiii Facebook Page").length).toBeGreaterThan(0);
+    expect((await screen.findAllByText("Wiii Facebook Page")).length).toBeGreaterThan(0);
     expect(screen.getAllByText("Đã kết nối").length).toBeGreaterThan(0);
-    expect(screen.getByTestId("wiii-connect-next-action").textContent).toContain(
-      "Hoàn tất policy/gateway trước khi agent dùng",
-    );
+    await waitFor(() => {
+      expect(screen.getByTestId("wiii-connect-next-action").textContent).toContain(
+        "Hoàn tất policy/gateway trước khi agent dùng",
+      );
+    });
     expect(screen.getByText("Bật policy agent cho provider")).toBeTruthy();
     await waitFor(() => {
       expect(mockFetchWiiiConnectProviderConnections).toHaveBeenCalledWith("facebook", {
@@ -1846,7 +1850,7 @@ describe("WiiiConnectPage", () => {
       "noopener,noreferrer",
     );
     expect(await screen.findByText("Connection thật")).toBeTruthy();
-    expect(screen.getAllByText("Wiii Facebook Page").length).toBeGreaterThan(0);
+    expect((await screen.findAllByText("Wiii Facebook Page")).length).toBeGreaterThan(0);
     expect(screen.getAllByText("Đã kết nối").length).toBeGreaterThan(0);
     expect(container.textContent).not.toContain("wcn_public_1");
     expect(container.textContent).not.toContain("fb_page_public");
