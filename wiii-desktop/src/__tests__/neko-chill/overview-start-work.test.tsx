@@ -51,4 +51,10 @@ describe("desktop home actions", () => {
     fireEvent.click(screen.getByTestId("overview-quick-chat"));
     expect(chat).not.toHaveBeenCalled();
   });
+
+  it("keeps session scan recovery available when discovery is empty", () => {
+    render(<NekoOverview {...props} />);
+    fireEvent.click(screen.getByRole("button", { name: "Quét lại" }));
+    expect(props.onRefreshDiscovery).toHaveBeenCalledOnce();
+  });
 });

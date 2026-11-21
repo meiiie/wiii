@@ -186,7 +186,7 @@ export function NekoOverview({
           {attention ? <span className="inline-flex items-center gap-2 text-[var(--nk-warning)]"><span aria-hidden="true" className="h-1.5 w-1.5 rounded-full bg-current" />{attention} cần bạn</span> : null}
         </div> : null}
 
-        {sessions.length || discoveredSessions.length || discoveryLoading ? <ProviderSessionCatalogPanel
+        <ProviderSessionCatalogPanel
           managedSessions={sessions}
           providerSessions={discoveredSessions}
           providerCatalogs={providerCatalogs}
@@ -195,7 +195,7 @@ export function NekoOverview({
           onRefresh={onRefreshDiscovery}
           onOpenManaged={onOpenSession}
           onImportProvider={onImportProviderSession}
-        /> : null}
+        />
 
         <details ref={harnessDetails} className="nk-agent-details mt-7 border-t border-[var(--nk-border)]" data-testid="overview-agent-details">
           <summary className="flex cursor-pointer list-none items-center gap-2 py-4 text-[12px] text-[var(--nk-text-3)]"><Settings2 size={15} aria-hidden="true" /><span className="flex-1">Agent & cấu hình</span><span className="text-[11px]">{agentLoading ? "Đang kiểm tra…" : availableAgent ? `${availableAgent.name} · Sẵn sàng` : "Cần thiết lập"}</span><ChevronDown size={14} aria-hidden="true" className="nk-details-chevron" /></summary>
