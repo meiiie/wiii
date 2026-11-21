@@ -24,7 +24,7 @@ if str(SCRIPT_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPT_DIR))
 
 from strict_json import loads_strict_json  # noqa: E402
-from validate_runtime_evidence_registry import (  # noqa: E402
+from runtime_evidence_registry import (  # noqa: E402
     DEFAULT_REGISTRY,
     load_registry,
     validate_registry as validate_registry_contract,
