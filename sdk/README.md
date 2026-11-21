@@ -7,8 +7,8 @@ repository. It currently contains no published SDK implementation.
 
 Future code placed here must be an independently usable client or protocol
 library, must not import Wiii implementation modules, and must carry an
-Apache-2.0 SPDX header. Re-exporting or linking the AGPL core does not turn it
-into Apache-licensed SDK code.
+Apache-2.0 SPDX header. Re-exporting or linking the MIT core does not change
+the core's license or remove its notice requirements.
 
 See `LICENSE` and `NOTICE` in this directory and `../LICENSING.md` for the
 repository-wide license map.

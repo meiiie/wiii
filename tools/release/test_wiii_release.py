@@ -99,6 +99,9 @@ class ReleaseToolTests(unittest.TestCase):
 
     def test_license_surfaces_are_synchronized(self) -> None:
         surfaces = wiii_release.collect_license_metadata()
+        self.assertEqual(wiii_release.CORE_LICENSE, "MIT")
+        self.assertEqual(surfaces["LICENSE"], "MIT")
+        self.assertEqual(surfaces["README.md#badge"], "MIT")
         self.assertEqual(set(wiii_release.LICENSE_EXPECTATIONS), set(surfaces))
         self.assertFalse(wiii_release.find_license_mismatches(surfaces))
 
@@ -113,7 +116,7 @@ class ReleaseToolTests(unittest.TestCase):
 
             tauri_path = root / "wiii-desktop/src-tauri/tauri.conf.json"
             tauri_metadata = json.loads(tauri_path.read_text(encoding="utf-8"))
-            tauri_metadata["bundle"]["license"] = "MIT"
+            tauri_metadata["bundle"]["license"] = "Apache-2.0"
             tauri_path.write_text(json.dumps(tauri_metadata), encoding="utf-8")
 
             mismatches = wiii_release.find_license_mismatches(
@@ -121,7 +124,7 @@ class ReleaseToolTests(unittest.TestCase):
             )
             self.assertEqual(
                 mismatches["wiii-desktop/src-tauri/tauri.conf.json"],
-                {"expected": "AGPL-3.0-only", "actual": "MIT"},
+                {"expected": "MIT", "actual": "Apache-2.0"},
             )
 
     def test_manifest_is_deterministic_and_hashed(self) -> None:
