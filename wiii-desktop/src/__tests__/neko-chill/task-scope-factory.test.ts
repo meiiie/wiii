@@ -177,6 +177,15 @@ describe("fixed task scope factory native boundary", () => {
     expect(h.dispose).toHaveBeenCalledTimes(1);
   });
 
+  it("marks Quick Chat native launches without adding a task scope", async () => {
+    const value: DriverLaunchConfig = { workspace: { path: "/app/quick-chats/chat", name: "Chat riêng", kind: "scratch" } };
+    await createDriverForAgent(agent(), "quick-chat", value, vi.fn());
+    expect(h.spawn).toHaveBeenCalledWith(expect.objectContaining({
+      workspacePath: "/app/quick-chats/chat", workspaceKind: "scratch",
+    }));
+    expect(h.acpOptions[0].taskScope).toBeUndefined();
+  });
+
   it.each(["neko", "gemini"])("preserves the unscoped %s lane without canonical root admission", async (providerId) => {
     h.spawn.mockResolvedValueOnce({ provider: agent(providerId), agentSessionId: "legacy-native", runId: "legacy-run", transport: {} });
     const value = { workspace: { path: "E:/LegacyAlias", name: "Legacy" } };
@@ -185,6 +194,7 @@ describe("fixed task scope factory native boundary", () => {
     expect(h.hydrate).not.toHaveBeenCalled();
     expect(h.acpOptions[0].cwd).toBe("E:/LegacyAlias");
     expect(h.acpOptions[0].taskScope).toBeUndefined();
+    expect(h.spawn.mock.calls[0][0]).not.toHaveProperty("workspaceKind");
   });
   it("awaits cold Work hydration before scoped resume canonicalization and native spawn", async () => {
     h.work = { hydrated: false, graph: { ...graph(), tasks: [], runs: [] } };

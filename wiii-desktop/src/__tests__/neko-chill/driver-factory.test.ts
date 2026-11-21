@@ -196,6 +196,18 @@ describe("Neko driver factory resource ownership", () => {
     )).toHaveLength(1);
   });
 
+  it("passes the scratch workspace kind to native containment", async () => {
+    tauri.listen.mockResolvedValueOnce(vi.fn()).mockResolvedValueOnce(vi.fn());
+    const { transport } = await getNekoControlClient().spawnProvider({
+      providerId: "neko", clientSessionId: "quick-chat-confinement",
+      workspacePath: "/app/quick-chats/scratch", workspaceKind: "scratch",
+    });
+    expect(tauri.invoke).toHaveBeenCalledWith("neko_control_session_start", {
+      request: expect.objectContaining({ workspacePath: "/app/quick-chats/scratch", workspaceKind: "scratch" }),
+    });
+    await transport.kill();
+  });
+
   it("keeps the visible session as Task while each runtime replacement gets a fresh Run", async () => {
     tauri.listen.mockResolvedValueOnce(vi.fn()).mockResolvedValueOnce(vi.fn());
 

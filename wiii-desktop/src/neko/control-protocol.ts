@@ -101,6 +101,7 @@ export type NekoControlRequest =
       providerId: string;
       environmentId: string;
       workspacePath: string;
+      workspaceKind?: "scratch";
       profileId?: string;
     }>
   | BaseRequest<"session/write", { agentSessionId: string; line: string }>
@@ -189,6 +190,7 @@ function validParams(method: NekoControlMethod, params: Record<string, unknown>)
         findProviderDefinition(params.providerId) !== null &&
         string(params.environmentId) &&
         string(params.workspacePath) &&
+        (params.workspaceKind === undefined || params.workspaceKind === "scratch") &&
         (params.profileId === undefined || string(params.profileId))
       );
     case "session/write":
