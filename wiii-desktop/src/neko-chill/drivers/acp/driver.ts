@@ -387,11 +387,13 @@ export class AcpDriver implements Driver {
     return this.acpSessionId;
   }
   private turnRunning = false;
+  private foregroundCompleted = false;
   private turnAuthority: AbortController | null = null;
   private computerRequests = new Set<Promise<unknown>>();
   private computerCleanup: Promise<void> = Promise.resolve();
   private disposed = false;
   private permissionSeq = 0;
+  private noticeSeq = 0;
   private readonly pendingPermissions = new Map<string, PendingPermission>();
   /** Per-session activity cache so tool_call_update can merge partial data. */
   private readonly activities = new Map<string, DriverActivity>();
@@ -693,6 +695,7 @@ export class AcpDriver implements Driver {
           message: error instanceof Error ? error.message : String(error) });
       } finally {
         this.turnRunning = false;
+        this.foregroundCompleted = true;
         // A local authority cleanup does not certify a terminal for an
         // unverified task response. Preserve the fatal fault until explicit
         // close/recovery; legacy/provider error semantics remain unchanged.
@@ -995,7 +998,22 @@ export class AcpDriver implements Driver {
       }
       case "agent_message_chunk": {
         const text = contentText(update.content);
-        if (text) this.emitEvent({ type: "answer-delta", sessionId: this.sessionId, text });
+        if (!text) return;
+        if (this.turnRunning || !this.foregroundCompleted) {
+          this.emitEvent({ type: "answer-delta", sessionId: this.sessionId, text });
+        } else {
+          this.emitEvent({
+            type: "activity",
+            sessionId: this.sessionId,
+            activity: {
+              id: `agent-notice-${++this.noticeSeq}`,
+              title: "Thông báo từ tác nhân",
+              kind: "other",
+              status: "completed",
+              detail: text,
+            },
+          });
+        }
         return;
       }
       case "agent_thought_chunk": {
