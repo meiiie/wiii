@@ -360,7 +360,7 @@ Recommended commands:
 
 ```powershell
 cd maritime-ai-service
-python -m pytest tests/unit/test_tool_policy_session.py tests/unit/test_turn_path_governor.py tests/unit/test_direct_tool_rounds_runtime.py -q --tb=short
+python -m pytest tests/unit/test_tool_policy_session.py tests/unit/test_turn_path_governor.py tests/unit/test_direct_tool_rounds_synthesis.py tests/unit/test_direct_tool_rounds_web_search.py tests/unit/test_direct_tool_rounds_followup.py tests/unit/test_direct_tool_rounds_execution.py tests/unit/test_direct_tool_rounds_document_courses.py tests/unit/test_direct_tool_rounds_document_previews.py tests/unit/test_direct_tool_rounds_pointy.py tests/unit/test_direct_tool_rounds_host_actions.py tests/unit/test_direct_tool_rounds_facebook_preflight.py -q --tb=short
 python -m ruff check app/ tests/unit/ --select=E9,F63,F7
 git diff --check
 ```
