@@ -9,10 +9,10 @@ import logging
 from typing import Optional
 
 from app.engine.kg_builder_service import (
-    EntityItem,
-    ExtractionOutput,
+    EntityItem as EntityItem,
+    ExtractionOutput as ExtractionOutput,
     KGBuilderService,
-    RelationItem,
+    RelationItem as RelationItem,
 )
 from app.engine.multi_agent.state import AgentState
 from app.engine.agents import KG_BUILDER_AGENT_CONFIG

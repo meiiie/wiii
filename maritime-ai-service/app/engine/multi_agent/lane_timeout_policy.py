@@ -3,11 +3,9 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Optional
 
 from app.engine.multi_agent.direct_intent import (
     _looks_emotional_support_turn,
-    _looks_identity_selfhood_turn,
     _looks_selfhood_followup_turn,
     _normalize_for_intent,
 )

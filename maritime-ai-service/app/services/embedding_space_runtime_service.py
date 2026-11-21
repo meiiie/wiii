@@ -7,7 +7,6 @@ from typing import Iterable
 
 from app.engine.model_catalog import EMBEDDING_MODELS, get_embedding_model_metadata
 from app.services.embedding_space_guard import (
-    EmbeddingSpaceAudit,
     EmbeddingSpaceContract,
     EmbeddingSpaceTableAudit,
     get_active_embedding_space_contract,

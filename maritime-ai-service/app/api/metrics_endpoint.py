@@ -23,7 +23,6 @@ from __future__ import annotations
 
 import math
 import re
-import statistics
 from typing import Iterable
 
 from fastapi import APIRouter, HTTPException

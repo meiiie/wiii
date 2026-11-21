@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import html as html_mod
 
-from app.engine.tools.visual_html_builders import _wrap_html
 
 def _looks_like_pendulum_simulation(raw_html: str, title: str, query: str) -> bool:
     haystack = " ".join(part for part in (raw_html, title, query) if part).lower()

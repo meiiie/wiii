@@ -465,7 +465,6 @@ Viết HTML fragment trực tiếp trong code_html — biểu đồ sẽ giúp h
     
     # Phase2-F: Always inject thinking instruction so LLM wraps reasoning in <thinking> tags
     # Without this, chain-of-thought planning leaks into user-facing response
-    from app.prompts.prompt_loader import get_prompt_loader
     _thinking_instr = prompt_loader_factory().get_thinking_instruction()
     if _thinking_instr:
         full_prompt += f"\n\n{_thinking_instr}"

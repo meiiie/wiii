@@ -42,7 +42,7 @@ from app.api.v1.admin_schemas import (
     AgentRuntimeProfileConfig,
     DomainDetail,
     DomainSummary,
-    DocumentInfo,
+    DocumentInfo as DocumentInfo,
     DocumentStatus,
     DocumentUploadResponse,
     EmbeddingMigrationPreview,

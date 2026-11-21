@@ -10,7 +10,7 @@ the main chat path sees a lane, not ad hoc provider/tool conditionals.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, Iterable, Literal, Mapping, Protocol
+from typing import Any, Literal, Mapping, Protocol
 
 from app.engine.tools.tool_capability_registry import (
     WIII_CONNECT_DELEGATE_TO_INTEGRATION_TOOL,

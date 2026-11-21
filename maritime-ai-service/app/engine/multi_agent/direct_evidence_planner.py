@@ -7,8 +7,8 @@ policy, and evidence-plan generation for the Direct response lane.
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass, field
-from typing import Any, Optional
+from dataclasses import dataclass
+from typing import Any
 
 from app.engine.multi_agent.direct_intent import (
     _needs_web_search,

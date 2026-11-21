@@ -10,7 +10,7 @@ Features:
 """
 
 import logging
-from typing import List, Optional
+from typing import List
 
 from app.core.singleton import singleton_factory
 from app.engine.agentic_rag.runtime_llm_socket import (

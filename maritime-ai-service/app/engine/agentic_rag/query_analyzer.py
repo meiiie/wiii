@@ -12,7 +12,7 @@ Features:
 
 import logging
 from dataclasses import dataclass, field
-from typing import List, Optional
+from typing import List
 from enum import Enum
 
 from app.core.singleton import singleton_factory

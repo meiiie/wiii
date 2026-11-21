@@ -19,14 +19,13 @@ import logging
 from pathlib import Path
 from typing import Dict, List, Optional, Any
 
-import yaml
 
 from app.prompts.prompt_context_utils import (
-    INAPPROPRIATE_PRONOUNS,
-    VALID_PRONOUN_PAIRS,
+    INAPPROPRIATE_PRONOUNS as INAPPROPRIATE_PRONOUNS,
+    VALID_PRONOUN_PAIRS as VALID_PRONOUN_PAIRS,
     build_response_language_instruction,
     build_time_context,
-    detect_pronoun_style,
+    detect_pronoun_style as detect_pronoun_style,
     get_pronoun_instruction,
 )
 from app.prompts.prompt_page_context import format_page_context_for_prompt_impl as format_page_context_for_prompt

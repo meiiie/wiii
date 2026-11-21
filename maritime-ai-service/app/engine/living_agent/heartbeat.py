@@ -37,8 +37,6 @@ from app.engine.living_agent.models import (
     ActionType,
     HeartbeatAction,
     HeartbeatResult,
-    LifeEvent,
-    LifeEventType,
 )
 from app.engine.living_agent.heartbeat_action_runtime import (
     action_browse_impl,

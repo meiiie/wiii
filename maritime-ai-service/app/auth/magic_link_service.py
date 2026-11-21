@@ -69,8 +69,8 @@ def validate_email(email: str) -> bool:
 
 # Backward-compat re-exports — older code may still import these names from here.
 from app.auth.magic_link_session_store import (  # noqa: E402 (intentional late re-export)
-    InMemorySessionStore as MagicLinkSessionManager,
-    _SessionEntry,
+    InMemorySessionStore as MagicLinkSessionManager,  # noqa: F401 - re-exported
+    _SessionEntry as _SessionEntry,
     get_session_store,
 )
 

@@ -7,7 +7,6 @@ the large streaming implementation lives in a dedicated module.
 
 import asyncio
 import logging
-import re
 import time
 import unicodedata
 from typing import Any, AsyncGenerator, Dict, Optional

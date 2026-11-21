@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any, Optional
+from typing import Any
 
 from app.engine.llm_model_health import is_model_degraded
 from app.engine.llm_same_provider_runtime import extract_runtime_model_name_impl

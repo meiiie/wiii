@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import asyncio
 import os
-from typing import Any, Awaitable, Callable, Optional
+from typing import Awaitable, Optional
 
 from app.api.v1.course_generation_phase_runtime import (
     run_expand_phase_impl as _run_expand_phase_impl,

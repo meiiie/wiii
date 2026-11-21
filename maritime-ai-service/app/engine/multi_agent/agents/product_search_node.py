@@ -23,9 +23,9 @@ from typing import Dict, List, Optional, Tuple
 
 from app.engine.multi_agent.state import AgentState
 from app.engine.multi_agent.agents.product_search_surface import (
-    _DEEP_SEARCH_PROMPT,
-    _SYSTEM_PROMPT,
-    _iteration_label,
+    _DEEP_SEARCH_PROMPT as _DEEP_SEARCH_PROMPT,
+    _SYSTEM_PROMPT as _SYSTEM_PROMPT,
+    _iteration_label as _iteration_label,
     emit_product_previews_impl,
 )
 from app.engine.multi_agent.agents.product_search_runtime import (
