@@ -3,6 +3,8 @@ name: Merge Gate
 on:
   pull_request:
     branches: [main]
+  merge_group:
+    types: [checks_requested]
   push:
     branches: [main]
   workflow_dispatch:
@@ -35,7 +37,9 @@ jobs:
         run: |
           set -euo pipefail
 
-          if [[ -n "${{ github.base_ref }}" ]]; then
+          if [[ -n "${{ github.event.merge_group.base_sha }}" ]]; then
+            range="${{ github.event.merge_group.base_sha }}..${{ github.event.merge_group.head_sha }}"
+          elif [[ -n "${{ github.base_ref }}" ]]; then
             git fetch --no-tags origin "${{ github.base_ref }}"
             base="FETCH_HEAD"
             if git merge-base "$base" HEAD >/dev/null 2>&1; then
@@ -83,7 +87,9 @@ jobs:
         run: |
           set -euo pipefail
 
-          if [[ -n "${{ github.base_ref }}" ]]; then
+          if [[ -n "${{ github.event.merge_group.base_sha }}" ]]; then
+            range="${{ github.event.merge_group.base_sha }}..${{ github.event.merge_group.head_sha }}"
+          elif [[ -n "${{ github.base_ref }}" ]]; then
             git fetch --no-tags origin "${{ github.base_ref }}"
             base="FETCH_HEAD"
             if git merge-base "$base" HEAD >/dev/null 2>&1; then
@@ -134,7 +140,8 @@ jobs:
     needs: detect-changes
     # Reviewability is a pre-merge control. On push to main, the change has
     # already landed and this gate would only make the baseline red after an
-    # intentional admin merge or emergency repair.
+    # intentional admin merge or emergency repair. In the merge queue the PR
+    # has already passed it as part of its own required `Gate Summary`.
     if: github.event_name == 'pull_request'
     steps:
       - uses: actions/checkout@v6
@@ -146,7 +153,9 @@ jobs:
         run: |
           set -euo pipefail
 
-          if [[ -n "${{ github.base_ref }}" ]]; then
+          if [[ -n "${{ github.event.merge_group.base_sha }}" ]]; then
+            range="${{ github.event.merge_group.base_sha }}..${{ github.event.merge_group.head_sha }}"
+          elif [[ -n "${{ github.base_ref }}" ]]; then
             git fetch --no-tags origin "${{ github.base_ref }}"
             base="FETCH_HEAD"
             if git merge-base "$base" HEAD >/dev/null 2>&1; then

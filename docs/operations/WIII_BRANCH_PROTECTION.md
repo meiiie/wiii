@@ -52,9 +52,10 @@ Reviews remain encouraged and risk-based. `CODEOWNERS` routes expertise and revi
 - **Allow force pushes**: ❌
 - **Allow deletions**: ❌
 
-### Merge queue (optional once agent PR volume > ~20/week)
+### Merge queue
 
-- **Require merge queue**: ❌ today
+- **Require merge queue**: ✅ (agent PR volume made strict up-to-date branches race; each merge forced a fresh CI round on every other open PR)
+- **Required check in the queue**: `Gate Summary`; `merge-gate.yml` listens to `merge_group` and diffs `merge_group.base_sha..head_sha`, so the queue runs the same backend/desktop/hygiene/governance gates as the PR. `Reviewability Gate` stays PR-only: the PR already passed it inside its own `Gate Summary` before it could enter the queue.
 - **Merge method**: Squash
 - **Build concurrency**: 5
 - **Minimum group size**: 1 (one PR per queue entry — merging groups risks coupling unrelated changes)
