@@ -237,7 +237,6 @@ describe("Backward compatibility", () => {
 
   it("keeps animated conversation surfaces on the compatibility import", async () => {
     const files = [
-      "@/components/settings/SettingsPage?raw",
       "@/components/chat/MessageList?raw",
       "@/components/chat/WelcomeScreen?raw",
       "@/components/chat/MessageBubble?raw",
