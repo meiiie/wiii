@@ -29,11 +29,21 @@ that Work flows requiring task-v1 are unsupported with bundled Neko 1.7.0.
 
 Follow-up acceptance work (not claimed complete by this release):
 
-- [ ] Obtain an upstream published immutable release containing the compatible task contract
-- [ ] Review the source/tag and update the per-platform artifact pins and SHA-256 values
-- [ ] Verify ACP initialize advertises `_meta["neko.taskProtocol"]` with version `1` and mode `fixed-active-task`
-- [ ] Verify task-scoped session/new, receipt/root binding, prompt, cancellation, clean close and cold resume using the exact bundled bytes
-- [ ] Verify unknown outcomes and unavailable writer recovery remain fail-closed without deleting user leases or silently retrying work
+- [x] Obtain an upstream published immutable release containing the compatible task contract (Neko Core v1.9.3)
+- [x] Review the source/tag and update the per-platform artifact pins and SHA-256 values
+- [x] Verify ACP initialize advertises `_meta["neko.taskProtocol"]` with version `1` and mode `fixed-active-task`
+- [x] Verify task-scoped session/new, receipt/root binding, prompt, cancellation, clean close and cold resume using the exact bundled bytes
+- [x] Verify unavailable writer and stale-receipt recovery remain fail-closed with a typed recovery error and no admitted prompt
+- [ ] Verify unknown-outcome recovery against the bundled bytes (covered by synthetic driver tests only)
+
+Resolution: the bundle lock now pins immutable Neko Core v1.9.3 (source
+`fded0db74eacc38897b1f15e0fa26609c41a5c94`). Desktop CI job `neko-contract`
+prepares the pinned Linux x64 artifact and runs
+`wiii-desktop/src/__tests__/neko-chill/neko-core-acp-contract.real.test.ts`,
+which drives the production `AcpDriver` against the real binary through
+`neko acp` with an isolated HOME and a loopback model fixture. The same test
+fails against v1.7.0 with `missing-capability`. The waiver above applies only
+to the published 1.3.0 artifacts that bundle 1.7.0.
 
 No legacy fallback may silently remove task-scope validation merely to obtain
 a successful build. Do not substitute the local candidate for released 1.7.0
