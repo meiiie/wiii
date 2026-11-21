@@ -1,5 +1,6 @@
 /** Restore durable sessions and import provider-owned conversations. */
 import type { NekoSession } from "./session-store-types";
+import { normalizeSessionTitle } from "../session-title";
 import { loadSessionIndex, loadSessionSnapshot, persistSessionStrict } from "../persistence";
 import { appendSessionEvent } from "../session-events";
 import { projectAuthoritativeMessages, projectControls } from "./session-projections";
@@ -106,7 +107,7 @@ export function createSessionHydrationActions(set: SessionSet, get: SessionGet, 
             agentName: entry.agentName,
             title: droppedStagedMessages && messages.length === 0
               ? `Phiên với ${entry.agentName}`
-              : entry.title,
+              : normalizeSessionTitle(entry.title),
             createdAt: entry.createdAt,
             updatedAt: entry.updatedAt,
             workspace,
@@ -247,7 +248,7 @@ export function createSessionHydrationActions(set: SessionSet, get: SessionGet, 
         id: sessionId,
         agentId: agent.id,
         agentName: agent.name,
-        title: providerSession.title.trim().slice(0, 120) || `Phiên với ${agent.name}`,
+        title: normalizeSessionTitle(providerSession.title.trim()).slice(0, 120) || `Phiên với ${agent.name}`,
         createdAt,
         updatedAt,
         workspace,

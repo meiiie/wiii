@@ -1,5 +1,6 @@
 /** Provider-event intake and projection into visible session state. */
 import { isNekoTaskScopeMapping } from "../task-scope-mapping";
+import { normalizeSessionTitle } from "../session-title";
 import { canonicalRootsEqual } from "../drivers/acp/task-protocol";
 import { v4 as uuidv4 } from "uuid";
 import { openAssistant, toToolBlock, appendOwnedSessionEvent, lastBlock } from "./session-projections";
@@ -87,7 +88,7 @@ export function createSessionEventActions(set: SessionSet, get: SessionGet, runt
           }
           case "session-info": {
             if (!session.execution && typeof event.title === "string" && event.title.trim()) {
-              session.title = event.title.trim().slice(0, 120);
+              session.title = normalizeSessionTitle(event.title.trim()).slice(0, 120);
             }
             if (typeof event.updatedAt === "string") {
               const parsed = Date.parse(event.updatedAt);
