@@ -10,7 +10,7 @@ import unittest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import report_runtime_evidence_coverage as coverage
-import validate_runtime_evidence_registry as registry_validator
+import runtime_evidence_registry as registry_validator
 
 
 def _registry_with_synthetic_lms_gap() -> dict:
