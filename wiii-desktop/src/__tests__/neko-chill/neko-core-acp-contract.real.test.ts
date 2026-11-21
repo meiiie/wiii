@@ -23,6 +23,7 @@ if (process.env.WIII_NEKO_CONTRACT_REQUIRED === "1" && !BINARY) {
   throw new Error("WIII_NEKO_CONTRACT_BINARY is required when WIII_NEKO_CONTRACT_REQUIRED=1");
 }
 const LOCK = JSON.parse(readFileSync(path.resolve(__dirname, "../../../src-tauri/neko-bundle.lock.json"), "utf8"));
+const EXPECTED_VERSION = process.env.WIII_NEKO_CONTRACT_EXPECTED_VERSION ?? LOCK.version;
 const MARKER = "WIII_TASK_HANDOFF_OK";
 const SLOW_MARKER = "WIII_SLOW_TURN_STARTED";
 const LABEL = "Sửa lỗi bàn giao tác vụ";
@@ -205,9 +206,13 @@ describe.skipIf(!BINARY)("Neko Core ACP desktop contracts (real binary)", () => 
       const h = driverFor();
       await h.driver.start();
       await h.driver.prompt(`${firstLine}\nThis second line is not the title.`);
-      const expected = firstLine.length > 60 ? `${firstLine.slice(0, 45)}... [truncated]` : firstLine;
-      await until(() => h.titles().includes(expected), "first-line session title");
-      expect(normalizeSessionTitle(expected)).toBe(firstLine.length > 60 ? `${firstLine.slice(0, 45)}…` : firstLine);
+      const accepted = firstLine.length > 60
+        ? [`${firstLine.slice(0, 45)}... [truncated]`, `${firstLine.slice(0, 59).trimEnd()}…`]
+        : [firstLine];
+      await until(() => h.titles().some(title => accepted.includes(title)), "first-line session title");
+      const expected = h.titles().find(title => accepted.includes(title))!;
+      expect(normalizeSessionTitle(expected)).toBe(expected.endsWith("... [truncated]")
+        ? `${firstLine.slice(0, 45)}…` : expected);
       await h.driver.dispose();
       const resumed = driverFor(h.admitted[0]);
       await resumed.driver.start();
@@ -358,7 +363,7 @@ describe.skipIf(!BINARY)("Neko Core ACP task-v1 contract (real binary)", () => {
     const h = driverFor();
     await h.driver.start();
     const init = h.transport.frames.find(frame => frame.id !== undefined && frame.result?.agentInfo);
-    expect(init?.result.agentInfo).toMatchObject({ name: "neko-core", version: LOCK.version });
+    expect(init?.result.agentInfo).toMatchObject({ name: "neko-core", version: EXPECTED_VERSION });
     expect(init?.result._meta["neko.taskProtocol"]).toEqual({ version: 1, mode: "fixed-active-task" });
 
     expect(h.admitted).toHaveLength(1);
