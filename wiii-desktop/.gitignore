@@ -22,5 +22,8 @@ Thumbs.db
 # Logs
 *.log
 
+# Native E2E screenshots and logs
+e2e-native-artifacts/
+
 # Verified third-party runtime staging (never commit executable artifacts)
 .build/
