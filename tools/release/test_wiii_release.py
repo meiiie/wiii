@@ -127,6 +127,39 @@ class ReleaseToolTests(unittest.TestCase):
                 {"expected": "MIT", "actual": "Apache-2.0"},
             )
 
+    def test_core_license_map_row_cannot_be_masked_by_other_mit_mentions(self) -> None:
+        source_root = wiii_release.ROOT
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            for relative in wiii_release.LICENSE_SOURCE_PATHS:
+                destination = root / relative
+                destination.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(source_root / relative, destination)
+
+            licensing_path = root / "LICENSING.md"
+            licensing = licensing_path.read_text(encoding="utf-8")
+            core_row = next(
+                line for line in licensing.splitlines()
+                if line.startswith("| Original project material outside `sdk/`")
+            )
+            for replacement, actual in (
+                (core_row.replace("MIT License (`MIT`)", "GNU Affero General Public License (`AGPL-3.0-only`)"), "AGPL-3.0-only"),
+                (core_row.replace("MIT License (`MIT`)", ""), "missing"),
+                ("", "missing"),
+                (core_row + "\n" + core_row, "missing"),
+            ):
+                with self.subTest(replacement=replacement):
+                    licensing_path.write_text(
+                        licensing.replace(core_row, replacement), encoding="utf-8"
+                    )
+                    mismatches = wiii_release.find_license_mismatches(
+                        wiii_release.collect_license_metadata(root)
+                    )
+                    self.assertEqual(
+                        mismatches["LICENSING.md#core"],
+                        {"expected": "MIT", "actual": actual},
+                    )
+
     def test_manifest_is_deterministic_and_hashed(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             artifact = Path(directory) / "Wiii-1.2.0-candidate-aaaaaaaa-windows-x64-unsigned-setup.exe"
