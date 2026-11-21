@@ -184,10 +184,7 @@ const appEnv = () => ({
  */
 function warmBundledNeko() {
   const neko = path.join(path.dirname(app), "runtime/neko/neko");
-  if (!existsSync(neko)) {
-    log(`no bundled Neko next to the app at ${neko}`);
-    return;
-  }
+  if (!existsSync(neko)) throw new Error(`no bundled Neko next to the app at ${neko}`);
   const started = Date.now();
   const version = execFileSync(neko, ["--version"], { env: appEnv(), encoding: "utf8", timeout: 120_000 }).trim();
   log(`bundled Neko ${version} answered in ${Date.now() - started} ms`);
