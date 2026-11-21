@@ -845,8 +845,7 @@ pub struct ResolvedProvider {
 }
 
 impl ResolvedProvider {
-    /// A bundled runtime follows Wiii's release lifecycle. This overrides only
-    /// the child environment; the user's standalone Neko settings stay intact.
+    /// Override only the child environment; standalone Neko settings stay intact.
     pub(crate) fn command(&self) -> Command {
         let env_set = std::env::var_os("NEKO_DREAM_MODE").is_some_and(|value| !value.is_empty());
         let config_set = || {
@@ -857,23 +856,23 @@ impl ResolvedProvider {
         };
         let user_set = env_set || config_set();
         let mut command = self.command_with_inherited_dream_mode(user_set);
-        if self.bundled && user_set && !env_set {
+        if self.definition.id == "neko" && user_set && !env_set {
             // A blank inherited value would override the config file's mode.
             command.env_remove("NEKO_DREAM_MODE");
         }
         command
     }
 
-    /// Automatic Dream adds a background model request per turn, so the bundled
-    /// runtime uses `manual` (saved notes still load; no automatic requests)
+    /// Automatic Dream adds a background model request per turn, so Neko
+    /// uses `manual` (saved notes still load; no automatic requests)
     /// unless the user chose a mode via `NEKO_DREAM_MODE` or Neko's global config.
     fn command_with_inherited_dream_mode(&self, user_set_dream_mode: bool) -> Command {
         let mut command = Command::new(&self.program);
         if self.bundled {
             command.env("NEKO_AUTO_UPDATE", "0");
-            if !user_set_dream_mode {
-                command.env("NEKO_DREAM_MODE", "manual");
-            }
+        }
+        if self.definition.id == "neko" && !user_set_dream_mode {
+            command.env("NEKO_DREAM_MODE", "manual");
         }
         command
     }
@@ -1217,7 +1216,7 @@ mod tests {
 
 
     #[test]
-    fn bundled_update_policy_does_not_modify_external_provider_environment() {
+    fn neko_dream_default_applies_to_path_without_disabling_updates() {
         let mut resolved = ResolvedProvider {
             definition: definition("neko").unwrap(),
             program: PathBuf::from("neko"),
@@ -1230,6 +1229,13 @@ mod tests {
         assert!(overrides.contains(&("NEKO_AUTO_UPDATE".as_ref(), Some("0".as_ref()))));
         assert!(overrides.contains(&("NEKO_DREAM_MODE".as_ref(), Some("manual".as_ref()))));
         resolved.bundled = false;
+        let command = resolved.command_with_inherited_dream_mode(false);
+        let overrides: Vec<_> = command.get_envs().collect();
+        assert_eq!(
+            overrides,
+            vec![("NEKO_DREAM_MODE".as_ref(), Some("manual".as_ref()))]
+        );
+        resolved.definition = definition("codex").unwrap();
         assert_eq!(
             resolved
                 .command_with_inherited_dream_mode(false)
@@ -1240,8 +1246,8 @@ mod tests {
     }
 
     #[test]
-    fn bundled_dream_default_respects_user_opt_in() {
-        let resolved = ResolvedProvider {
+    fn neko_dream_default_respects_explicit_env_or_config() {
+        let mut resolved = ResolvedProvider {
             definition: definition("neko").unwrap(),
             program: PathBuf::from("neko"),
             version: Some("neko-core 1.9.3".into()),
@@ -1250,6 +1256,14 @@ mod tests {
         let command = resolved.command_with_inherited_dream_mode(true);
         let keys: Vec<_> = command.get_envs().map(|(key, _)| key).collect();
         assert_eq!(keys, vec![std::ffi::OsStr::new("NEKO_AUTO_UPDATE")]);
+        resolved.bundled = false;
+        assert_eq!(
+            resolved
+                .command_with_inherited_dream_mode(true)
+                .get_envs()
+                .count(),
+            0
+        );
     }
 
     #[test]

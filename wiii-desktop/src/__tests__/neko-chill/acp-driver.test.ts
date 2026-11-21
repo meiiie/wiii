@@ -654,6 +654,34 @@ describe("AcpDriver golden replay (real neko-core v0.24.0 fixture)", () => {
     });
   });
 
+  it.each(["end_turn", "error"])("keeps late agent chunks separate after %s", async (stopReason) => {
+    const events: DriverEvent[] = [];
+    const transport = new FakeTransport();
+    const driver = await startDriver(events, transport);
+    const prompting = driver.prompt("Reply NEKO_OK");
+    await tick();
+    const sessionId = agentResponses()[1].result.sessionId;
+    const chunk = (text: string) => transport.inject({
+      jsonrpc: "2.0", method: "session/update",
+      params: { sessionId, update: { sessionUpdate: "agent_message_chunk", content: { type: "text", text } } },
+    });
+    chunk("NEKO_OK");
+    transport.inject({ jsonrpc: "2.0", id: transport.sent[2].id, result: { stopReason } });
+    await prompting;
+    chunk("");
+    chunk("Dream: consolidating this session automatically\n");
+    chunk("Background work finished\n");
+    expect(events.filter((event) => event.type === "answer-delta")).toEqual([
+      { type: "answer-delta", sessionId: "local-1", text: "NEKO_OK" },
+    ]);
+    const notices = events.filter((event) => event.type === "activity");
+    expect(notices).toHaveLength(2);
+    expect(notices[0]).toMatchObject({ activity: { status: "completed", detail: "Dream: consolidating this session automatically\n" } });
+    expect(notices[1]).toMatchObject({ activity: { detail: "Background work finished\n" } });
+    expect(new Set(notices.map((event) => event.type === "activity" && event.activity.id)).size).toBe(2);
+    await driver.dispose();
+  });
+
   it("normalizes the full recorded session into DriverEvents", async () => {
     const events: DriverEvent[] = [];
     const transport = new FakeTransport();
