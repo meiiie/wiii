@@ -560,6 +560,68 @@ describe("neko-session-store", () => {
       .toHaveLength(1);
   });
 
+  it("drains alternating reasoning and answer channels in provider order", async () => {
+    const id = await setup();
+    emit({ type: "turn-started", sessionId: id });
+    emit({ type: "reasoning-delta", sessionId: id, text: "Đọc dự án" });
+    emit({ type: "answer-delta", sessionId: id, text: "Đã đọc" });
+    emit({ type: "reasoning-delta", sessionId: id, text: "Kiểm tra lại" });
+    emit({ type: "turn-finished", sessionId: id, stopReason: "end_turn" });
+
+    expect(session(id).messages.at(-1)?.blocks).toMatchObject([
+      { type: "thinking", content: "Đọc dự án" },
+      { type: "answer", content: "Đã đọc" },
+      { type: "thinking", content: "Kiểm tra lại", endTime: expect.any(Number) },
+    ]);
+  });
+
+  it("keeps pending presentation buffers isolated when another session finishes", async () => {
+    const first = await setup();
+    const second = await setup();
+    for (const id of [first, second]) emit({ type: "turn-started", sessionId: id });
+    emit({ type: "answer-delta", sessionId: first, text: "Phiên một" });
+    emit({ type: "answer-delta", sessionId: second, text: "Phiên hai" });
+    expect(session(first).messages.at(-1)?.blocks).toEqual([]);
+    expect(session(second).messages.at(-1)?.blocks).toEqual([]);
+
+    emit({ type: "turn-finished", sessionId: first, stopReason: "end_turn" });
+    expect(session(first).messages.at(-1)?.blocks).toMatchObject([{ type: "answer", content: "Phiên một" }]);
+    expect(session(second).status).toBe("streaming");
+    expect(session(second).messages.at(-1)?.blocks).toEqual([]);
+    emit({ type: "turn-finished", sessionId: second, stopReason: "end_turn" });
+    expect(session(second).messages.at(-1)?.blocks).toMatchObject([{ type: "answer", content: "Phiên hai" }]);
+  });
+
+  it("flushes the preceding answer before exposing an undecided permission", async () => {
+    const id = await setup();
+    emit({ type: "turn-started", sessionId: id });
+    emit({ type: "answer-delta", sessionId: id, text: "Cần bạn duyệt" });
+    expect(session(id).messages.at(-1)?.blocks).toEqual([]);
+    const request = { requestId: "buffered-permission", title: "Ghi tệp", options: [
+      { optionId: "allow_once", label: "Cho phép", kind: "allow_once" as const },
+      { optionId: "reject_once", label: "Từ chối", kind: "reject_once" as const },
+    ] };
+    emit({ type: "permission-request", sessionId: id, request });
+    expect(session(id).messages.at(-1)?.blocks).toMatchObject([{ type: "answer", content: "Cần bạn duyệt" }]);
+    expect(session(id).pendingPermission).toEqual(request);
+    expect(driver.decisions).toEqual([]);
+    await useNekoSessionStore.getState().closeSession(id);
+  });
+
+  it("persists a partial answer when a session is closed without a terminal event", async () => {
+    const id = await setup();
+    emit({ type: "turn-started", sessionId: id });
+    emit({ type: "answer-delta", sessionId: id, text: "Chưa có dòng trống" });
+    expect(session(id).messages.at(-1)?.blocks).toEqual([]);
+    await useNekoSessionStore.getState().closeSession(id);
+    expect(driver.disposed).toBe(1);
+    expect(session(id).runtime).toBeNull();
+    expect(session(id).status).toBe("exited");
+    const persisted = storage.get(`neko-chill-sessions.json:session:${id}`) as { messages: Array<{ blocks?: unknown[] }> };
+    expect(session(id).messages.at(-1)?.blocks).toMatchObject([{ type: "answer", content: "Chưa có dòng trống" }]);
+    expect(persisted.messages.at(-1)?.blocks).toMatchObject([{ type: "answer", content: "Chưa có dòng trống" }]);
+  });
+
   it("cancel reaches the driver; process exit marks the session honestly", async () => {
     const id = await setup();
     emit({ type: "turn-started", sessionId: id });
