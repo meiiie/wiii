@@ -42,7 +42,7 @@ const tabs: FullPageTab[] = [
   { id: "runtime", label: "Chẩn đoán", icon: <Activity size={15} /> },
 ];
 
-export function WiiiConnectPage() {
+export function WiiiConnectPage({ onClose, backLabel }: { onClose?: () => void; backLabel?: string } = {}) {
   const [activeTab, setActiveTab] = useState<ConnectTab>("catalog");
   const focusProviderSlug = useUIStore((state) => state.wiiiConnectFocusProvider);
   const navigateToChat = useUIStore((state) => state.navigateToChat);
@@ -151,7 +151,8 @@ export function WiiiConnectPage() {
       tabs={tabs}
       activeTab={activeTab}
       onTabChange={(id) => setActiveTab(id as ConnectTab)}
-      onClose={navigateToChat}
+      onClose={onClose ?? navigateToChat}
+      backLabel={backLabel}
     >
       <div className="space-y-6" data-testid="wiii-connect-page">
         <section>

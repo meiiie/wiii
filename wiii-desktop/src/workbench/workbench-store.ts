@@ -42,23 +42,17 @@ export function hasManagedAccountState(value: unknown): boolean {
 /**
  * Resolve the initial surface without mutating any legacy state.
  *
- * A desktop without usable managed-account metadata is always local-first,
- * including after stale `managed` or legacy `wiii` preferences. Explicitly
- * opening Service still works for the current session. Hosted web fails closed
- * onto its remotely-backed surface.
+ * Desktop always starts locally; Service is a native capability surface.
+ * Hosted web stays on its remotely-backed surface.
  */
 export function resolveInitialWorkbenchSurface(
   host: WorkbenchHost,
-  storedSurface: unknown,
-  legacyMode: unknown,
-  hasManagedAccount: boolean,
+  _storedSurface: unknown,
+  _legacyMode: unknown,
+  _hasManagedAccount: boolean,
 ): WorkbenchSurface {
   if (!hostAllowsLocalSurface(host)) return "managed";
-  if (storedSurface === "local") return "local";
-  if (storedSurface === "managed" && hasManagedAccount) return "managed";
-  if (legacyMode === "wiii" && hasManagedAccount) return "managed";
-  if (legacyMode === "neko-chill") return "local";
-  return hasManagedAccount ? "managed" : "local";
+  return "local";
 }
 
 interface WorkbenchState {

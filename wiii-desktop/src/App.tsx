@@ -2,15 +2,13 @@
  * Root App component — initializes stores, mounts layout.
  * Sprint 106: Loading screen during init.
  */
-import { lazy, Suspense, useEffect, useState, type ComponentProps } from "react";
+import { lazy, Suspense, useEffect, useState } from "react";
 import { ErrorBoundary } from "@/components/common/ErrorBoundary";
 import { useUIStore } from "@/stores/ui-store";
 import { WorkbenchApp } from "@/workbench/WorkbenchApp";
 import { detectWorkbenchHost, type WorkbenchHost } from "@/workbench/host";
 import { BootSplash } from "@/workbench/WorkbenchBoot";
-import { explainConnectionsUnavailableInPreview } from "@/neko-chill/connections-preview";
-
-const WiiiCloudApp = lazy(async () => import("@/workbench/WiiiCloudApp"));
+import { WiiiMark } from "@/components/common/WiiiMark";
 
 const AvatarPreview = lazy(async () => {
   const mod = await import("@/components/common/AvatarPreview");
@@ -32,6 +30,10 @@ const NekoRuntimeScope = lazy(async () => {
 });
 
 const WiiiAdeApp = lazy(async () => import("@/ade/WiiiAdeApp"));
+const WiiiServiceSurface = lazy(async () => {
+  const mod = await import("@/workbench/WiiiServiceSurface");
+  return { default: mod.WiiiServiceSurface };
+});
 
 const WiiiConnectPage = lazy(async () => {
   const mod = await import("@/components/connect/WiiiConnectPage");
@@ -46,17 +48,15 @@ function WiiiConnectPreview() {
 }
 
 /** Local navigation only; WorkbenchApp still owns the host capability gate. */
-export function LocalWorkbenchSurface(props: ComponentProps<typeof LocalWorkbenchScreens>) {
-  return <NekoRuntimeScope><LocalWorkbenchScreens {...props} /></NekoRuntimeScope>;
+export function LocalWorkbenchSurface() {
+  return <NekoRuntimeScope><LocalWorkbenchScreens /></NekoRuntimeScope>;
 }
 
-function LocalWorkbenchScreens({ onOpenManaged, onOpenConnections }: {
-  onOpenManaged: () => void;
-  onOpenConnections: () => void;
-}) {
-  const [surface, setSurface] = useState<"neko" | "work">("neko");
+function LocalWorkbenchScreens() {
+  const [surface, setSurface] = useState<"neko" | "work" | "service" | "connect">("neko");
+  const [returnSurface, setReturnSurface] = useState<"neko" | "work">("neko");
   const [navigationError, setNavigationError] = useState<string | null>(null);
-  const openWork = async () => {
+  const openSurface = async (target: "work" | "service" | "connect") => {
     try {
       // Read fresh state at the action boundary, without mounting/initializing
       // the local session store for managed-only hosts.
@@ -66,26 +66,31 @@ function LocalWorkbenchScreens({ onOpenManaged, onOpenConnections }: {
         || session.cancelPending || session.closePending
         || session.pendingPermission !== null || session.resolvingPermissionId !== null);
       if (busy) {
-        setNavigationError("Chưa thể mở Công việc khi agent đang xử lý hoặc chờ duyệt. Hãy chờ lượt hiện tại kết thúc rồi mở lại.");
+        setNavigationError("Chưa thể chuyển trang khi agent đang xử lý hoặc chờ duyệt. Hãy chờ lượt hiện tại kết thúc rồi mở lại.");
         return;
       }
       setNavigationError(null);
-      setSurface("work");
+      if (surface === "neko" || surface === "work") setReturnSurface(surface);
+      if (target === "connect") useUIStore.getState().openWiiiConnect("gmail");
+      setSurface(target);
     } catch {
-      setNavigationError("Chưa kiểm tra được trạng thái agent. Giữ phiên hiện tại và thử mở Công việc lại.");
+      setNavigationError("Chưa kiểm tra được trạng thái agent. Giữ phiên hiện tại và thử lại.");
     }
   };
-  if (surface === "work") {
-    return <WiiiAdeApp onOpenManaged={onOpenManaged} onOpenConnections={onOpenConnections} />;
-  }
+  const onOpenManaged = () => { void openSurface("service"); };
+  const onOpenConnections = () => { void openSurface("connect"); };
   return (
     <>
-      <NekoChillApp
+      {surface === "service" || surface === "connect" ? (
+        <WiiiServiceSurface view={surface} onBack={() => setSurface(returnSurface)} onOpenConnect={onOpenConnections} />
+      ) : surface === "work" ? (
+        <WiiiAdeApp onOpenManaged={onOpenManaged} onOpenConnections={onOpenConnections} />
+      ) : <NekoChillApp
         onOpenManaged={onOpenManaged}
         onOpenConnections={onOpenConnections}
         showWorkNavigation
-        onOpenWork={() => void openWork()}
-      />
+        onOpenWork={() => void openSurface("work")}
+      />}
       {navigationError ? (
         <p role="status" data-testid="work-navigation-status"
           className="fixed bottom-4 left-1/2 z-50 w-[calc(100%-2rem)] max-w-lg -translate-x-1/2 rounded-xl border border-[var(--nk-border)] bg-[var(--nk-composer)] px-4 py-3 text-[12px] leading-5 text-[var(--nk-text-2)] shadow-lg">
@@ -99,37 +104,37 @@ function LocalWorkbenchScreens({ onOpenManaged, onOpenConnections }: {
  * Host-aware Workbench boundary (#923).
  *
  * The inactive surface stays unmounted. Desktop can run a local agent without
- * cloud bootstrap; hosted web can only open remotely-backed capabilities.
+ * cloud bootstrap; hosted web directs users to the desktop app.
  */
 export function WorkbenchGate({ host = detectWorkbenchHost() }: { host?: WorkbenchHost }) {
   return (
     <WorkbenchApp
       host={host}
       loadingFallback={<BootSplash label="Wiii đang mở Workbench..." />}
-      renderLocal={({ openManaged }) => (
+      renderLocal={() => (
         <ErrorBoundary>
           <Suspense fallback={<BootSplash label="Wiii đang mở không gian cục bộ..." />}>
-            <LocalWorkbenchSurface
-              onOpenManaged={() => {
-                useUIStore.getState().navigateToChat();
-                openManaged();
-              }}
-              onOpenConnections={() => {
-                useUIStore.getState().openWiiiConnect("gmail");
-                openManaged();
-              }}
-            />
+            <LocalWorkbenchSurface />
           </Suspense>
         </ErrorBoundary>
       )}
-      renderManaged={({ openLocal }) => (
-        <ErrorBoundary>
-          <Suspense fallback={<BootSplash label="Wiii đang mở không gian được quản lý..." />}>
-            <WiiiCloudApp
-              onOpenLocal={host.capabilities.localProcess ? openLocal : undefined}
-            />
-          </Suspense>
-        </ErrorBoundary>
+      renderManaged={() => (
+        <main className="grid h-screen place-items-center overflow-y-auto bg-surface px-6 py-12 text-text">
+          <section className="w-full max-w-lg rounded-2xl border border-border bg-surface-secondary p-8 text-center">
+            <div className="flex justify-center"><WiiiMark size={48} alt="Wiii" /></div>
+            <h1 className="mt-6 text-2xl font-semibold">Wiii chạy trên ứng dụng desktop</h1>
+            <p className="mt-4 text-sm leading-6 text-text-secondary">
+              Trò chuyện Wiii trên web đã ngừng hoạt động. Hãy tải ứng dụng desktop
+              để tiếp tục làm việc với Neko, agent và dự án trên máy của bạn.
+            </p>
+            <a
+              href="https://github.com/meiiie/wiii/releases"
+              className="mt-6 inline-flex rounded-xl bg-text px-5 py-3 text-sm font-medium text-surface hover:opacity-85 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]/40"
+            >
+              Tải ứng dụng desktop
+            </a>
+          </section>
+        </main>
       )}
     />
   );
@@ -174,7 +179,7 @@ export default function App() {
   if (localPreviewEnabled && window.location.search.includes("preview=neko-chill")) {
     return (
       <Suspense fallback={<BootSplash label="Neko Chill đang mở bản xem trước..." />}>
-        <NekoChillApp onOpenConnections={explainConnectionsUnavailableInPreview} />
+        <LocalWorkbenchSurface />
       </Suspense>
     );
   }

@@ -62,10 +62,13 @@ vi.mock("@/neko-chill/NekoChillApp", () => ({
     {showWorkNavigation ? <button type="button" onClick={onOpenWork}>Mở bản thử nghiệm Công việc</button> : null}
   </div>,
 }));
-vi.mock("@/workbench/WiiiCloudApp", () => ({
-  default: ({ onOpenLocal }: { onOpenLocal?: () => void }) => <div data-testid="managed">
-    {onOpenLocal ? <button type="button" onClick={onOpenLocal}>Back local</button> : null}
-  </div>,
+vi.mock("@/workbench/WiiiServiceSurface", () => ({
+  WiiiServiceSurface: ({ view, onBack, onOpenConnect }: { view: string; onBack: () => void; onOpenConnect: () => void }) => (
+    <div data-testid={`native-${view}`}>
+      <button onClick={onBack}>Quay lại Neko</button>
+      <button onClick={onOpenConnect}>Tài khoản &amp; ứng dụng</button>
+    </div>
+  ),
 }));
 
 import { WorkbenchGate } from "@/App";
@@ -110,35 +113,58 @@ describe("normal local Work entry preserves Workbench boundaries", () => {
     expect(fixture.spawnProvider).not.toHaveBeenCalled();
   });
 
-  it("keeps Managed and Gmail Connections routing through the host boundary, including ADE's manual Neko view", async () => {
+  it("opens Service and Gmail Connections natively and returns to the originating screen", async () => {
     await nativeLocal();
     fireEvent.click(screen.getByRole("button", { name: "Managed" }));
-    await screen.findByTestId("managed");
+    await screen.findByTestId("native-service");
     expect(useUIStore.getState().activeView).toBe("chat");
-    expect(fixture.disposeRuntimes).toHaveBeenCalledOnce();
-    expect(fixture.stopReaper).toHaveBeenCalledOnce();
-    fireEvent.click(screen.getByRole("button", { name: "Back local" }));
+    expect(fixture.disposeRuntimes).not.toHaveBeenCalled();
+    expect(fixture.stopReaper).not.toHaveBeenCalled();
+    expect(useWorkbenchStore.getState().surface).toBe("local");
+    fireEvent.click(screen.getByRole("button", { name: "Quay lại Neko" }));
     await screen.findByTestId("local-neko");
     fireEvent.click(screen.getByRole("button", { name: "Connections" }));
-    await screen.findByTestId("managed");
+    await screen.findByTestId("native-connect");
     expect(useUIStore.getState().activeView).toBe("wiii-connect");
     expect(useUIStore.getState().wiiiConnectFocusProvider).toBe("gmail");
-    fireEvent.click(screen.getByRole("button", { name: "Back local" }));
+    fireEvent.click(screen.getByRole("button", { name: "Quay lại Neko" }));
     await screen.findByTestId("local-neko");
     fireEvent.click(screen.getByRole("button", { name: "Mở bản thử nghiệm Công việc" }));
     await screen.findByTestId("work-home");
     fireEvent.click(screen.getByTestId("open-neko"));
     await screen.findByTestId("local-neko");
     fireEvent.click(screen.getByRole("button", { name: "Connections" }));
-    await screen.findByTestId("managed");
+    await screen.findByTestId("native-connect");
     expect(useUIStore.getState().wiiiConnectFocusProvider).toBe("gmail");
+    fireEvent.click(screen.getByRole("button", { name: "Quay lại Neko" }));
+    await screen.findByTestId("work-home");
+    expect(screen.getByTestId("wiii-ade-app")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: /Wiii Service/ }));
+    await screen.findByTestId("native-service");
+    fireEvent.click(screen.getByRole("button", { name: "Tài khoản & ứng dụng" }));
+    await screen.findByTestId("native-connect");
+    fireEvent.click(screen.getByRole("button", { name: "Quay lại Neko" }));
+    await screen.findByTestId("work-home");
+  });
+
+  it.each(["Managed", "Connections"])("blocks %s while a native turn is streaming", async (button) => {
+    await nativeLocal();
+    fixture.sessions.active = { status: "streaming", cancelPending: false, closePending: false, pendingPermission: null, resolvingPermissionId: null };
+    fireEvent.click(screen.getByRole("button", { name: button }));
+    await screen.findByTestId("work-navigation-status");
+    expect(screen.getByTestId("local-neko")).toBeTruthy();
+    expect(screen.queryByTestId("native-service")).toBeNull();
+    expect(screen.queryByTestId("native-connect")).toBeNull();
+    expect(fixture.disposeRuntimes).not.toHaveBeenCalled();
   });
 
   it("does not expose local Work or dispatch a local session when the web host has no local-process capability", async () => {
     delete (window as unknown as Record<string, unknown>).__TAURI_INTERNALS__;
     fixture.storage.set("wiii-workbench.json:surface", "local");
     render(<WorkbenchGate host={web} />);
-    await screen.findByTestId("managed");
+    expect(await screen.findByRole("heading", { name: "Wiii chạy trên ứng dụng desktop" })).toBeTruthy();
+    expect(screen.getByRole("link", { name: "Tải ứng dụng desktop" }).getAttribute("href")).toBe("https://github.com/meiiie/wiii/releases");
+    expect(screen.getByText(/Trò chuyện Wiii trên web đã ngừng hoạt động/)).toBeTruthy();
     await waitFor(() => expect(useWorkbenchStore.getState().isLoaded).toBe(true));
     expect(screen.queryByTestId("local-neko")).toBeNull();
     expect(screen.queryByTestId("wiii-ade-app")).toBeNull();

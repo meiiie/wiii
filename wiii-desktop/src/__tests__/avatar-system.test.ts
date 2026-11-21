@@ -240,9 +240,6 @@ describe("Backward compatibility", () => {
       "@/components/chat/MessageList?raw",
       "@/components/chat/WelcomeScreen?raw",
       "@/components/chat/MessageBubble?raw",
-      "@/components/layout/Sidebar?raw",
-      "@/components/layout/StatusBar?raw",
-      "@/components/layout/CharacterPanel?raw",
     ];
     for (const file of files) {
       const src = await import(/* @vite-ignore */ file);

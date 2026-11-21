@@ -341,15 +341,6 @@ describe("Mood wired to animation hook", () => {
 // UI COMPONENT WIRING
 // ═══════════════════════════════════════════════════════════════════════════════
 
-describe("StatusBar passes mood to avatar", () => {
-  it("StatusBar source contains mood prop on WiiiAvatar", async () => {
-    const mod = await import("@/components/layout/StatusBar?raw");
-    const code = mod.default;
-    expect(code).toContain("mood={");
-    expect(code).toContain("moodEnabled");
-  });
-});
-
 describe("MessageList passes mood to avatar", () => {
   it("MessageList uses useAvatarState for mood passthrough", async () => {
     const mod = await import("@/components/chat/MessageList?raw");

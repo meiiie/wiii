@@ -241,8 +241,8 @@ describe("SSE Mood Wiring", () => {
   });
 });
 
-// ===== Character Panel Component Logic =====
-describe("CharacterPanel Logic", () => {
+// ===== Character Store Loading =====
+describe("Character store loading with panel state", () => {
   it("should fetch character when panel opens", async () => {
     vi.mocked(characterApi.fetchCharacterState).mockResolvedValue({
       blocks: mockBlocks,
@@ -258,52 +258,6 @@ describe("CharacterPanel Logic", () => {
     expect(useCharacterStore.getState().blocks).toHaveLength(3);
   });
 
-  it("should compute usage color correctly", () => {
-    // Test the usageColor logic (from CharacterPanel)
-    const usageColor = (percent: number): string => {
-      if (percent >= 80) return "bg-orange-500";
-      if (percent >= 50) return "bg-yellow-500";
-      return "bg-green-500";
-    };
-
-    expect(usageColor(0)).toBe("bg-green-500");
-    expect(usageColor(49)).toBe("bg-green-500");
-    expect(usageColor(50)).toBe("bg-yellow-500");
-    expect(usageColor(79)).toBe("bg-yellow-500");
-    expect(usageColor(80)).toBe("bg-orange-500");
-    expect(usageColor(100)).toBe("bg-orange-500");
-  });
-});
-
-// ===== StatusBar Mood Indicator Logic =====
-describe("StatusBar — deriveAvatarState", () => {
-  // Replicate the logic from StatusBar.tsx
-  function deriveAvatarState(isStreaming: boolean, hasContent: boolean, inputFocused: boolean) {
-    if (isStreaming) return hasContent ? "speaking" : "thinking";
-    if (inputFocused) return "listening";
-    return "idle";
-  }
-
-  it("should return idle by default", () => {
-    expect(deriveAvatarState(false, false, false)).toBe("idle");
-  });
-
-  it("should return listening when input focused", () => {
-    expect(deriveAvatarState(false, false, true)).toBe("listening");
-  });
-
-  it("should return thinking when streaming without content", () => {
-    expect(deriveAvatarState(true, false, false)).toBe("thinking");
-  });
-
-  it("should return speaking when streaming with content", () => {
-    expect(deriveAvatarState(true, true, false)).toBe("speaking");
-  });
-
-  it("should prioritize streaming over input focus", () => {
-    expect(deriveAvatarState(true, false, true)).toBe("thinking");
-    expect(deriveAvatarState(true, true, true)).toBe("speaking");
-  });
 });
 
 // ===== WiiiClient.put method =====
@@ -313,22 +267,5 @@ describe("WiiiClient — PUT method", () => {
     const { WiiiClient } = await import("@/api/client");
     const client = new WiiiClient("http://localhost:8000");
     expect(typeof client.put).toBe("function");
-  });
-});
-
-// ===== SettingsPage Tab Configuration =====
-describe("SettingsPage — Learning Tab config", () => {
-  it("should have learning types defined", async () => {
-    // Import the source to check types exist
-    await import("@/api/types");
-    // Verify learning styles exist as type exports (checking at runtime)
-    const validStyles: string[] = ["quiz", "visual", "reading", "mixed", "interactive"];
-    const validDifficulties: string[] = ["beginner", "intermediate", "advanced", "expert"];
-    const validPronouns: string[] = ["auto", "formal", "casual"];
-
-    // These are compile-time types but we can verify the values we use
-    expect(validStyles).toHaveLength(5);
-    expect(validDifficulties).toHaveLength(4);
-    expect(validPronouns).toHaveLength(3);
   });
 });

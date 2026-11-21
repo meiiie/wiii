@@ -4,7 +4,6 @@
  */
 import { describe, it, expect } from "vitest";
 import { DOMAIN_ICONS, DOMAIN_LABELS, DOMAIN_BADGES } from "@/lib/domain-config";
-import { formatTokens } from "@/lib/format";
 import type { ChatResponseData } from "@/api/types";
 
 // ===== Domain Config =====
@@ -23,28 +22,6 @@ describe("Domain Config — shared constants", () => {
   it("should export DOMAIN_BADGES with 2-char codes", () => {
     expect(DOMAIN_BADGES.maritime).toBe("HH");
     expect(DOMAIN_BADGES.traffic_law).toBe("GT");
-  });
-});
-
-// ===== Format Utilities =====
-
-describe("formatTokens", () => {
-  it("should return raw number for < 1000", () => {
-    expect(formatTokens(0)).toBe("0");
-    expect(formatTokens(500)).toBe("500");
-    expect(formatTokens(999)).toBe("999");
-  });
-
-  it("should return K suffix for >= 1000", () => {
-    expect(formatTokens(1000)).toBe("1.0K");
-    expect(formatTokens(1500)).toBe("1.5K");
-    expect(formatTokens(21000)).toBe("21.0K");
-    expect(formatTokens(128000)).toBe("128.0K");
-  });
-
-  it("should show one decimal place for K values", () => {
-    expect(formatTokens(1234)).toBe("1.2K");
-    expect(formatTokens(9999)).toBe("10.0K");
   });
 });
 

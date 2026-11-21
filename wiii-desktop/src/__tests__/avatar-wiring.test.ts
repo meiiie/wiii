@@ -33,27 +33,6 @@ describe("MessageList — avatar state transition", () => {
 });
 
 // ---------------------------------------------------------------------------
-// 3) StatusBar — 4-state avatar
-// ---------------------------------------------------------------------------
-describe("StatusBar — derived avatar state", () => {
-  it("should use useAvatarState hook for centralized state", async () => {
-    const src = await import("@/components/layout/StatusBar?raw");
-    const code = (src as any).default || src;
-    // Sprint 145: state derivation moved to useAvatarState hook
-    expect(code).toContain("useAvatarState");
-    expect(code).toContain("avatarState");
-  });
-
-  it("should no longer have inline deriveAvatarState function", async () => {
-    const src = await import("@/components/layout/StatusBar?raw");
-    const code = (src as any).default || src;
-    // Sprint 145: removed local derivation — centralized in hook
-    expect(code).not.toContain("deriveAvatarState");
-    expect(code).not.toContain('isStreaming ? "thinking" : "idle"');
-  });
-});
-
-// ---------------------------------------------------------------------------
 // 4) ChatInput — focus/blur wiring
 // ---------------------------------------------------------------------------
 describe("ChatInput — listening state wiring", () => {
@@ -144,15 +123,7 @@ describe("deriveAvatarState logic", () => {
 // 7) All 6 avatar states are used across the app
 // ---------------------------------------------------------------------------
 describe("All 6 avatar states have usage", () => {
-  it("idle — used in Sidebar (WelcomeScreen uses useAvatarState)", async () => {
-    const files = [
-      "@/components/layout/Sidebar?raw",
-    ];
-    for (const file of files) {
-      const src = await import(/* @vite-ignore */ file);
-      const code = (src as any).default || src;
-      expect(code).toContain('"idle"');
-    }
+  it("idle — WelcomeScreen uses useAvatarState", async () => {
     // Sprint 145b: WelcomeScreen now uses useAvatarState (live avatar, no static "idle")
     const ws = await import("@/components/chat/WelcomeScreen?raw");
     const wsCode = (ws as any).default || ws;
