@@ -1,6 +1,8 @@
+import { Suspense } from "react";
 import { act, fireEvent, render, screen, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import NekoChillApp from "@/neko-chill/NekoChillApp";
+import { LocalWorkbenchSurface } from "@/App";
 import {
   formatReasoningDuration,
   formatReasoningLabel,
@@ -32,6 +34,12 @@ vi.mock("@/neko-chill/workspace", async (importOriginal) => ({
 
 vi.mock("@/neko-coworker/NekoCoworkerHome", () => ({
   NekoCoworkerHome: () => <div data-testid="neko-coworker-home">Coworker workstation</div>,
+}));
+
+vi.mock("@/workbench/WiiiServiceSurface", () => ({
+  WiiiServiceSurface: ({ onBack }: { onBack: () => void }) => (
+    <div data-testid="connections"><button onClick={onBack}>Quay lại Neko</button></div>
+  ),
 }));
 
 function makeSession(
@@ -760,6 +768,33 @@ describe("Neko Chill shell UI", () => {
     fireEvent.click(titleWorkspaceToggle);
     fireEvent.click(screen.getByRole("button", { name: "Đóng workspace" }));
     expect(screen.queryByTestId("neko-workspace-pane")).toBeNull();
+  });
+
+  it("ignores global shortcuts during Connections and restores them after Back", async () => {
+    useNekoSessionStore.setState({ sessions: {
+      active: makeSession("active", "Bàn làm việc", { path: "C:/work/neko", name: "Neko" }),
+    }, activeSessionId: "active" });
+    render(<Suspense fallback={null}><LocalWorkbenchSurface /></Suspense>);
+    const sidebar = await screen.findByTestId("neko-sidebar-toggle");
+    const expanded = sidebar.getAttribute("aria-expanded");
+    fireEvent.click(screen.getByTestId("mode-switcher"));
+    fireEvent.click(screen.getByRole("menuitem", { name: /Tài khoản & ứng dụng/ }));
+    await screen.findByTestId("connections");
+    for (const shortcut of [
+      { key: "k", ctrlKey: true }, { key: "b", ctrlKey: true },
+      { key: "b", ctrlKey: true, altKey: true }, { key: "F10" },
+    ]) expect(fireEvent.keyDown(window, shortcut)).toBe(true);
+    fireEvent.click(screen.getByRole("button", { name: "Quay lại Neko" }));
+    expect(await screen.findByTestId("neko-sidebar-toggle")).toBe(sidebar);
+    expect(screen.queryByRole("dialog", { name: "Trung tâm lệnh Neko Chill" })).toBeNull();
+    expect(screen.queryByTestId("neko-workspace-pane")).toBeNull();
+    expect(sidebar.getAttribute("aria-expanded")).toBe(expanded);
+    fireEvent.keyDown(window, { key: "b", ctrlKey: true });
+    expect(sidebar.getAttribute("aria-expanded")).not.toBe(expanded);
+    fireEvent.keyDown(window, { key: "b", ctrlKey: true, altKey: true });
+    expect(await screen.findByTestId("neko-workspace-pane")).toBeTruthy();
+    fireEvent.keyDown(window, { key: "k", ctrlKey: true });
+    expect(screen.getByRole("dialog", { name: "Trung tâm lệnh Neko Chill" })).toBeTruthy();
   });
 
   it("keeps sidebar and workspace keyboard shortcuts independent", async () => {

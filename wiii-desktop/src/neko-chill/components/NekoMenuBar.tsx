@@ -22,6 +22,7 @@ interface MenuAction {
 }
 
 interface NekoMenuBarProps {
+  active?: boolean;
   ready: boolean;
   sidebarOpen: boolean;
   workspaceOpen: boolean;
@@ -120,6 +121,7 @@ export function NekoMenuBar(props: NekoMenuBarProps) {
   }, [open]);
 
   useEffect(() => {
+    if (props.active === false) return;
     const onKey = (event: globalThis.KeyboardEvent) => {
       if (event.key === "Tab" && !event.defaultPrevented && !event.isComposing) capture();
       if (event.defaultPrevented || event.isComposing || event.ctrlKey || event.metaKey || event.altKey || event.shiftKey
@@ -130,7 +132,7 @@ export function NekoMenuBar(props: NekoMenuBarProps) {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [capture, close]);
+  }, [props.active, capture, close]);
 
   useEffect(() => {
     if (open === null) return;

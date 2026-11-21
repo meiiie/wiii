@@ -84,8 +84,9 @@ function LocalWorkbenchScreens() {
     <>
       <div className="h-full" hidden={surface === "service" || surface === "connect"}>
         {localSurface === "work" ? (
-          <WiiiAdeApp onOpenManaged={onOpenManaged} onOpenConnections={onOpenConnections} />
+          <WiiiAdeApp active={surface === "work"} onOpenManaged={onOpenManaged} onOpenConnections={onOpenConnections} />
         ) : <NekoChillApp
+          active={surface === "neko"}
           onOpenManaged={onOpenManaged}
           onOpenConnections={onOpenConnections}
           showWorkNavigation
