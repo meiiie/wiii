@@ -30,12 +30,12 @@ fn csp_is_enabled_with_required_fail_closed_directives() {
 }
 
 #[test]
-fn splash_has_only_its_startup_command() {
+fn splash_has_only_its_startup_command_and_notification_permission_query() {
     let splash = read_json("capabilities/splash.json");
     assert_eq!(splash["windows"], serde_json::json!(["splashscreen"]));
     assert_eq!(
         splash["permissions"],
-        serde_json::json!(["allow-close-splash"])
+        serde_json::json!(["allow-close-splash", "notification:allow-is-permission-granted"])
     );
 }
 
