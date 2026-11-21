@@ -63,12 +63,15 @@ export function WiiiServiceSurface({ view, onBack, onOpenConnect }: {
           {organizations.length > 1 && (
             <label className="block text-sm">Tổ chức
               <select className="mt-2 block w-full rounded-lg border border-[var(--nk-border)] bg-[var(--nk-canvas)] p-2"
-                value={activeOrgId || PERSONAL_ORG_ID}
+                value={activeOrgId || (organizations.some((org) => org.id === PERSONAL_ORG_ID) ? PERSONAL_ORG_ID : "")}
                 onChange={(event) => {
                   const id = event.target.value === PERSONAL_ORG_ID ? null : event.target.value;
                   setActiveOrg(id);
                   void updateSettings({ organization_id: id });
                 }}>
+                {!activeOrgId && !organizations.some((org) => org.id === PERSONAL_ORG_ID) && (
+                  <option value="" disabled>Chọn tổ chức</option>
+                )}
                 {organizations.map((org) => <option key={org.id} value={org.id}>{org.display_name || org.name}</option>)}
               </select>
             </label>
