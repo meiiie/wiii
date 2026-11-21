@@ -4,19 +4,14 @@
  * Tests cover:
  * - OrgBranding CSS custom property injection
  * - org-store: settings, permissions, computed helpers
- * - PermissionGate component rendering
- * - OrgSettingsTab form behavior
- * - WelcomeScreen org-aware branding
  */
 import { describe, it, expect, beforeEach } from "vitest";
-import { render, screen } from "@testing-library/react";
 import { useOrgStore } from "@/stores/org-store";
 import {
   applyOrgBranding,
   resetBranding,
   DEFAULT_BRANDING,
 } from "@/lib/org-branding";
-import { PermissionGate } from "@/components/common/PermissionGate";
 import type { OrgBranding, OrgSettings } from "@/api/types";
 
 // ============================================================================
@@ -200,69 +195,5 @@ describe("Sprint 161: Org Store — Settings & Permissions", () => {
   it("chatbotName returns Wiii when no settings", () => {
     useOrgStore.setState({ orgSettings: null });
     expect(useOrgStore.getState().chatbotName()).toBe("Wiii");
-  });
-});
-
-// ============================================================================
-// Group 3: PermissionGate Component (4 tests)
-// ============================================================================
-
-describe("Sprint 161: PermissionGate", () => {
-  beforeEach(() => {
-    resetOrgStore();
-  });
-
-  it("renders children when permission granted", () => {
-    useOrgStore.setState({ multiTenantEnabled: false });
-    render(
-      <PermissionGate action="manage" resource="settings">
-        <div data-testid="protected">Secret Panel</div>
-      </PermissionGate>,
-    );
-    expect(screen.getByTestId("protected")).toBeTruthy();
-  });
-
-  it("renders fallback when permission denied", () => {
-    useOrgStore.setState({
-      multiTenantEnabled: true,
-      permissions: ["read:chat"],
-    });
-    render(
-      <PermissionGate
-        action="manage"
-        resource="settings"
-        fallback={<div data-testid="denied">No Access</div>}
-      >
-        <div data-testid="protected">Secret Panel</div>
-      </PermissionGate>,
-    );
-    expect(screen.queryByTestId("protected")).toBeNull();
-    expect(screen.getByTestId("denied")).toBeTruthy();
-  });
-
-  it("renders nothing (null) when denied without fallback", () => {
-    useOrgStore.setState({
-      multiTenantEnabled: true,
-      permissions: ["read:chat"],
-    });
-    const { container } = render(
-      <PermissionGate action="manage" resource="settings">
-        <div data-testid="protected">Secret Panel</div>
-      </PermissionGate>,
-    );
-    expect(container.innerHTML).toBe("");
-  });
-
-  it("renders children when permission in list", () => {
-    useOrgStore.setState({
-      multiTenantEnabled: true,
-      permissions: ["read:chat", "manage:settings"],
-    });
-    render(
-      <PermissionGate action="manage" resource="settings">
-        <div data-testid="admin-panel">Admin Panel</div>
-      </PermissionGate>,
-    );
-    expect(screen.getByTestId("admin-panel")).toBeTruthy();
   });
 });

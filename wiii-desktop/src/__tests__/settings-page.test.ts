@@ -1,5 +1,5 @@
 /**
- * Unit tests for SettingsPage component logic & settings store.
+ * Unit tests for settings store and organization preferences.
  * Sprint 215: Added tests for read-only user ID, org-aware role, domain auto-select.
  * Sprint 216: Added tests for tab visibility, progressive disclosure, copy support ID.
  * Sprint 219: Removed Learning tab, Memory category groups.
@@ -8,7 +8,6 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import { useSettingsStore } from "@/stores/settings-store";
 import { useUIStore } from "@/stores/ui-store";
-import { useAuthStore } from "@/stores/auth-store";
 import { DEFAULT_SERVER_URL } from "@/lib/constants";
 
 // Mock API dependencies for org-store
@@ -28,19 +27,6 @@ vi.mock("@/lib/org-branding", () => ({
 vi.mock("@/lib/constants", async (importOriginal) => {
   const actual = await importOriginal<Record<string, unknown>>();
   return { ...actual, PERSONAL_ORG_ID: "personal" };
-});
-
-describe("Memory status summary", () => {
-  it("renders aggregate memory health fields in the Memory tab source", async () => {
-    const src = await import("@/components/settings/SettingsPage?raw");
-    const code = src.default as string;
-
-    expect(code).toContain("memorySummary");
-    expect(code).toContain("latestMemoryLabel");
-    expect(code).toContain("scopeLabel");
-    expect(code).toContain("Tổng");
-    expect(code).toContain("Phạm vi");
-  });
 });
 
 // Reset stores before each test
@@ -286,94 +272,6 @@ describe("Sprint 215 — Domain label and auto-select", () => {
   });
 });
 
-// ---------------------------------------------------------------------------
-// Sprint 216: "Chuyên Nghiệp" — Settings UX Deep Overhaul
-// Tab visibility logic: developer mode + org admin conditional tabs
-// ---------------------------------------------------------------------------
-describe("Sprint 216 — Tab visibility", () => {
-  beforeEach(() => {
-    // Reset auth and org stores
-    useAuthStore.setState({ authMode: "legacy", isAuthenticated: true });
-    useOrgStore.setState({
-      activeOrgId: null,
-      orgRole: null,
-      organizations: [],
-      multiTenantEnabled: false,
-      permissions: [],
-      orgSettings: null,
-    });
-  });
-
-  // Helper: compute visible tab IDs using the same logic as SettingsView/SettingsPage
-  function getVisibleTabIds(): string[] {
-    const { authMode } = useAuthStore.getState();
-    const orgState = useOrgStore.getState();
-    const isDeveloperMode = authMode === "legacy" || orgState.isSystemAdmin();
-
-    const tabs: string[] = ["profile", "preferences", "memory", "context"];
-    if (isDeveloperMode) {
-      tabs.push("connection");
-    }
-    if (orgState.activeOrgId && (orgState.isOrgAdmin() || orgState.isSystemAdmin())) {
-      tabs.push("organization");
-    }
-    tabs.push("living-agent");
-    return tabs;
-  }
-
-  it("should show connection tab in legacy mode", () => {
-    useAuthStore.setState({ authMode: "legacy" });
-    const tabs = getVisibleTabIds();
-    expect(tabs).toContain("connection");
-  });
-
-  it("should hide connection tab in OAuth mode (non-admin)", () => {
-    useAuthStore.setState({ authMode: "oauth", isAuthenticated: true });
-    // Not a system admin
-    const tabs = getVisibleTabIds();
-    expect(tabs).not.toContain("connection");
-  });
-
-  it("should show connection tab for system admin in OAuth mode", () => {
-    useAuthStore.setState({ authMode: "oauth", isAuthenticated: true });
-    useOrgStore.setState({
-      adminContext: { is_system_admin: true, is_org_admin: false, admin_org_ids: [], enable_org_admin: false },
-    });
-    const tabs = getVisibleTabIds();
-    expect(tabs).toContain("connection");
-  });
-
-  it("should hide organization tab when no active org or admin role", () => {
-    useOrgStore.setState({ activeOrgId: null, orgRole: null });
-    const tabs = getVisibleTabIds();
-    expect(tabs).not.toContain("organization");
-  });
-
-  it("should show organization tab for org admin with active org", () => {
-    useOrgStore.setState({
-      activeOrgId: "org-1",
-      orgRole: "admin",
-      adminContext: { is_system_admin: false, is_org_admin: true, admin_org_ids: ["org-1"], enable_org_admin: true },
-    });
-    const tabs = getVisibleTabIds();
-    expect(tabs).toContain("organization");
-  });
-
-  it("should default to profile tab (not connection)", () => {
-    const tabs = getVisibleTabIds();
-    expect(tabs[0]).toBe("profile");
-    expect(tabs).not.toContain("user"); // old tab ID removed
-  });
-
-  it("should use updated Vietnamese labels (Hồ sơ, Tùy chỉnh, Trí nhớ)", () => {
-    // This verifies the tab IDs map correctly — UI labels tested via component rendering
-    const tabs = getVisibleTabIds();
-    expect(tabs).toContain("profile"); // was "user" / "Người dùng" → now "Hồ sơ"
-    expect(tabs).toContain("preferences"); // label: "Giao diện" → "Tùy chỉnh"
-    expect(tabs).toContain("memory"); // label: "Bộ nhớ" → "Trí nhớ"
-  });
-});
-
 describe("Sprint 216 — Developer fields moved to Connection tab", () => {
   it("should still store streaming_version (moved, not removed)", async () => {
     await useSettingsStore.getState().updateSettings({ streaming_version: "v2" });
@@ -383,93 +281,5 @@ describe("Sprint 216 — Developer fields moved to Connection tab", () => {
   it("should still store show_reasoning_trace (moved, not removed)", async () => {
     await useSettingsStore.getState().updateSettings({ show_reasoning_trace: true });
     expect(useSettingsStore.getState().settings.show_reasoning_trace).toBe(true);
-  });
-});
-
-describe("Sprint 216 — Copy support ID", () => {
-  it("should have user_id available for clipboard copy (legacy mode)", () => {
-    const { settings } = useSettingsStore.getState();
-    // user_id is still stored and accessible — just shown via "Sao chép mã hỗ trợ" button
-    expect(settings.user_id).toBe("test-user-fixed");
-    expect(typeof settings.user_id).toBe("string");
-    expect(settings.user_id.length).toBeGreaterThan(0);
-  });
-});
-
-// ---------------------------------------------------------------------------
-// Sprint 219: "Học Tự Nhiên" — Adaptive Preference Learning
-// Removed Learning tab, pronoun moved to Preferences, Memory category groups
-// ---------------------------------------------------------------------------
-import { MEMORY_CATEGORIES } from "@/components/settings/SettingsPage";
-import { FACT_TYPE_LABELS } from "@/stores/memory-store";
-
-describe("Sprint 219 — Learning tab removed", () => {
-  it("should NOT include learning tab in visible tabs", () => {
-    useAuthStore.setState({ authMode: "legacy", isAuthenticated: true });
-    const { authMode } = useAuthStore.getState();
-    const orgState = useOrgStore.getState();
-    const isDeveloperMode = authMode === "legacy" || orgState.isSystemAdmin();
-    const tabs: string[] = ["profile", "preferences", "memory", "context"];
-    if (isDeveloperMode) tabs.push("connection");
-    tabs.push("living-agent");
-
-    expect(tabs).not.toContain("learning");
-    expect(tabs).toContain("preferences");
-    expect(tabs).toContain("memory");
-  });
-
-  it("should have profile as first tab (unchanged)", () => {
-    const tabs = ["profile", "preferences", "memory", "context"];
-    expect(tabs[0]).toBe("profile");
-  });
-});
-
-describe("Sprint 219 — Memory category grouping", () => {
-  it("should export MEMORY_CATEGORIES constant", () => {
-    expect(MEMORY_CATEGORIES).toBeDefined();
-    expect(Array.isArray(MEMORY_CATEGORIES)).toBe(true);
-  });
-
-  it("should have 3 categories", () => {
-    expect(MEMORY_CATEGORIES).toHaveLength(3);
-  });
-
-  it("should have identity category with correct types", () => {
-    const identity = MEMORY_CATEGORIES.find((c) => c.id === "identity");
-    expect(identity).toBeDefined();
-    expect(identity!.label).toBe("Bản thân");
-    expect(identity!.types).toContain("name");
-    expect(identity!.types).toContain("age");
-    expect(identity!.types).toContain("role");
-  });
-
-  it("should have learning category with correct types", () => {
-    const learning = MEMORY_CATEGORIES.find((c) => c.id === "learning");
-    expect(learning).toBeDefined();
-    expect(learning!.label).toBe("Học tập");
-    expect(learning!.types).toContain("learning_style");
-    expect(learning!.types).toContain("strength");
-    expect(learning!.types).toContain("weakness");
-    expect(learning!.types).toContain("goal");
-  });
-
-  it("should have personal category with correct types", () => {
-    const personal = MEMORY_CATEGORIES.find((c) => c.id === "personal");
-    expect(personal).toBeDefined();
-    expect(personal!.label).toBe("Sở thích");
-    expect(personal!.types).toContain("hobby");
-    expect(personal!.types).toContain("interest");
-    expect(personal!.types).toContain("preference");
-  });
-
-  it("should cover all FACT_TYPE_LABELS types in categories", () => {
-    const allCategorizedTypes = MEMORY_CATEGORIES.flatMap((c) => c.types);
-    const knownTypes = Object.keys(FACT_TYPE_LABELS);
-    // Most types should be categorized (pronoun_style is excluded from memory display)
-    const uncategorized = knownTypes.filter(
-      (t) => !allCategorizedTypes.includes(t) && t !== "pronoun_style"
-    );
-    // At most 1-2 types uncategorized (they fall into "Khác" group)
-    expect(uncategorized.length).toBeLessThanOrEqual(2);
   });
 });

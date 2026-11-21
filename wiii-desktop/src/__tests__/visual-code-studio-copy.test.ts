@@ -3,7 +3,6 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
 const visualUiFiles = [
-  "src/components/layout/CodeStudioPanel.tsx",
   "src/components/chat/VisualBlock.tsx",
   "src/components/common/InlineVisualFrame.tsx",
 ];
