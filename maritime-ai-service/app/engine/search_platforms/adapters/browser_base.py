@@ -20,7 +20,6 @@ Subclasses implement:
 """
 
 import concurrent.futures
-import json
 import logging
 import queue as _queue_mod
 import threading
@@ -28,20 +27,19 @@ from abc import abstractmethod
 from typing import List, Optional
 
 from app.engine.search_platforms.adapters.browser_product_mapping import (
-    _GROUP_POST_INDICATOR_FIELDS,
-    _MIN_GROUP_POST_MATCH,
-    _MIN_INDICATOR_MATCH,
-    _PRODUCT_INDICATOR_FIELDS,
-    dig_image_uri as _dig_image_uri,
+    _GROUP_POST_INDICATOR_FIELDS as _GROUP_POST_INDICATOR_FIELDS,
+    _MIN_GROUP_POST_MATCH as _MIN_GROUP_POST_MATCH,
+    _MIN_INDICATOR_MATCH as _MIN_INDICATOR_MATCH,
+    _PRODUCT_INDICATOR_FIELDS as _PRODUCT_INDICATOR_FIELDS,
     extract_group_post_product as _extract_group_post_product_impl,
-    extract_image_from_attachments as _extract_image_from_attachments,
+    extract_image_from_attachments as _extract_image_from_attachments,  # noqa: F401 - re-exported
     extract_json_array as _extract_json_array,
     extract_marketplace_product as _extract_marketplace_product_impl,
-    extract_price_from_text as _extract_price_from_text,
+    extract_price_from_text as _extract_price_from_text,  # noqa: F401 - re-exported
     extract_product_from_node as _extract_product_from_node_impl,
     map_intercepted_to_result as _map_intercepted_to_result_impl,
     map_llm_item_to_result as _map_to_result_impl,
-    parse_vnd_price as _parse_vnd_price,
+    parse_vnd_price as _parse_vnd_price,  # noqa: F401 - re-exported
     scan_for_products as _scan_for_products_impl,
 )
 from app.engine.search_platforms.adapters.browser_fetch_runtime import (

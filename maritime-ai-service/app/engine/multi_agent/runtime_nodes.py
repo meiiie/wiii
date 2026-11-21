@@ -27,7 +27,6 @@ from app.engine.multi_agent.graph_runtime_bindings import (
     _build_visual_tool_runtime_metadata,
     _capture_public_thinking_event,
     _code_studio_required_tool_names,
-    _collect_active_visual_session_ids,
     _collect_code_studio_tools,
     _collect_direct_tools,
     _direct_required_tool_names,

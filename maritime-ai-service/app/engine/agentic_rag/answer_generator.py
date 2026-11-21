@@ -22,7 +22,7 @@ import logging
 import re
 import time
 import unicodedata
-from typing import Any, List, Optional, Tuple
+from typing import List, Optional, Tuple
 from unittest.mock import Mock
 
 from app.engine.agentic_rag.runtime_llm_socket import (
@@ -598,7 +598,6 @@ class AnswerGenerator:
                 if "zhipu" in _llm_provider or "glm" in _llm_provider:
                     from app.engine.reasoning.thinking_enforcement import (
                         should_prefill_thinking,
-                        get_thinking_prefill_message,
                     )
                     _msg_dicts = [{"role": getattr(m, "type", "system"), "content": getattr(m, "content", "")} for m in messages]
                     if should_prefill_thinking(_msg_dicts, provider=_llm_provider):

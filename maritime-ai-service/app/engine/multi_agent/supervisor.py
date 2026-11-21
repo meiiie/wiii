@@ -23,7 +23,6 @@ Sprint 71: SOTA Routing (foundation)
 
 import asyncio
 import logging
-import re
 from typing import Optional
 from enum import Enum
 
@@ -67,25 +66,13 @@ from app.engine.multi_agent.direct_web_search_policy import (
 )
 from app.engine.multi_agent.supervisor_surface import (
     _build_recent_turns_for_routing_impl as _build_recent_turns_for_routing,
-    _clean_supervisor_visible_reasoning_impl as _clean_supervisor_visible_reasoning,
     _finalize_routing_reasoning_impl as _finalize_routing_reasoning,
-    _get_supervisor_stream_queue_impl as _get_supervisor_stream_queue,
-    _looks_like_artifact_payload_impl as _looks_like_artifact_payload,
-    _push_supervisor_stream_event_impl as _push_supervisor_stream_event,
-    _quote_query_for_visible_reasoning_impl as _quote_query_for_visible_reasoning,
-    _render_supervisor_visible_reasoning_impl as _render_supervisor_visible_reasoning,
-    _summarize_routing_turn_content_impl as _summarize_routing_turn_content,
 )
 from app.engine.multi_agent.supervisor_hint_runtime import (
     _apply_routing_hint_impl as _apply_routing_hint,
     _looks_clear_learning_turn_impl as _looks_clear_learning_turn,
-    _looks_clear_product_intent_impl as _looks_clear_product_intent,
     _looks_clear_social_impl as _looks_clear_social,
-    _looks_clear_web_intent_impl as _looks_clear_web_intent,
-    _looks_identity_probe_impl as _looks_identity_probe,
-    _looks_like_short_natural_question_impl as _looks_like_short_natural_question,
     _looks_like_visual_data_request_impl as _looks_like_visual_data_request,
-    _looks_short_capability_probe_impl as _looks_short_capability_probe,
     _needs_code_studio_impl as _needs_code_studio,
     _normalize_router_text_impl as _normalize_router_text,
     _should_use_compact_routing_prompt_impl as _should_use_compact_routing_prompt,
@@ -93,26 +80,15 @@ from app.engine.multi_agent.supervisor_hint_runtime import (
     is_obvious_social_turn_impl as is_obvious_social_turn,
 )
 from app.engine.multi_agent.supervisor_contract import (
-    CODE_STUDIO_KEYWORDS,
     COMPACT_ROUTING_PROMPT_TEMPLATE,
     CONFIDENCE_THRESHOLD,
-    FAST_PRODUCT_KEYWORDS,
-    FAST_WEB_KEYWORDS,
     PERSONAL_KEYWORDS,
     ROUTING_PROMPT_TEMPLATE,
-    SOCIAL_KEYWORDS,
+    SOCIAL_KEYWORDS as SOCIAL_KEYWORDS,
     SYNTHESIS_PROMPT,
     SYNTHESIS_PROMPT_NATURAL,
     _COMPLEX_QUERY_MIN_LENGTH,
-    _FAST_CHATTER_BLOCKERS,
-    _IDENTITY_PROBE_MARKERS,
     _MIXED_INTENT_PAIRS,
-    _NORMALIZED_SOCIAL_PREFIXES,
-    _REACTION_TOKENS,
-    _ROUTING_ARTIFACT_MARKERS,
-    _SOCIAL_LAUGH_TOKENS,
-    _SUPERVISOR_HEARTBEAT_INTERVAL_SEC,
-    _VAGUE_BANTER_PHRASES,
 )
 from app.engine.multi_agent.supervisor_structured_runtime import (
     route_structured_impl,

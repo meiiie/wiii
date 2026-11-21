@@ -12,7 +12,6 @@ NO custom LlmPort — platform already handles provider failover, thinking tiers
 """
 
 import asyncio
-import logging
 import re
 from typing import Any, Optional, TypedDict
 from uuid import uuid4

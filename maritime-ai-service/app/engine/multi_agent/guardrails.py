@@ -26,8 +26,8 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from dataclasses import dataclass, field
-from typing import Any, Callable, Coroutine, List, Optional
+from dataclasses import dataclass
+from typing import Any, Callable, Coroutine, Optional
 
 from app.engine.multi_agent.state import AgentState
 

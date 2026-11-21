@@ -25,7 +25,6 @@ import logging
 
 from app.core.config import settings
 from app.engine.llm_provider_registry import create_provider, get_supported_provider_names
-from app.engine.model_catalog import GOOGLE_DEEP_MODEL
 
 logger = logging.getLogger(__name__)
 

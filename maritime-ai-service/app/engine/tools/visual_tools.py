@@ -20,23 +20,18 @@ from typing import Any
 from app.engine.tools.native_tool import tool
 from pydantic import ValidationError
 from app.engine.tools.visual_html_builders import (
-    _DESIGN_CSS,
+    _DESIGN_CSS as _DESIGN_CSS,
     _BUILDERS,
-    _build_architecture_html,
-    _build_chart_html,
-    _build_comparison_html,
-    _build_concept_html,
-    _build_infographic_html,
-    _build_map_lite_html,
-    _build_matrix_html,
-    _build_process_html,
-    _build_timeline_html,
-    _normalize_chart_spec,
+    _build_architecture_html as _build_architecture_html,
+    _build_chart_html as _build_chart_html,
+    _build_comparison_html as _build_comparison_html,
+    _build_concept_html as _build_concept_html,
+    _build_infographic_html as _build_infographic_html,
+    _build_map_lite_html as _build_map_lite_html,
+    _build_matrix_html as _build_matrix_html,
+    _build_process_html as _build_process_html,
+    _build_timeline_html as _build_timeline_html,
     _wrap_html,
-)
-from app.engine.tools.visual_pendulum_scaffold import (
-    _build_pendulum_simulation_scaffold,
-    _looks_like_pendulum_simulation,
 )
 from app.engine.tools.visual_code_quality import (
     maybe_upgrade_code_studio_output_impl,

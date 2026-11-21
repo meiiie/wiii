@@ -16,7 +16,7 @@ from app.engine.multi_agent.direct_tool_sources import (
 )
 from app.engine.multi_agent.state import AgentState
 from app.engine.runtime.event_payload_sanitizer import sanitize_runtime_payload
-from typing import Any, Optional
+from typing import Any
 import asyncio
 import json
 import logging

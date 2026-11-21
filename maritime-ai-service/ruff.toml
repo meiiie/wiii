@@ -14,9 +14,6 @@ select = [
 ]
 ignore = [
     "F821",   # Undefined name — false positives from forward reference type annotations
-    # Many modules re-export names that tests and callers patch; removing them
-    # needs per-module `__all__` work. Next step of the Ruff widening.
-    "F401",
 ]
 
 # Per-file ignores for intentional patterns

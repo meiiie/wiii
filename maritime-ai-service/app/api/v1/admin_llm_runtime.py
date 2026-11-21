@@ -21,7 +21,6 @@ from app.engine.openai_compatible_credentials import (
 from datetime import datetime, timezone
 from typing import Any, Mapping, Optional
 
-from fastapi import HTTPException
 
 from app.api.v1.admin_llm_runtime_support import (
     build_model_catalog_response_runtime_impl,

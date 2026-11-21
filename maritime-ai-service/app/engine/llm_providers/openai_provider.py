@@ -20,7 +20,6 @@ from app.engine.openai_compatible_credentials import (
     resolve_nvidia_model,
     resolve_nvidia_model_advanced,
     resolve_openai_api_key,
-    resolve_openai_base_url,
     resolve_openai_model,
     resolve_openai_model_advanced,
     resolve_openrouter_api_key,

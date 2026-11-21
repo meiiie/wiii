@@ -22,9 +22,9 @@ from typing import Any, Dict, List, Optional, Tuple
 # extract_thinking_from_response is imported inside functions where needed
 
 # CHỈ THỊ SỐ 29: PromptLoader for SOTA thinking instruction
-from app.prompts.prompt_loader import PromptLoader, get_prompt_loader
+from app.prompts.prompt_loader import PromptLoader as PromptLoader, get_prompt_loader
 
-from app.core.config import settings
+from app.core.config import settings as settings
 from app.engine.agentic_rag.runtime_llm_socket import resolve_agentic_rag_llm
 from app.engine.llm_factory import ThinkingTier
 from app.engine.llm_pool import get_llm_moderate
@@ -35,7 +35,7 @@ from app.models.knowledge_graph import (
 )
 from app.engine.agentic_rag.rag_agent_contracts import (
     EvidenceImage,
-    MaritimeDocumentParser,
+    MaritimeDocumentParser as MaritimeDocumentParser,
     RAGResponse,
 )
 from app.repositories.neo4j_knowledge_repository import Neo4jKnowledgeRepository

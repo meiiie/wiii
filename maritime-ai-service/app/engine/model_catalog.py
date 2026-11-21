@@ -4,16 +4,13 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
-from typing import Any, Awaitable, Callable
 
 from app.engine.model_catalog_runtime_support import (
-    coerce_optional_bool,
     coerce_optional_int,
     extract_openai_compatible_capabilities,
     extract_openai_compatible_limits,
     hash_secret,
     looks_like_chat_model,
-    merge_catalog,
     normalize_google_model_name,
     normalize_openai_compatible_base_url,
     run_cached_discovery,

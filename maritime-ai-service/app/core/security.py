@@ -19,11 +19,11 @@ from app.core.security_roles import (
     DEFAULT_PLATFORM_ROLE,
     PLATFORM_ADMIN_ROLE,
     derive_platform_role_from_legacy_role,
-    is_platform_admin,
+    is_platform_admin as is_platform_admin,
     map_host_role_to_legacy_role,
     normalize_host_role,
     normalize_platform_role,
-    resolve_interaction_role,
+    resolve_interaction_role as resolve_interaction_role,
 )
 
 logger = logging.getLogger(__name__)

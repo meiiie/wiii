@@ -14,7 +14,7 @@ from app.engine.reasoning.reasoning_narrator_support import (
     RAW_TRACE_PATTERNS as _RAW_TRACE_PATTERNS,
     build_fast_action_text_impl as _build_fast_action_text,
     build_fast_summary_impl as _build_fast_summary,
-    build_tool_context_summary_impl as build_tool_context_summary,
+    build_tool_context_summary_impl as build_tool_context_summary,  # noqa: F401 - re-exported
     compact_text_impl as _compact_text,
     contains_forbidden_phrase_impl as _contains_forbidden_phrase,
     fallback_delta_chunks_impl as _fallback_delta_chunks,

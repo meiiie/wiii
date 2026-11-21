@@ -8,9 +8,7 @@ from fastapi import HTTPException
 
 from app.engine.openai_compatible_credentials import (
     resolve_nvidia_model,
-    resolve_openrouter_base_url,
     resolve_openrouter_model,
-    resolve_openrouter_model_advanced,
 )
 
 

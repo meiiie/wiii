@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import json
-from typing import Any, Mapping, Optional
+from typing import Any, Mapping
 
 from app.engine.openai_compatible_credentials import (
     is_openrouter_legacy_slot_configured,
