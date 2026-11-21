@@ -158,11 +158,14 @@ pub(crate) fn attach_bwrap_supervisor(command: &mut Command) -> io::Result<()> {
         })
         .collect::<Result<Vec<_>, _>>()?;
 
+    let envp_c = child_environment(command)?;
+
     // Capture owned CStrings only (Send+Sync). Rebuild the pointer vector inside
     // pre_exec so the closure does not store raw pointers across the fork boundary
-    // type-check. execvp replaces the image on success.
+    // type-check. execve replaces the image on success. std applies
+    // `Command::env` only after pre_exec, so the environment is passed explicitly.
     // SAFETY: pre_exec runs between fork and exec in the child. We only rebuild
-    // argv pointers from owned CStrings and call execvp; no parent invariants
+    // argv/envp pointers from owned CStrings and call execve; no parent invariants
     // are touched. Allocation here is the pragmatic tradeoff required for a
     // Send+Sync closure in a multithreaded Wiii process.
     unsafe {
@@ -170,11 +173,42 @@ pub(crate) fn attach_bwrap_supervisor(command: &mut Command) -> io::Result<()> {
             let mut argv_ptrs: Vec<*const libc::c_char> =
                 argv_c.iter().map(|c| c.as_ptr()).collect();
             argv_ptrs.push(std::ptr::null());
-            libc::execvp(argv_ptrs[0], argv_ptrs.as_ptr());
+            let mut envp_ptrs: Vec<*const libc::c_char> =
+                envp_c.iter().map(|c| c.as_ptr()).collect();
+            envp_ptrs.push(std::ptr::null());
+            libc::execve(argv_ptrs[0], argv_ptrs.as_ptr(), envp_ptrs.as_ptr());
             Err(io::Error::last_os_error())
         });
     }
     Ok(())
+}
+
+/// The environment `command` would give its child: the inherited environment
+/// with the command's own overrides and removals applied.
+fn child_environment(command: &Command) -> io::Result<Vec<CString>> {
+    use std::collections::BTreeMap;
+    use std::os::unix::ffi::OsStrExt;
+
+    let mut env: BTreeMap<OsString, OsString> = std::env::vars_os().collect();
+    for (key, value) in command.get_envs() {
+        match value {
+            Some(value) => env.insert(key.to_os_string(), value.to_os_string()),
+            None => env.remove(key),
+        };
+    }
+    env.into_iter()
+        .map(|(key, value)| {
+            let mut entry = key.as_bytes().to_vec();
+            entry.push(b'=');
+            entry.extend_from_slice(value.as_bytes());
+            CString::new(entry).map_err(|_| {
+                io::Error::new(
+                    io::ErrorKind::InvalidInput,
+                    "provider environment contains interior NUL when wrapping with bwrap",
+                )
+            })
+        })
+        .collect()
 }
 
 pub(crate) fn unavailable_message() -> &'static str {
@@ -198,6 +232,15 @@ mod tests {
     fn unavailable_message_names_bwrap() {
         assert!(unavailable_message().contains("bubblewrap"));
         assert!(unavailable_message().contains("bwrap"));
+    }
+
+    #[test]
+    fn child_environment_applies_command_overrides_and_removals() {
+        let mut command = Command::new("true");
+        command.env("WIII_CONTAINMENT_ENV_TEST", "set").env_remove("PATH");
+        let env = child_environment(&command).unwrap();
+        assert!(env.iter().any(|e| e.as_bytes() == b"WIII_CONTAINMENT_ENV_TEST=set"));
+        assert!(!env.iter().any(|e| e.as_bytes().starts_with(b"PATH=")));
     }
 
     #[test]
