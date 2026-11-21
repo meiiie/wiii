@@ -3,7 +3,7 @@ use super::journal::{
 };
 use super::lifecycle::{OperationPhase, RunState};
 use super::provider::{
-    self, spawn_owned, terminate_child_tree, AgentAvailability, AgentInfo, AgentProfile, OwnedChild,
+    self, terminate_child_tree, AgentAvailability, AgentInfo, AgentProfile, OwnedChild,
 };
 use super::provider_sessions::{self, ProviderSessionCatalog};
 use serde::{Deserialize, Serialize};
@@ -123,6 +123,7 @@ pub struct SessionStartRequest {
     pub provider_id: String,
     pub environment_id: String,
     pub workspace_path: String,
+    pub workspace_kind: Option<String>,
     pub profile_id: Option<String>,
 }
 
@@ -267,7 +268,7 @@ impl NekoRuntime {
         // before replay. Workspace existence is volatile and must be checked
         // only after a prior completed/uncertain operation has been resolved.
         validate_start_identity(&request)?;
-        let target = digest_target(&[
+        let mut target_fields = vec![
             &request.agent_session_id,
             &request.task_id,
             &request.run_id,
@@ -275,7 +276,11 @@ impl NekoRuntime {
             &request.environment_id,
             &request.workspace_path,
             request.profile_id.as_deref().unwrap_or(""),
-        ]);
+        ];
+        if let Some(kind) = request.workspace_kind.as_deref() {
+            target_fields.push(kind);
+        }
+        let target = digest_target(&target_fields);
         // Admit the request identity, listable projection, and creation event
         // in one transaction before any unlocked host I/O. A reconnect can
         // therefore never observe an Accepted start without its native owner.
@@ -433,7 +438,51 @@ impl NekoRuntime {
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped());
-        let mut child = match spawn_owned(&mut command) {
+        #[cfg(target_os = "linux")]
+        let write_roots = {
+            use tauri::Manager;
+            let roots = (|| {
+                let data_dir = app
+                    .path()
+                    .app_local_data_dir()
+                    .map_err(|error| error.to_string())?;
+                let home = std::env::var_os("USERPROFILE")
+                    .filter(|value| !value.is_empty())
+                    .or_else(|| std::env::var_os("HOME").filter(|value| !value.is_empty()))
+                    .unwrap_or_default();
+                crate::commands::quick_chat::confined_write_roots(
+                    &data_dir,
+                    Path::new(&request.workspace_path),
+                    &canonical_workspace_path,
+                    Path::new(&home),
+                    request.workspace_kind.as_deref() == Some("scratch"),
+                )
+            })();
+            match roots {
+                Ok(roots) => roots,
+                Err(error) => {
+                    return Err(self.reject_start_error(
+                        &app,
+                        &request,
+                        "invalid_workspace",
+                        None,
+                        error,
+                    ))
+                }
+            }
+        };
+        #[cfg(target_os = "linux")]
+        if let Some(roots) = &write_roots {
+            command
+                .env("TMPDIR", &roots[2])
+                .env("TMP", &roots[2])
+                .env("TEMP", &roots[2]);
+        }
+        #[cfg(target_os = "linux")]
+        let spawned = provider::spawn_owned_with_write_roots(&mut command, write_roots.as_deref());
+        #[cfg(not(target_os = "linux"))]
+        let spawned = provider::spawn_owned(&mut command);
+        let mut child = match spawned {
             Ok(child) => child,
             Err(error) if error.cleanup_unproven() => {
                 return Err(self.mark_termination_unknown(
@@ -1494,6 +1543,13 @@ fn validate_start_identity(request: &SessionStartRequest) -> Result<(), String> 
         return Err(format!("unknown Neko provider '{}'", request.provider_id));
     }
     let workspace = Path::new(&request.workspace_path);
+    if request
+        .workspace_kind
+        .as_deref()
+        .is_some_and(|kind| kind != "scratch")
+    {
+        return Err("unknown workspace kind".into());
+    }
     if !workspace.is_absolute() {
         return Err("workspace must be an absolute directory".into());
     }
@@ -1990,7 +2046,7 @@ mod tests {
     fn volatile_workspace_availability_is_deferred_until_after_replay_lookup() {
         let missing =
             std::env::temp_dir().join(format!("wiii-missing-workspace-{}", uuid::Uuid::new_v4()));
-        let request = SessionStartRequest {
+        let mut request = SessionStartRequest {
             request_id: "request-1".into(),
             agent_session_id: "session-1".into(),
             task_id: "task-1".into(),
@@ -1998,11 +2054,16 @@ mod tests {
             provider_id: "neko".into(),
             environment_id: "environment-1".into(),
             workspace_path: missing.to_string_lossy().into_owned(),
+            workspace_kind: None,
             profile_id: None,
         };
 
         assert!(validate_start_identity(&request).is_ok());
         assert!(validate_start_workspace(&request).is_err());
+        request.workspace_kind = Some("scratch".into());
+        assert!(validate_start_identity(&request).is_ok());
+        request.workspace_kind = Some("unknown".into());
+        assert!(validate_start_identity(&request).is_err());
     }
 
     #[test]

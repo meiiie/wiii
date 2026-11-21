@@ -28,6 +28,7 @@ export interface NekoProviderSpawnRequest {
   /** Fresh local runtime identity. The visible session remains the Task. */
   clientRunId?: string;
   workspacePath: string;
+  workspaceKind?: "scratch";
   profileId?: string;
   execution?: NekoExecutionBinding;
 }
@@ -104,6 +105,7 @@ interface UnresolvedStartIdentity {
   execution: NekoExecutionBinding;
   providerId: string;
   workspacePath: string;
+  workspaceKind?: "scratch";
   profileId: string | null;
   transport: StartTransportState;
 }
@@ -511,6 +513,7 @@ class TauriNekoControlClient implements NekoControlClient {
       request.clientSessionId,
       request.workspacePath,
       request.profileId ?? null,
+      request.workspaceKind ?? null,
     ]);
     const priorStart = this.unresolvedStarts.get(startKey);
     if (!priorStart && request.clientSessionId.startsWith(CODEX_BOOTSTRAP_SESSION_PREFIX)) {
@@ -545,6 +548,7 @@ class TauriNekoControlClient implements NekoControlClient {
       execution: requestedExecution,
       providerId: provider.id,
       workspacePath: request.workspacePath,
+      workspaceKind: request.workspaceKind,
       profileId: request.profileId ?? null,
       transport: createStartTransportState(),
     };
@@ -735,6 +739,7 @@ function nativeStartRequest(identity: UnresolvedStartIdentity): Record<string, s
     providerId: identity.providerId,
     environmentId: identity.execution.environmentId,
     workspacePath: identity.workspacePath,
+    ...(identity.workspaceKind ? { workspaceKind: identity.workspaceKind } : {}),
     ...(identity.profileId ? { profileId: identity.profileId } : {}),
   };
 }
