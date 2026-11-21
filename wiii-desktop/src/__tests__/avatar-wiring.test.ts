@@ -144,10 +144,9 @@ describe("deriveAvatarState logic", () => {
 // 7) All 6 avatar states are used across the app
 // ---------------------------------------------------------------------------
 describe("All 6 avatar states have usage", () => {
-  it("idle — used in Sidebar, SettingsPage (WelcomeScreen uses useAvatarState)", async () => {
+  it("idle — used in Sidebar (WelcomeScreen uses useAvatarState)", async () => {
     const files = [
       "@/components/layout/Sidebar?raw",
-      "@/components/settings/SettingsPage?raw",
     ];
     for (const file of files) {
       const src = await import(/* @vite-ignore */ file);
