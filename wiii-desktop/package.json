@@ -18,6 +18,7 @@
     "preview": "vite preview",
     "tauri": "tauri",
     "test": "vitest",
+    "test:desktop": "vitest run --config vitest.desktop.config.ts",
     "test:ui": "vitest --ui",
     "dev:visual:test:backend": "node scripts/start-visual-backend.mjs",
     "dev:visual:test:frontend": "node scripts/start-visual-frontend.mjs",
