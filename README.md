@@ -52,7 +52,7 @@ execution are not supported by this release.
 | Component | What to expect |
 | --- | --- |
 | Wiii | Per-user Windows installer |
-| Neko Core | Default harness; bundled version 1.7.0, configure your provider separately |
+| Neko Core | Default harness; bundled version 1.9.3, configure your provider separately |
 | Computer | Optional Linux desktop through Docker Desktop; not required for normal local conversations |
 | Updates | Install a newer Wiii version manually; the bundled Neko runtime follows Wiii releases |
 | Publisher signature | This Windows release is explicitly **unsigned** |
@@ -66,9 +66,8 @@ Read the [Windows installation and recovery guide](docs/releases/WIII_WINDOWS_QU
 before installing. Candidate builds include `candidate` and a source commit
 in their filenames; they are evaluation builds, not stable releases.
 
-Bundled Neko Core 1.7.0 does not support the opt-in task-v1 protocol.
-Work flows requiring task-v1 are unsupported with this bundled runtime;
-see the [known limitation and acceptance gates](docs/releases/WIII_1_3_0_ACCEPTANCE.md).
+Bundled Neko Core 1.9.3 supports the task-v1 protocol that Work flows use;
+see the [acceptance gates](docs/releases/WIII_1_3_0_ACCEPTANCE.md).
 
 ## A calm workspace with visible control
 
