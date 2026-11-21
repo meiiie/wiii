@@ -204,7 +204,7 @@ export function externalAgentStatusDetail(
 export function externalControlLabel(card: CatalogCard): string {
   if (card.agentReady) return "Sẵn sàng";
   if (card.connected) return "Chờ cấp quyền";
-  return "Đang khóa an toàn";
+  return "Chưa dùng được";
 }
 
 export function readinessGateLabel(key: string): string {

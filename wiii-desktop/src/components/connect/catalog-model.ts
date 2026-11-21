@@ -107,9 +107,9 @@ function registryEntriesToExternalDefinitions(
         id: entry.slug,
         provider,
         label: entry.label || entry.slug,
-        description:
-          entry.description ||
-          "Provider do backend registry khai báo; adapter vẫn fail-closed cho đến khi có vault, policy và audit.",
+        // Product copy stays local and Vietnamese. Keep the provider's own
+        // description in diagnostics, not in the primary catalog.
+        description: externalCatalogDefinitions.find((item) => item.id === entry.slug)?.description ?? "",
         category: toCatalogCategory(entry.category),
         icon: iconForExternalProvider(entry.slug, provider),
         requirements:
@@ -206,7 +206,7 @@ function buildNativeCatalogCards(
       categoryLabel: categoryLabel(definition.category),
       icon: definition.icon,
       tone: snapshot ? "off" : "pending",
-      status: snapshot ? "Chưa khai báo" : "Chưa có snapshot",
+      status: snapshot ? "Chưa kết nối" : "Chưa xác định",
       statusDetail: snapshot
         ? "Backend snapshot chưa khai báo connection này."
         : "Chờ chat_lifecycle.wiii_connect từ lượt runtime.",
@@ -242,6 +242,7 @@ function buildExternalCatalogCards(
     const agentReady = readinessReadyForAction(readiness);
     const reason = connectionResponse?.reason;
     const statusDetail = externalAgentStatusDetail(fromBackend, readiness);
+    const sourceDescription = providerRegistry?.find((entry) => entry.slug === definition.id)?.description;
     return {
       id: `${definition.provider}-${definition.id}`,
       providerSlug: definition.id,
@@ -259,6 +260,7 @@ function buildExternalCatalogCards(
       connected: tone === "ok",
       registrySource: definition.source ?? "local",
       detailRows: [
+        ...(sourceDescription ? [["Mô tả từ ứng dụng", sourceDescription]] as Array<[string, string]> : []),
         ["Provider", providerKindLabels[definition.provider] ?? definition.provider],
         ["Nguồn", fromBackend ? "Backend registry" : "Local fallback"],
         ["Auth", compactText(definition.authMode, "Chưa khai báo")],

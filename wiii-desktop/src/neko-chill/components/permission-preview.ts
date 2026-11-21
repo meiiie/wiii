@@ -165,9 +165,9 @@ export function buildPermissionPreview(
 }
 
 export function permissionOptionScope(kind: PermissionOption["kind"]): string {
-  if (kind === "allow_once" || kind === "reject_once") return "Chỉ áp dụng cho yêu cầu này.";
+  if (kind === "allow_once" || kind === "reject_once") return "Chỉ lần này";
   if (kind === "allow_always" || kind === "reject_always") {
-    return "Lựa chọn lâu dài. Phạm vi áp dụng cụ thể chưa được agent cung cấp.";
+    return "Lâu dài · chưa rõ phạm vi";
   }
-  return "Phạm vi áp dụng chưa được agent cung cấp.";
+  return "Chưa rõ phạm vi";
 }

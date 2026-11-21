@@ -73,7 +73,7 @@ export function coworkerGrantsCard(args: {
   if (args.wiiiProjectCount > 0) {
     return {
       value: "0 quyền máy Neko",
-      detail: `Có ${args.wiiiProjectCount} Project Wiii — cấp quyền bên dưới để gắn (khác phiên Chill)`,
+      detail: `${args.wiiiProjectCount} Project Wiii chưa cấp quyền`,
       needsCoworkerGrant: true,
     };
   }
@@ -86,4 +86,4 @@ export function coworkerGrantsCard(args: {
 }
 
 export const COWORKER_CHILL_SEPARATION_VI =
-  "Phiên Chill và máy Đồng nghiệp là hai bề mặt khác nhau. Project đang mở trong Wiii chưa đồng nghĩa Neko đã được cấp quyền trên máy làm việc — hãy Cấp quyền bên dưới nếu muốn gắn cùng thư mục. Wiii không tự cấp quyền.";
+  "Máy Neko cần quyền riêng cho từng dự án.";

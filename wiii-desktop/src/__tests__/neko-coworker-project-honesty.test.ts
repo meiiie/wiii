@@ -58,13 +58,13 @@ describe("coworker project honesty", () => {
     const card = coworkerGrantsCard({ grantCount: 0, wiiiProjectCount: 1 });
     expect(card.value).toBe("0 quyền máy Neko");
     expect(card.detail).toMatch(/1 Project Wiii/);
-    expect(card.detail).toMatch(/khác phiên Chill/);
+    expect(card.detail).toMatch(/chưa cấp quyền/);
     expect(card.needsCoworkerGrant).toBe(true);
   });
 
   it("does not invent auto-grant language", () => {
-    expect(COWORKER_CHILL_SEPARATION_VI).toMatch(/không tự cấp quyền/i);
-    expect(COWORKER_CHILL_SEPARATION_VI).toMatch(/Cấp quyền/);
+    expect(COWORKER_CHILL_SEPARATION_VI).toMatch(/cần quyền riêng/i);
+    expect(COWORKER_CHILL_SEPARATION_VI).toMatch(/từng dự án/);
     expect(COWORKER_CHILL_SEPARATION_VI.toLowerCase()).not.toContain("tự động cấp");
   });
 });

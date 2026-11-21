@@ -54,6 +54,25 @@ vi.mock("@tauri-apps/plugin-shell", () => ({
   open: vi.fn().mockRejectedValue(new Error("no tauri runtime")),
 }));
 
+// These control-plane tests exercise tab content, not animation timing.
+// Polling uses a fake clock, so keep transitions deterministic as well.
+vi.mock("@/hooks/useReducedMotion", async (importOriginal) => ({
+  ...await importOriginal<typeof import("@/hooks/useReducedMotion")>(),
+  useReducedMotion: () => true,
+}));
+
+function openDiagnostics() {
+  fireEvent.click(within(screen.getByRole("navigation", { name: "Kết nối" }))
+    .getByRole("button", { name: "Chẩn đoán" }));
+}
+
+function expectMatchingProviderStatus(provider: string, status: string) {
+  const card = screen.getByRole("button", { name: new RegExp(provider) });
+  expect(within(card).getByText(status)).toBeTruthy();
+  const detail = screen.getByText("Chi tiết kết nối").closest("aside")!;
+  expect(within(detail).getAllByText(status).some((node) => !node.closest("details"))).toBe(true);
+}
+
 const mockBuildWiiiConnectProviderCallbackUrl = vi.mocked(buildWiiiConnectProviderCallbackUrl);
 const mockApplyWiiiConnectFacebookPost = vi.mocked(applyWiiiConnectFacebookPost);
 const mockCreateWiiiConnectProviderAuthorizationUrl = vi.mocked(createWiiiConnectProviderAuthorizationUrl);
@@ -692,7 +711,7 @@ describe("WiiiConnectPage", () => {
 
     render(<WiiiConnectPage />);
 
-    expect(screen.getAllByText("Chưa có snapshot").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Chưa xác định").length).toBeGreaterThan(0);
     expect(screen.getByText("Ứng dụng và tài khoản")).toBeTruthy();
     expect(screen.getByText("Chế độ ngoại tuyến")).toBeTruthy();
     expect(screen.getAllByText("Máy chủ Wiii").length).toBeGreaterThan(0);
@@ -716,7 +735,7 @@ describe("WiiiConnectPage", () => {
     expect(screen.queryByText("ui.highlight")).toBeNull();
   });
 
-  it("opens the Gmail connection guide from a Neko provider intent", async () => {
+  it("opens Gmail actions directly from a Neko provider intent", async () => {
     useUIStore.setState({ wiiiConnectFocusProvider: "gmail" });
     mockFetchWiiiConnectProviders.mockResolvedValue({
       version: "wiii_connect_provider_registry.v1",
@@ -737,9 +756,7 @@ describe("WiiiConnectPage", () => {
 
     render(<WiiiConnectPage />);
 
-    expect(screen.getByTestId("gmail-connection-guide").textContent).toContain(
-      "không tự cấp quyền API",
-    );
+    expect(screen.queryByTestId("gmail-connection-guide")).toBeNull();
     expect(await screen.findByText("Danh mục đã đồng bộ")).toBeTruthy();
     expect(await screen.findByRole("button", { name: "Kết nối qua Wiii" })).toBeTruthy();
     expect((await screen.findAllByText("Gmail thử nghiệm của Neko.")).length).toBeGreaterThan(0);
@@ -830,6 +847,8 @@ describe("WiiiConnectPage", () => {
 
     render(<WiiiConnectPage />);
 
+    expect(screen.queryByText("Chẩn đoán kết nối")).toBeNull();
+    openDiagnostics();
     expect(await screen.findByText("2/2 sẵn sàng")).toBeTruthy();
     expect(mockFetchWiiiConnectSnapshot).toHaveBeenCalledWith({ surface: "desktop" });
     fireEvent.click(
@@ -889,6 +908,7 @@ describe("WiiiConnectPage", () => {
 
     render(<WiiiConnectPage />);
 
+    openDiagnostics();
     expect(await screen.findByText("1/2 sẵn sàng")).toBeTruthy();
     expect(screen.queryByText("2/2 sẵn sàng")).toBeNull();
   });
@@ -973,6 +993,7 @@ describe("WiiiConnectPage", () => {
 
     render(<WiiiConnectPage />);
 
+    openDiagnostics();
     await act(async () => { await vi.advanceTimersByTimeAsync(0); });
     expect(screen.getByText("1/1 sẵn sàng")).toBeTruthy();
 
@@ -1004,6 +1025,7 @@ describe("WiiiConnectPage", () => {
       warnings: [],
     });
     const { unmount } = render(<WiiiConnectPage />);
+    openDiagnostics();
     await act(async () => { await vi.advanceTimersByTimeAsync(0); });
     expect(screen.getByText("1/1 sẵn sàng")).toBeTruthy();
 
@@ -1021,7 +1043,7 @@ describe("WiiiConnectPage", () => {
   it("does not request operator diagnostics for an ordinary OAuth user", async () => {
     useAuthStore.setState({ authMode: "oauth" });
     render(<WiiiConnectPage />);
-    expect(await screen.findByText("Đã đồng bộ")).toBeTruthy();
+    await waitFor(() => expect(mockFetchWiiiConnectDoctor).toHaveBeenCalled());
 
     expect(mockFetchWiiiConnectSnapshot).toHaveBeenCalledWith({ surface: "desktop" });
     expect(mockFetchWiiiConnectDoctor).toHaveBeenCalledWith({ surface: "desktop" });
@@ -1053,7 +1075,7 @@ describe("WiiiConnectPage", () => {
     fireEvent.change(search, { target: { value: "" } });
     expect(screen.getByRole("button", { name: /Facebook/i })).toBeTruthy();
     expect(screen.getByRole("button", { name: /Gmail/i })).toBeTruthy();
-    expect(await screen.findByText("Đã đồng bộ")).toBeTruthy();
+    await waitFor(() => expect(mockFetchWiiiConnectSnapshot).toHaveBeenCalled());
   });
 
   it("uses backend provider registry when available", async () => {
@@ -1082,12 +1104,29 @@ describe("WiiiConnectPage", () => {
     fireEvent.click(screen.getByRole("button", { name: /Composio/i }));
     fireEvent.click(screen.getByRole("button", { name: /Facebook/i }));
     expect(screen.getAllByText("Facebook provider from backend registry.").length).toBeGreaterThan(0);
+    const description = screen.getByText("Facebook provider from backend registry.");
+    const diagnostics = description.closest("details");
+    expect(diagnostics?.open).toBe(false);
+    expect(within(diagnostics!).getByText("Effective actions")).toBeTruthy();
+    expect(screen.getAllByText("Bài viết và trang Facebook.").length).toBe(2);
+    expect(screen.getByRole("button", { name: "Kết nối qua Wiii" }).closest("details")).toBeNull();
     expect(screen.getByText("execution_gateway")).toBeTruthy();
     expect(screen.getByText("audit_ledger")).toBeTruthy();
     expect(screen.getByText("Backend registry")).toBeTruthy();
   });
 
   it("renders activation readiness gates without exposing provider secrets", async () => {
+    mockFetchWiiiConnectProviderConnections.mockResolvedValue({
+      version: "wiii_connect_connection_list.v1",
+      status: "blocked",
+      reason: "provider_not_agent_ready",
+      provider_slug: "gmail",
+      provider_kind: "composio",
+      connection_count: 0,
+      connections: [],
+      provider: { status: "blocked" },
+      storage: { persistent: true },
+    });
     mockFetchWiiiConnectProviders.mockResolvedValue({
       version: "wiii_connect_provider_registry.v1",
       adapter_version: "wiii_connect_adapter.v1",
@@ -1156,6 +1195,7 @@ describe("WiiiConnectPage", () => {
     fireEvent.click(screen.getByRole("button", { name: /Gmail/i }));
 
     expect(await screen.findByTestId("wiii-connect-readiness-panel")).toBeTruthy();
+    await waitFor(() => expectMatchingProviderStatus("Gmail", "Chưa kết nối"));
     expect(await screen.findByTestId("wiii-connect-lifecycle-panel")).toBeTruthy();
     await waitFor(() => {
       expect(screen.getByTestId("wiii-connect-next-action").textContent).toContain(
@@ -1668,7 +1708,7 @@ describe("WiiiConnectPage", () => {
       ),
     ).toBeTruthy();
     expect(screen.getAllByText("allowed").length).toBeGreaterThan(0);
-    expect(container.textContent?.replace(/\s+/g, "")).toContain("NekodùngđượcCó");
+    expect(screen.getByRole("button", { name: /Gmail.*Neko · Sẵn sàng/ })).toBeTruthy();
     expect(container.textContent).not.toContain("wcn_live_gmail_1");
     expect(container.textContent).not.toContain("secret-refresh-token");
     expect(container.textContent).not.toContain("secret-action-key");
@@ -1999,6 +2039,7 @@ describe("WiiiConnectPage", () => {
     expect(screen.getByTestId("wiii-connect-next-action").textContent).toContain(
       "Đang chờ OAuth hoàn tất",
     );
+    expectMatchingProviderStatus("Facebook", "Đang chờ xác nhận");
     expect(container.textContent).not.toContain("https://composio.example/connect/safe");
     expect(container.textContent).not.toContain("connection_ref");
     expect(container.textContent).not.toContain("access_token");
@@ -2152,6 +2193,7 @@ describe("WiiiConnectPage", () => {
 
     await waitFor(() => {
       expect(screen.getByTestId("wiii-connect-connection-flow-state").getAttribute("data-state")).toBe("expired");
+      expectMatchingProviderStatus("Facebook", "Kết nối hết hạn");
     });
     expect(screen.getByTestId("wiii-connect-next-action").textContent).toContain("reconnect");
     expect(container.textContent).not.toContain("wcn_expired_1");

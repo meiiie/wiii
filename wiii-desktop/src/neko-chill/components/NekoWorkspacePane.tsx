@@ -382,8 +382,8 @@ function BrowserSurface({
   return (
     <SurfaceEmptyState
       icon={Globe2}
-      title="Chưa có Browser activity"
-      description="Ảnh chụp từ browser tool hoặc bản xem trước HTML, Markdown, PDF và hình ảnh sẽ xuất hiện ở đây. Phiên trình duyệt đăng nhập phải do Neko Browser Runtime quản lý."
+      title="Chưa có hoạt động trình duyệt"
+      description="Ảnh chụp và trang đang xem sẽ xuất hiện ở đây."
     />
   );
 }
@@ -453,9 +453,6 @@ function EmptyContent({ tab }: { tab: "files" | "changes" }) {
         )}
         <p className="mt-3 text-[13px] font-medium text-[var(--nk-text-2)]">
           {tab === "files" ? "Chọn một file để xem" : "Chọn một thay đổi để so sánh"}
-        </p>
-        <p className="mt-1 text-[11.5px] leading-5 text-[var(--nk-text-3)]">
-          Pane này theo dõi đúng workspace của phiên và cập nhật khi agent thao tác.
         </p>
       </div>
     </div>
@@ -625,9 +622,9 @@ function NekoWorkspacePaneComponent({
     ) : (
       <div className="grid h-full place-items-center px-8 text-center">
         <div className="max-w-sm">
-          <p className="text-[12px] font-medium text-[var(--nk-text)]">Cần gắn phiên này với một Project</p>
+          <p className="text-[12px] font-medium text-[var(--nk-text)]">Chọn dự án để mở máy tính</p>
           <p className="mt-1 text-[10.5px] leading-5 text-[var(--nk-text-3)]">
-            Computer chỉ nhận quyền qua ProjectId ổn định; Wiii không dùng đường dẫn ổ đĩa làm danh tính thay thế.
+            Mở một phiên trong dự án của bạn.
           </p>
         </div>
       </div>
@@ -914,7 +911,6 @@ function NekoWorkspacePaneComponent({
               <div className="grid h-full overflow-auto p-5 text-center" role="alert">
                 <div className="w-full min-w-0 max-w-sm">
                   <p className="text-[13px] font-medium text-[var(--nk-text)]">Chưa thể đọc nội dung workspace</p>
-                  <p className="mt-2 text-[12px] leading-5 text-[var(--nk-text-3)]">Bạn có thể thử lại hoặc chuyển sang công cụ khác.</p>
                   <button
                     type="button"
                     className="mt-4 inline-flex h-8 items-center gap-2 rounded-lg border border-[var(--nk-border-strong)] bg-[var(--nk-composer)] px-3 text-[12px] text-[var(--nk-text)] hover:bg-[var(--nk-raised)] disabled:opacity-50"

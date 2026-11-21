@@ -495,46 +495,48 @@ export function LoginScreen({ onOpenLocal }: { onOpenLocal?: () => void }) {
           minimize/drag at all (live smoke finding, 2026-08-13). */}
       <TitleBar minimal />
       <main className="flex-1 overflow-y-auto px-5 py-8 sm:px-8 lg:py-12">
-        <div className="mx-auto grid min-h-full w-full max-w-[980px] items-start gap-10 lg:grid-cols-[1.08fr_0.92fr] lg:items-center lg:gap-16">
+        <div className={onOpenLocal
+          ? "mx-auto grid w-full max-w-[440px] gap-6"
+          : "mx-auto grid min-h-full w-full max-w-[980px] items-start gap-10 lg:grid-cols-[1.08fr_0.92fr] lg:items-center lg:gap-16"}>
           <section className="max-w-[460px]" aria-labelledby="wiii-service-title">
-            <div className="mb-7 flex items-center gap-4" data-testid="wiii-mascot-lockup">
+            <div className="mb-5 flex items-center gap-3" data-testid="wiii-mascot-lockup">
               <WiiiMascot
-                size={82}
+                size={onOpenLocal ? 48 : 82}
                 className="object-contain drop-shadow-[0_14px_24px_rgba(40,38,32,0.14)]"
               />
               <div>
                 <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-text-tertiary">
                   Wiii Service · Tùy chọn
                 </p>
-                <p className="mt-1 text-sm text-text-secondary">Wiii Service</p>
+                {!onOpenLocal && <p className="mt-1 text-sm text-text-secondary">Wiii Service</p>}
               </div>
             </div>
 
             <h1
               id="wiii-service-title"
-              className="max-w-[430px] text-[38px] font-normal leading-[1.08] text-text sm:text-[46px]"
+              className={onOpenLocal ? "text-[30px] font-normal leading-tight text-text" : "max-w-[430px] text-[38px] font-normal leading-[1.08] text-text sm:text-[46px]"}
               style={{ fontFamily: "var(--font-serif)" }}
             >
               Kết nối Wiii Service
             </h1>
-            <p className="mt-4 max-w-[430px] text-[15px] leading-6 text-text-tertiary">
+            {!onOpenLocal && <p className="mt-4 max-w-[430px] text-[15px] leading-6 text-text-tertiary">
               Bật đồng bộ, tri thức, bộ nhớ và không gian tổ chức khi bạn cần.
               Agent và dự án cục bộ của Wiii vẫn hoạt động mà không cần tài khoản.
-            </p>
+            </p>}
 
-            <div className="mt-7 grid gap-3" aria-label="Năng lực của Wiii Service">
+            <div className={onOpenLocal ? "mt-4 flex flex-wrap gap-3" : "mt-7 grid gap-3"} aria-label="Năng lực của Wiii Service">
               {[
                 { icon: Cloud, title: "Đồng bộ bền vững", detail: "Tiếp tục công việc giữa các thiết bị và môi trường." },
                 { icon: Database, title: "Knowledge & Memory", detail: "Mang tri thức và ngữ cảnh dài hạn vào từng tác vụ." },
                 { icon: History, title: "Tổ chức & kiểm toán", detail: "Chính sách, kết nối và lịch sử cho nhóm của bạn." },
               ].map(({ icon: Icon, title, detail }) => (
-                <div key={title} className="flex items-start gap-3 rounded-2xl border border-border/70 bg-surface/55 px-4 py-3">
-                  <span className="mt-0.5 grid h-8 w-8 shrink-0 place-items-center rounded-xl bg-surface-tertiary text-text-secondary">
+                <div key={title} className={onOpenLocal ? "flex items-center gap-1.5 text-text-secondary" : "flex items-start gap-3 rounded-2xl border border-border/70 bg-surface/55 px-4 py-3"}>
+                  <span className={onOpenLocal ? "shrink-0" : "mt-0.5 grid h-8 w-8 shrink-0 place-items-center rounded-xl bg-surface-tertiary text-text-secondary"}>
                     <Icon aria-hidden="true" size={16} />
                   </span>
                   <span>
-                    <span className="block text-sm font-medium text-text">{title}</span>
-                    <span className="mt-0.5 block text-xs leading-5 text-text-tertiary">{detail}</span>
+                    <span className="block text-xs font-medium text-text">{title}</span>
+                    {!onOpenLocal && <span className="mt-0.5 block text-xs leading-5 text-text-tertiary">{detail}</span>}
                   </span>
                 </div>
               ))}
@@ -550,8 +552,7 @@ export function LoginScreen({ onOpenLocal }: { onOpenLocal?: () => void }) {
                   <ArrowLeft aria-hidden="true" size={17} />
                 </span>
                 <span className="min-w-0 flex-1">
-                  <span className="block text-sm font-semibold text-text">Tiếp tục với Wiii cục bộ</span>
-                  <span className="mt-0.5 block text-xs text-text-tertiary">Không cần tài khoản · dữ liệu và agent ở trên máy này</span>
+                  <span className="block text-sm font-semibold text-text">Quay lại Wiii</span>
                 </span>
               </button>
             ) : (
@@ -561,12 +562,12 @@ export function LoginScreen({ onOpenLocal }: { onOpenLocal?: () => void }) {
             )}
           </section>
 
-          <section className="w-full max-w-[410px] justify-self-center rounded-[28px] border border-border bg-surface/90 p-5 shadow-[0_20px_70px_rgba(40,38,32,0.10)] sm:p-7" aria-label="Đăng nhập Wiii Service">
+          <section className="w-full rounded-2xl border border-border bg-surface/90 p-5 sm:p-6" aria-label="Đăng nhập Wiii Service">
             <div className="mb-5">
-              <h2 className="text-lg font-semibold text-text">Đăng nhập để bật dịch vụ</h2>
-              <p className="mt-1 text-xs leading-5 text-text-tertiary">
+              <h2 className="text-lg font-semibold text-text">{onOpenLocal ? "Đăng nhập" : "Đăng nhập để bật dịch vụ"}</h2>
+              {!onOpenLocal && <p className="mt-1 text-xs leading-5 text-text-tertiary">
                 Tài khoản chỉ áp dụng cho các năng lực được quản lý của Wiii Service.
-              </p>
+              </p>}
             </div>
 
         {/* Issue #88: One-click local dev login. Visible only when running

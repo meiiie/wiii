@@ -32,6 +32,7 @@ import type {
   ProviderFilter,
 } from "./connect-types";
 import { ConnectionDetailPanel } from "./ConnectionDetailPanel";
+import { ProviderConnectionStatus } from "./ProviderConnectionStatus";
 import { StatusPill } from "./ConnectStatus";
 import {
   defaultActivationActionSlug,
@@ -471,10 +472,6 @@ export function ConnectionCatalog({
               <PlugZap size={16} className="text-text-secondary" aria-hidden="true" />
               <h2 className="text-sm font-semibold text-text">Ứng dụng và tài khoản</h2>
             </div>
-            <p className="mt-1 max-w-3xl text-sm text-text-secondary">
-              Chọn nơi Neko được phép làm việc. Mỗi kết nối cho biết rõ tài khoản,
-              quyền đang cấp, trạng thái sử dụng và cách ngắt quyền.
-            </p>
           </div>
           <StatusPill tone={providerRegistryLoaded || snapshot ? "ok" : "pending"}>
             {providerRegistryLoaded
@@ -503,14 +500,11 @@ export function ConnectionCatalog({
               aria-pressed={provider === item.id}
             >
               <span>{item.label}</span>
-              <span className="hidden text-xs font-normal text-text-tertiary sm:inline">
-                {item.hint}
-              </span>
             </button>
           ))}
         </div>
 
-        <div className="mt-4 grid gap-3 lg:grid-cols-[minmax(240px,420px)_1fr]">
+        <div className="mt-4 grid items-start gap-3 lg:grid-cols-[minmax(240px,420px)_1fr]">
           <label className="relative block">
             <span className="sr-only">Tìm kết nối</span>
             <Search
@@ -549,7 +543,7 @@ export function ConnectionCatalog({
         </div>
       </div>
 
-      <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(320px,420px)]">
+      <div className="grid items-start gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(320px,420px)]">
         <div className="grid gap-3 sm:grid-cols-2 2xl:grid-cols-3">
           {filteredCards.map((card) => {
             const Icon = card.icon;
@@ -566,7 +560,7 @@ export function ConnectionCatalog({
                 }`}
                 aria-pressed={selected}
               >
-                <div className="flex items-start justify-between gap-3">
+                <div className="flex flex-col items-start gap-3">
                   <div className="flex min-w-0 items-start gap-3">
                     <span className="grid h-10 w-10 shrink-0 place-items-center rounded-lg bg-surface-secondary text-text-secondary">
                       <Icon size={19} aria-hidden="true" />
@@ -574,28 +568,25 @@ export function ConnectionCatalog({
                     <div className="min-w-0">
                       <h3 className="truncate text-sm font-semibold text-text">{card.label}</h3>
                       <p className="mt-0.5 truncate text-xs text-text-tertiary">
-                        {card.providerLabel} · {card.categoryLabel}
+                        {card.categoryLabel}
                       </p>
                     </div>
                   </div>
-                  <StatusPill tone={card.tone}>{card.status}</StatusPill>
+                  <ProviderConnectionStatus card={card}
+                    readiness={providerReadinessStates[card.providerSlug]?.response}
+                    providerConnection={primaryProviderConnection(providerConnectionLists[card.providerSlug]?.response)}
+                    connectionList={providerConnectionLists[card.providerSlug]}
+                    authorizationDecision={authorizationDecisions[card.providerSlug]}
+                    authorizationLoading={authorizationLoadingSlug === card.providerSlug}
+                    authorizationError={authorizationErrors[card.providerSlug]}
+                    disconnectState={disconnectStates[card.providerSlug]} />
                 </div>
-                <p className="mt-3 line-clamp-2 text-sm text-text-secondary">
+                {card.description && <p className="mt-3 line-clamp-2 text-sm text-text-secondary">
                   {card.description}
-                </p>
-                <div className="mt-4 grid grid-cols-2 gap-2 text-xs">
-                  <div className="min-w-0 rounded-md bg-surface-secondary px-2 py-2">
-                    <div className="text-text-tertiary">Neko dùng được</div>
-                    <div className="mt-0.5 truncate font-medium text-text">
-                      {card.agentReady ? "Có" : "Chưa"}
-                    </div>
-                  </div>
-                  <div className="min-w-0 rounded-md bg-surface-secondary px-2 py-2">
-                    <div className="text-text-tertiary">Trạng thái</div>
-                    <div className="mt-0.5 truncate font-medium text-text">
-                      {externalControlLabel(card)}
-                    </div>
-                  </div>
+                </p>}
+                <div className="mt-4 flex items-center gap-2 text-xs text-text-secondary">
+                  <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${card.agentReady ? "bg-emerald-500" : "bg-zinc-400"}`} aria-hidden="true" />
+                  Neko · {externalControlLabel(card)}
                 </div>
               </button>
             );

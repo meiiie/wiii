@@ -4,6 +4,7 @@
  * the bordered secondary.
  */
 import { useId } from "react";
+import { ShieldCheck } from "lucide-react";
 import type { PermissionRequest } from "../drivers/types";
 import {
   buildPermissionPreview,
@@ -47,24 +48,25 @@ export function PermissionCard({
       data-testid="permission-card"
       aria-busy={busy}
     >
-      <p className="text-[11.5px] font-medium uppercase tracking-wide text-[var(--nk-warning)]">
-        Agent xin phép
+      <p className="flex items-center gap-2 text-[12px] font-medium text-[var(--nk-text-2)]">
+        <ShieldCheck aria-hidden="true" className="h-4 w-4 text-[var(--nk-warning)]" />
+        Cần bạn duyệt
       </p>
       <p className="mb-3 mt-1 text-[13px] text-[var(--nk-text)]">
         {permissionPreviewText(request.title) ?? "Yêu cầu quyền chưa có mô tả."}
       </p>
       <div className="mb-3 min-w-0 rounded-lg border border-[var(--nk-border)] px-3 py-2.5 text-[11.5px] leading-5 text-[var(--nk-text-2)]" data-testid="permission-preview">
         {preview.source === "missing" ? (
-          <p>Chưa có dữ liệu công cụ hoặc mục tiêu được liên kết cho yêu cầu này.</p>
+          <p>Chưa có thông tin thao tác.</p>
         ) : (
-          <dl className="v3-space-y-2">
+          <dl className="grid gap-2 sm:grid-cols-2">
             <div>
               <dt className="text-[var(--nk-text-3)]">{preview.toolName ? "Công cụ" : "Hoạt động"}</dt>
               <dd>{preview.toolName ?? preview.title ?? "Chưa được agent cung cấp."}</dd>
             </div>
             {preview.operation ? <div><dt className="text-[var(--nk-text-3)]">Thao tác</dt><dd>{preview.operation}</dd></div> : null}
             <div>
-              <dt className="text-[var(--nk-text-3)]">Mục tiêu agent cung cấp</dt>
+              <dt className="text-[var(--nk-text-3)]">Mục tiêu</dt>
               <dd>
                 {preview.targets.length ? (
                   <ul className="v3-space-y-1">
@@ -74,13 +76,13 @@ export function PermissionCard({
                       </li>
                     ))}
                   </ul>
-                ) : "Chưa có mục tiêu được cung cấp."}
+                ) : "Chưa có mục tiêu."}
               </dd>
             </div>
-            {preview.detail ? <div><dt className="text-[var(--nk-text-3)]">Chi tiết agent cung cấp</dt><dd className="whitespace-pre-wrap">{preview.detail}</dd></div> : null}
+            {preview.detail ? <div className="sm:col-span-2"><dt className="text-[var(--nk-text-3)]">Chi tiết</dt><dd className="whitespace-pre-wrap">{preview.detail}</dd></div> : null}
           </dl>
         )}
-        {previewTruncated ? <p className="mt-2 text-[var(--nk-text-3)]">Thông tin dài đã được rút gọn để xem trước.</p> : null}
+        {previewTruncated ? <p className="mt-2 text-[var(--nk-text-3)]">Bản xem trước đã rút gọn.</p> : null}
       </div>
       <div className="flex flex-wrap items-start gap-1.5">
         {rejects.map((option, index) => (

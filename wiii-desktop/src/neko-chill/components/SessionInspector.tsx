@@ -28,6 +28,7 @@ export function SessionInspector({
   const knowledgeError = useKnowledgeConnectionStore((state) => state.error);
   const connectKnowledge = useKnowledgeConnectionStore((state) => state.connect);
   const disconnectKnowledge = useKnowledgeConnectionStore((state) => state.disconnect);
+  const model = session.controls.find((option) => option.category === "model" && option.kind === "select");
   const controlsDisabled =
     session.status !== "idle" ||
     Boolean(session.pendingPermission) ||
@@ -77,7 +78,7 @@ export function SessionInspector({
             <div className="flex gap-2.5">
               <Bot aria-hidden="true" className="mt-0.5 h-3.5 w-3.5 shrink-0 text-[var(--nk-text-3)]" />
               <div className="min-w-0">
-                <dt className="text-[10px] uppercase tracking-wide text-[var(--nk-ghost)]">Harness / agent</dt>
+                <dt className="text-[10px] uppercase tracking-wide text-[var(--nk-ghost)]">Agent</dt>
                 <dd className="truncate text-[var(--nk-text-2)]">{session.agentName}</dd>
               </div>
             </div>
@@ -93,11 +94,11 @@ export function SessionInspector({
             <div className="flex gap-2.5">
               <HardDrive aria-hidden="true" className="mt-0.5 h-3.5 w-3.5 shrink-0 text-[var(--nk-text-3)]" />
               <div className="min-w-0">
-                <dt className="text-[10px] uppercase tracking-wide text-[var(--nk-ghost)]">Model / hồ sơ</dt>
+                <dt className="text-[10px] uppercase tracking-wide text-[var(--nk-ghost)]">Model</dt>
                 <dd className="text-[var(--nk-text-2)]">
-                  {session.launchProfile
-                    ? `${session.launchProfile.provider} · ${session.launchProfile.model ?? session.launchProfile.id}`
-                    : "Theo khả năng agent báo cáo"}
+                  {model
+                    ? currentLabel(model)
+                    : session.launchProfile?.model ?? "Mặc định của agent"}
                 </dd>
               </div>
             </div>
@@ -105,17 +106,17 @@ export function SessionInspector({
         </section>
 
         {session.execution ? (
-          <section className="mt-3 rounded-xl border border-[var(--nk-border)] bg-[var(--nk-composer)] p-3">
-            <h2 className="mb-2 flex items-center gap-1.5 text-[10.5px] font-semibold uppercase tracking-wide text-[var(--nk-text-3)]">
+          <details className="mt-3 rounded-xl border border-[var(--nk-border)] bg-[var(--nk-composer)] p-3">
+            <summary className="cursor-pointer text-[11px] font-medium text-[var(--nk-text-3)]">
               <BriefcaseBusiness aria-hidden="true" className="h-3 w-3" />
-              Công việc Wiii
-            </h2>
-            <dl className="v3-space-y-1.5 font-mono text-[10px] leading-4 text-[var(--nk-text-3)]">
+              Mã công việc
+            </summary>
+            <dl className="mt-2 v3-space-y-1.5 font-mono text-[10px] leading-4 text-[var(--nk-text-3)]">
               <div className="flex justify-between gap-2"><dt>Mã task</dt><dd className="truncate">{session.execution.taskId}</dd></div>
               <div className="flex justify-between gap-2"><dt>Mã run</dt><dd className="truncate">{session.execution.runId}</dd></div>
               <div className="flex justify-between gap-2"><dt>Môi trường</dt><dd className="truncate">{session.execution.environmentId}</dd></div>
             </dl>
-          </section>
+          </details>
         ) : null}
 
         <ExecutionReceiptCard session={session} />
@@ -145,12 +146,12 @@ export function SessionInspector({
               <strong className="block text-[11.5px] font-medium text-[var(--nk-text-2)]">Wiii Knowledge</strong>
               <small className="block text-[10px] leading-4 text-[var(--nk-ghost)]">
                 {knowledgeStatus === "ready"
-                  ? "Đang đưa RAG có nguồn vào lượt nhắn"
+                  ? "Đã kết nối"
                   : knowledgeStatus === "connecting"
                     ? "Đang kiểm tra Wiii Service…"
                     : knowledgeStatus === "degraded"
                       ? knowledgeError ?? "Kết nối đang gián đoạn"
-                      : "Tắt · agent vẫn hoạt động độc lập"}
+                      : "Chưa kết nối"}
               </small>
             </span>
             {knowledgeStatus === "connecting" ? <LoaderCircle aria-hidden="true" className="h-3.5 w-3.5 animate-spin" /> : null}
@@ -193,12 +194,11 @@ export function SessionInspector({
             </div>
           ) : session.launchProfile ? (
             <p className="text-[11px] leading-4 text-[var(--nk-text-3)]">
-              Model được khóa khi Neko khởi động bằng profile <strong>{session.launchProfile.id}</strong>.
               Tạo phiên mới để chọn model khác.
             </p>
           ) : (
             <p className="text-[11px] leading-4 text-[var(--nk-text-3)]">
-              Agent chưa báo cáo điều khiển nào cho phiên này.
+              Không có tùy chỉnh.
             </p>
           )}
         </section>
@@ -226,14 +226,11 @@ export function SessionInspector({
             </ul>
           ) : (
             <p className="text-[11px] leading-4 text-[var(--nk-text-3)]">
-              Agent này chưa công bố slash command qua ACP.
+              Chưa có lệnh.
             </p>
           )}
         </section>
       </div>
-      <footer className="border-t border-[var(--nk-border)] px-3.5 py-2.5 text-[10px] leading-4 text-[var(--nk-ghost)]">
-        Transcript lưu trên máy. Phiên khôi phục có thể dùng runtime mới nếu agent không hỗ trợ resume.
-      </footer>
     </aside>
   );
 }
