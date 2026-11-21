@@ -117,6 +117,53 @@
 }
 .nk-project-home {
   container: project-home / inline-size;
+  justify-content: safe center;
+}
+.nk-home-action {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  min-height: 100px;
+  padding: 20px;
+  border: 1px solid var(--nk-border-strong);
+  border-radius: 16px;
+  background: var(--nk-composer);
+  text-align: left;
+  transition: border-color 120ms ease, background-color 120ms ease;
+}
+.nk-home-action:hover:not(:disabled) {
+  border-color: var(--nk-accent);
+  background: var(--nk-overlay);
+}
+.nk-home-action:disabled { opacity: 0.6; cursor: wait; }
+.nk-home-action-icon {
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  width: 40px;
+  height: 40px;
+  border-radius: 12px;
+  background: var(--nk-raised);
+  color: var(--nk-accent);
+}
+.nk-project-shortcut {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+  padding: 14px;
+  border: 1px solid var(--nk-border);
+  border-radius: 12px;
+  text-align: left;
+}
+.nk-project-shortcut:hover { background: var(--nk-overlay); }
+.nk-agent-details > summary::-webkit-details-marker { display: none; }
+.nk-agent-details[open] > summary .nk-details-chevron { transform: rotate(180deg); }
+.nk-agent-details > summary:hover { color: var(--nk-text); }
+.nk-agent-details > summary:focus-visible {
+  outline: 2px solid var(--nk-accent);
+  outline-offset: 2px;
+  border-radius: 6px;
 }
 .nk-root .wiii-titlebar {
   background: var(--nk-sidebar);
@@ -249,9 +296,6 @@
   }
   .nk-project-heading {
     font-size: 24px;
-  }
-  .nk-project-local-badge {
-    display: none;
   }
 }
 @container workspace-pane (max-width: 560px) {

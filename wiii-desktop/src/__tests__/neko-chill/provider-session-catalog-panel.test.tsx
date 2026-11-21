@@ -92,7 +92,7 @@ describe("unified session catalog panel", () => {
     expect(screen.getByText("Session 1")).toBeTruthy();
     expect(screen.queryByText("Managed auth work")).toBeNull();
 
-    fireEvent.click(screen.getByRole("button", { name: "Harness" }));
+    fireEvent.click(screen.getByRole("button", { name: "Agent" }));
     expect(screen.getAllByText("Codex").length).toBeGreaterThan(0);
     expect(screen.getAllByText("Claude Code").length).toBeGreaterThan(0);
   });

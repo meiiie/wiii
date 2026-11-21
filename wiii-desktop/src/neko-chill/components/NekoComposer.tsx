@@ -410,7 +410,7 @@ function NekoComposerComponent({
             ref={textareaRef}
             className="max-h-44 min-h-[48px] w-full resize-none bg-transparent px-1 pt-0.5 text-[13.5px] leading-[20px] text-[var(--nk-text)] placeholder:text-[var(--nk-ghost)] focus:v3-outline-none"
             rows={Math.min(draft.split("\n").length || 1, 6)}
-            placeholder={session.workspace ? "Nhắn cho agent… Gõ / để xem lệnh" : "Gắn dự án trước khi nhắn…"}
+            placeholder={session.workspace ? `Nhắn cho ${session.agentName}…` : "Chọn thư mục để bắt đầu…"}
             value={draft}
             disabled={!session.workspace}
             readOnly={draftReadOnly}

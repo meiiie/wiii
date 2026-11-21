@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useRef } from "react";
 import { useShallow } from "zustand/react/shallow";
-import { AlertCircle, Bot, Plus, Radio } from "lucide-react";
+import { ArrowUpRight, Bot, ChevronDown, Folder, FolderPlus, LoaderCircle, MessageSquare, Plus, Settings2 } from "lucide-react";
+import { WiiiMark } from "@/components/common/WiiiMark";
+import type { NekoProject } from "../stores/neko-project-store";
 import type { NekoProviderSessionCatalog, NekoProviderSessionRecord } from "@/neko/contracts";
 import { findProviderDefinition } from "@/neko/provider-registry";
 import { useNekoAgentStore, type DetectedAgent } from "../stores/neko-agent-store";
@@ -74,7 +76,7 @@ function harnessDetail(summary: HarnessSummary): string {
   if (summary.found && summary.bundled) return `Đi kèm Wiii · ${summary.version ?? "đã xác minh"}`;
   if (summary.found) return summary.version ? `Đã phát hiện · ${summary.version}` : "Đã phát hiện";
   if (summary.found === null) return "Chưa kiểm tra trên máy này";
-  if (summary.availability === "probe_failed") return "Chưa kiểm tra được · không có nghĩa là chưa cài";
+  if (summary.availability === "probe_failed") return "Kiểm tra bị gián đoạn";
   if (summary.availability === "host_unsupported") return "Wiii chưa hỗ trợ chạy trên hệ điều hành này";
   return "Chưa tìm thấy trên máy này";
 }
@@ -85,6 +87,11 @@ export function NekoOverview({
   providerCatalogs,
   discoveryLoading,
   projectCount = 0,
+  projects = [],
+  onOpenProject,
+  onQuickChat,
+  quickChatPending = false,
+  quickChatError,
   onNewSession,
   onCreateProject,
   onOpenSession,
@@ -97,6 +104,11 @@ export function NekoOverview({
   providerCatalogs: NekoProviderSessionCatalog[];
   discoveryLoading: boolean;
   projectCount?: number;
+  projects?: NekoProject[];
+  onOpenProject?: (projectId: string) => void;
+  onQuickChat?: () => void;
+  quickChatPending?: boolean;
+  quickChatError?: string | null;
   onNewSession: () => void;
   onCreateProject?: () => void;
   onOpenSession: (sessionId: string) => void;
@@ -105,8 +117,10 @@ export function NekoOverview({
   harnessFocusRequest?: number;
 }) {
   const harnessHeading = useRef<HTMLHeadingElement>(null);
+  const harnessDetails = useRef<HTMLDetailsElement>(null);
   useEffect(() => {
     if (!harnessFocusRequest) return;
+    if (harnessDetails.current) harnessDetails.current.open = true;
     harnessHeading.current?.scrollIntoView?.({ block: "start" });
     harnessHeading.current?.focus({ preventScroll: true });
   }, [harnessFocusRequest]);
@@ -134,52 +148,45 @@ export function NekoOverview({
   );
   const working = sessions.filter((session) => deriveSessionPresentation(session).state === "working").length;
   const attention = sessions.filter((session) => deriveSessionPresentation(session).state === "needs-attention").length;
+  const recentProjects = useMemo(() => projects
+    .filter((project) => project.roots[0]?.kind !== "scratch")
+    .sort((left, right) => right.updatedAt - left.updatedAt)
+    .slice(0, 4), [projects]);
 
   return (
     <main className="min-w-0 flex-1 overflow-y-auto" data-testid="neko-overview">
-      <div className="mx-auto w-full max-w-[1080px] px-5 pb-10 pt-6">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div className="min-w-0">
-            <h1 className="text-[17px] font-medium tracking-[-0.01em] text-[var(--nk-text)]">
-              Phiên trên máy
-            </h1>
-            <p className="mt-0.5 max-w-[520px] text-[12px] leading-4 text-[var(--nk-text-3)]">
-              Theo Project · tiếp tục phiên đã lưu · quản lý harness
-            </p>
-            {projectCount === 0 ? (
-              <p className="mt-1.5 max-w-[520px] text-[11.5px] leading-4 text-[var(--nk-text-3)]" data-testid="overview-project-required-hint">
-                Cần tạo Project trước — mỗi phiên thuộc một Project có thư mục nguồn.
-              </p>
-            ) : null}
+      <div className="mx-auto w-full max-w-[960px] px-6 pb-10 pt-10 sm:px-10">
+        <div className="nk-home-welcome">
+          <WiiiMark size={48} />
+          <h1 className="mt-5 text-[30px] font-medium leading-tight tracking-[-0.035em] text-[var(--nk-text)]">Cùng bắt tay vào việc.</h1>
+          <div className="mt-7 grid gap-3 sm:grid-cols-2">
+            <button type="button" className="nk-home-action" onClick={onQuickChat ?? onNewSession} disabled={quickChatPending} data-testid="overview-quick-chat">
+              <span className="nk-home-action-icon">{quickChatPending ? <LoaderCircle aria-hidden="true" size={20} className="animate-spin motion-reduce:animate-none" /> : <MessageSquare aria-hidden="true" size={20} />}</span>
+              <span className="min-w-0 flex-1"><strong className="block text-[14px] font-medium">{quickChatPending ? "Đang mở chat…" : "Chat mới"}</strong><span className="mt-1 block text-[12px] text-[var(--nk-text-3)]">Bắt đầu với một ý tưởng</span></span>
+              <ArrowUpRight aria-hidden="true" size={16} className="text-[var(--nk-text-3)]" />
+            </button>
+            <button type="button" className="nk-home-action" onClick={projectCount === 0 ? onCreateProject ?? onNewSession : onNewSession} data-testid={projectCount === 0 ? "overview-create-first-project" : "overview-new-session"}>
+              <span className="nk-home-action-icon"><FolderPlus aria-hidden="true" size={20} /></span>
+              <span className="min-w-0 flex-1"><strong className="block text-[14px] font-medium">{projectCount === 0 ? "Tạo Project" : "Chat trong dự án"}</strong><span className="mt-1 block text-[12px] text-[var(--nk-text-3)]">Làm việc cùng mã nguồn của bạn</span></span>
+              <ArrowUpRight aria-hidden="true" size={16} className="text-[var(--nk-text-3)]" />
+            </button>
           </div>
-          {projectCount === 0 && onCreateProject ? (
-            <button type="button" className="inline-flex h-8 shrink-0 items-center gap-1.5 rounded-lg bg-[var(--nk-inverse)] px-3 text-[12px] font-medium text-[var(--nk-on-inverse)] transition-opacity hover:opacity-90" onClick={onCreateProject} data-testid="overview-create-first-project">
-              <Plus aria-hidden="true" className="h-3.5 w-3.5" /> Tạo Project
-            </button>
-          ) : (
-            <button type="button" className="inline-flex h-8 shrink-0 items-center gap-1.5 rounded-lg bg-[var(--nk-inverse)] px-3 text-[12px] font-medium text-[var(--nk-on-inverse)] transition-opacity hover:opacity-90" onClick={onNewSession} data-testid="overview-new-session">
-              <Plus aria-hidden="true" className="h-3.5 w-3.5" /> Phiên mới
-            </button>
-          )}
+          {quickChatError ? <p role="alert" className="mt-3 text-[12px] text-[var(--nk-danger)]">{quickChatError}</p> : null}
         </div>
 
-        <div className="mt-4 grid grid-cols-3 gap-1.5" aria-label="Tổng quan phiên">
-          {[
-            { label: "Tổng phiên", value: sessions.length + discoveredSessions.length, icon: Bot },
-            { label: "Đang chạy", value: working, icon: Radio },
-            { label: "Cần bạn", value: attention, icon: AlertCircle },
-          ].map((item) => {
-            const Icon = item.icon;
-            return (
-              <div key={item.label} className="rounded-lg border border-[var(--nk-border)] bg-[var(--nk-composer)] px-3 py-2">
-                <div className="flex items-center justify-between text-[10.5px] text-[var(--nk-text-3)]">{item.label}<Icon aria-hidden="true" className="h-3 w-3" /></div>
-                <strong className="mt-0.5 block text-[18px] font-medium tabular-nums leading-none text-[var(--nk-text)]">{item.value}</strong>
-              </div>
-            );
-          })}
-        </div>
+        {recentProjects.length && onOpenProject ? <section className="mt-9" aria-label="Dự án gần đây">
+          <div className="mb-3 flex items-center justify-between"><h2 className="text-[12px] font-medium text-[var(--nk-text-3)]">Dự án của bạn</h2><button type="button" onClick={onCreateProject} className="nk-chrome-button inline-flex items-center gap-1 rounded-md px-2 py-1 text-[11px] text-[var(--nk-text-2)]"><Plus size={13} aria-hidden="true" />Tạo Project</button></div>
+          <div className="grid gap-2 sm:grid-cols-2">{recentProjects.map((project) => <button key={project.id} type="button" className="nk-project-shortcut" onClick={() => onOpenProject(project.id)}>
+            <Folder size={17} aria-hidden="true" className="shrink-0 text-[var(--nk-text-3)]" /><span className="min-w-0 flex-1"><strong className="block truncate text-[12.5px] font-medium">{project.name}</strong><span className="mt-0.5 block truncate text-[11px] text-[var(--nk-text-3)]">{project.roots[0]?.path}</span></span><ArrowUpRight size={14} aria-hidden="true" className="shrink-0 text-[var(--nk-text-3)]" />
+          </button>)}</div>
+        </section> : null}
 
-        <ProviderSessionCatalogPanel
+        {working || attention ? <div className="mt-6 flex flex-wrap gap-4 text-[12px] text-[var(--nk-text-2)]" aria-label="Tổng quan phiên">
+          {working ? <span className="inline-flex items-center gap-2"><span aria-hidden="true" className="h-1.5 w-1.5 rounded-full bg-[var(--nk-success)]" />{working} đang chạy</span> : null}
+          {attention ? <span className="inline-flex items-center gap-2 text-[var(--nk-warning)]"><span aria-hidden="true" className="h-1.5 w-1.5 rounded-full bg-current" />{attention} cần bạn</span> : null}
+        </div> : null}
+
+        {sessions.length || discoveredSessions.length || discoveryLoading ? <ProviderSessionCatalogPanel
           managedSessions={sessions}
           providerSessions={discoveredSessions}
           providerCatalogs={providerCatalogs}
@@ -188,13 +195,14 @@ export function NekoOverview({
           onRefresh={onRefreshDiscovery}
           onOpenManaged={onOpenSession}
           onImportProvider={onImportProviderSession}
-        />
+        /> : null}
 
-        <section className="mt-4 rounded-2xl border border-[var(--nk-border)] bg-[var(--nk-composer)] p-2">
+        <details ref={harnessDetails} className="nk-agent-details mt-7 border-t border-[var(--nk-border)]" data-testid="overview-agent-details">
+          <summary className="flex cursor-pointer list-none items-center gap-2 py-4 text-[12px] text-[var(--nk-text-3)]"><Settings2 size={15} aria-hidden="true" /><span className="flex-1">Agent & cấu hình</span><span className="text-[11px]">{agentLoading ? "Đang kiểm tra…" : availableAgent ? `${availableAgent.name} · Sẵn sàng` : "Cần thiết lập"}</span><ChevronDown size={14} aria-hidden="true" className="nk-details-chevron" /></summary>
+          <section className="rounded-xl border border-[var(--nk-border)] bg-[var(--nk-composer)] p-2">
           <div className="flex flex-wrap items-end justify-between gap-3 px-3 pb-2 pt-1.5">
             <div>
-              <h2 ref={harnessHeading} tabIndex={-1} id="neko-harness-management" className="scroll-mt-6 rounded text-[13px] font-medium text-[var(--nk-text)]">Quản lý harness</h2>
-              <p className="mt-0.5 text-[11.5px] text-[var(--nk-text-3)]">Neko Core là agent mặc định. Trạng thái dưới đây dựa trên kiểm tra runtime thực tế.</p>
+              <h2 ref={harnessHeading} tabIndex={-1} id="neko-harness-management" className="scroll-mt-6 rounded text-[13px] font-medium text-[var(--nk-text)]">Quản lý agent</h2>
             </div>
             <button type="button" disabled={agentLoading}
               className="rounded-md border border-[var(--nk-border)] px-3 py-1.5 text-[11.5px] text-[var(--nk-text-2)] hover:bg-[var(--nk-overlay)] disabled:opacity-50"
@@ -237,12 +245,11 @@ export function NekoOverview({
                 ) : (
                   <p>Bản Neko cài riêng do bạn quản lý. Wiii không tự tải, cập nhật hoặc gỡ bản cài riêng. Kiểm tra chỉ đọc phiên bản, không đăng nhập hay chạy công việc.</p>
                 )}
-                <p>Neko có bản Windows, macOS và Linux. Khả năng chạy trong Wiii còn phụ thuộc hỗ trợ của từng hệ điều hành; cài Neko không tự bổ sung hỗ trợ đó.</p>
-                <p>Với bản Neko cài riêng, hãy dùng công cụ cài đặt của bản đó sau khi kết thúc các phiên. Thư mục runtime đi kèm không chứa tài khoản hay lịch sử của bạn; giữ nguyên dữ liệu người dùng khi sửa bộ cài.</p>
               </div>
             </details>
           </div>
         </section>
+        </details>
       </div>
     </main>
   );

@@ -114,7 +114,7 @@ describe("Neko Chill shell UI", () => {
     await act(async () => fireEvent.click(screen.getByRole("button", { name: "Chat mới", exact: true })));
     expect(createQuickChatWorkspace).toHaveBeenCalledOnce();
     expect(await screen.findByRole("heading", { name: "Bạn muốn trao đổi điều gì?" })).toBeTruthy();
-    expect(await screen.findByText(/không phải sandbox/)).toBeTruthy();
+    expect(await screen.findByText("Thư mục riêng")).toBeTruthy();
     expect(create).not.toHaveBeenCalled();
     expect(useNekoProjectStore.getState().projects[0]?.roots[0]?.kind).toBe("scratch");
     useNekoSessionStore.setState({ createSession: originalCreate });
@@ -463,7 +463,7 @@ describe("Neko Chill shell UI", () => {
     useNekoSessionStore.setState({ createSession, sendPromptToSession });
 
     render(<NekoChillApp />);
-    expect(screen.getByRole("heading", { name: "Phiên trên máy" })).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "Cùng bắt tay vào việc." })).toBeTruthy();
     expect(screen.getByTestId("neko-overview-link").getAttribute("aria-current")).toBe("page");
     fireEvent.click(screen.getByTestId("new-session"));
     expect(screen.getByTestId("project-home")).toBeTruthy();
@@ -477,7 +477,7 @@ describe("Neko Chill shell UI", () => {
     expect(workspaceToggle.getAttribute("aria-pressed")).toBe("true");
     expect(screen.getByRole("navigation", { name: "Công cụ Project" })).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Đóng workspace" }));
-    expect(screen.getByText(/Bạn muốn làm gì trong/).textContent).toContain("Wiii");
+    expect(screen.getByText(/Cùng làm việc với/).textContent).toContain("Wiii");
     await vi.waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
     expect(screen.queryByTestId("neko-overview")).toBeNull();
     expect(createSession).not.toHaveBeenCalled();
@@ -574,18 +574,17 @@ describe("Neko Chill shell UI", () => {
 
     render(<NekoChillApp />);
 
-    expect(screen.getByRole("heading", { name: "Phiên trên máy" })).toBeTruthy();
-    expect(within(screen.getByLabelText("Tổng quan phiên")).getByText("3")).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "Cùng bắt tay vào việc." })).toBeTruthy();
     expect(await screen.findByRole("button", { name: "Wiii 2" })).toBeTruthy();
     expect(await screen.findByRole("button", { name: "neko-video-cut 1" })).toBeTruthy();
 
     const overview = screen.getByTestId("neko-overview");
-    fireEvent.click(within(overview).getByRole("button", { name: "Harness" }));
+    fireEvent.click(within(overview).getByRole("button", { name: "Agent" }));
 
     expect(within(overview).getAllByText("Codex").length).toBeGreaterThan(0);
     expect(within(overview).getAllByText("Neko Core").length).toBeGreaterThan(0);
     expect(within(overview).getAllByText("neko-video-cut").length).toBeGreaterThan(0);
-    expect(within(overview).getByText(/3 phiên · 3 do Wiii quản lý/i)).toBeTruthy();
+    expect(within(overview).getByText("3 phiên")).toBeTruthy();
   });
 
   it("groups every persisted session and searches all local history from Ctrl+K", () => {
@@ -615,7 +614,7 @@ describe("Neko Chill shell UI", () => {
 
     expect(screen.getAllByText("Project Alpha").length).toBeGreaterThan(0);
     expect(screen.getAllByText("Project Beta").length).toBeGreaterThan(0);
-    expect(screen.getByText("Chat riêng và phiên chưa gắn dự án")).toBeTruthy();
+    expect(screen.getByText("Chat riêng")).toBeTruthy();
     expect(screen.getAllByRole("button", { name: "Mở phiên Kiểm tra bản đồ" })).toHaveLength(2);
     expect(screen.getByRole("button", { name: "Xoá phiên Phiên cũ" })).toBeTruthy();
 
@@ -1225,9 +1224,9 @@ describe("Neko Chill shell UI", () => {
     render(<NekoChillApp />);
     fireEvent.click(screen.getByTestId("new-session"));
     expect(screen.queryByRole("alert")).toBeNull();
-    fireEvent.click(screen.getByRole("button", { name: "Quản lý harness" }));
-    expect(document.activeElement).toBe(screen.getByRole("heading", { name: "Quản lý harness" }));
-    expect(screen.getByRole("alert").textContent).toContain("Chưa kiểm tra được agent trên máy");
+    fireEvent.click(screen.getByRole("button", { name: "Thiết lập agent" }));
+    expect(document.activeElement).toBe(screen.getByRole("heading", { name: "Quản lý agent" }));
+    expect(screen.getByRole("alert").textContent).toContain("Chưa kiểm tra được agent");
     fireEvent.click(screen.getByText("Chi tiết kiểm tra"));
     expect(screen.getByText(/journal unavailable/).closest("details")?.open).toBe(true);
     expect(screen.queryByText(/Đang dò agent/i)).toBeNull();

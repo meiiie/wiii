@@ -7,7 +7,6 @@ import {
   Folder,
   LoaderCircle,
   MoreHorizontal,
-  ShieldCheck,
 } from "lucide-react";
 import { ChillCatalogPicker, type ChillCatalogItem } from "./ChillCatalogPicker";
 import { WiiiMark } from "@/components/common/WiiiMark";
@@ -429,16 +428,14 @@ export function ProjectHome({
       data-testid="project-home"
       aria-labelledby="project-home-title"
     >
-      <div className="nk-project-hero flex min-h-[360px] flex-[1_0_auto] flex-col items-center justify-center px-8 py-10">
-        <div className="grid h-12 w-12 place-items-center rounded-2xl bg-[var(--nk-raised)] shadow-[0_10px_35px_rgba(49,43,36,0.08)]">
-          <WiiiMark size={29} />
-        </div>
+      <div className="nk-project-hero flex shrink-0 flex-col items-center justify-center px-8 pb-7 pt-10">
+        <WiiiMark size={48} />
         <div className="mt-5 flex max-w-[760px] items-center gap-2">
           <h1
             id="project-home-title"
             className="nk-project-heading min-w-0 wrap-break-word text-center text-[28px] font-medium leading-tight tracking-[-0.035em] text-[var(--nk-text)]"
           >
-            {quickChat ? "Bạn muốn trao đổi điều gì?" : <>Bạn muốn làm gì trong <span className="underline decoration-[var(--nk-border-strong)] decoration-dotted underline-offset-4">{project.name}</span>?</>}
+            {quickChat ? "Bạn đang nghĩ gì?" : <>Cùng làm việc với <span>{project.name}</span></>}
           </h1>
           {onEditProject ? <button
             type="button"
@@ -449,37 +446,14 @@ export function ProjectHome({
             <MoreHorizontal aria-hidden="true" className="h-4 w-4" />
           </button> : null}
         </div>
-        {quickChat && <p className="mt-3 max-w-lg px-4 text-center text-[12px] leading-5 text-[var(--nk-text-2)]">Chat này dùng một thư mục trống riêng của Wiii, không gắn mã nguồn dự án. Đây là thư mục làm việc, không phải sandbox; các quyền của agent vẫn áp dụng.</p>}
-        {!taskLaunch && !quickChat ? (
-          <div
-            className="mt-5 flex max-w-[560px] flex-wrap justify-center gap-2"
-            data-testid="project-home-starters"
-            aria-label="Gợi ý bắt đầu"
-          >
-            {NEKO_STARTER_PROMPTS.map((starter) => (
-              <button
-                key={starter.label}
-                type="button"
-                aria-label={`Chèn gợi ý ${starter.label}`}
-                className="rounded-xl border border-[var(--nk-border)] bg-[var(--nk-composer)] px-3 py-2 text-[12px] text-[var(--nk-text-2)] transition-colors hover:border-[var(--nk-border-strong)] hover:bg-[var(--nk-raised)] hover:text-[var(--nk-text)]"
-                onClick={() => {
-                  setDraft(starter.prompt);
-                  textareaRef.current?.focus();
-                }}
-              >
-                {starter.label}
-              </button>
-            ))}
-          </div>
-        ) : null}
       </div>
 
       <div className="shrink-0 px-5 pb-5">
-        <div className="mx-auto w-full max-w-[900px]">
+        <div className="mx-auto w-full max-w-[720px]">
           {!selectedAgent && <div className="mb-2 flex flex-wrap items-center gap-x-3 gap-y-1 px-3 text-[11.5px] text-[var(--nk-text-3)]">
-            <span role="status">{isLoading ? "Đang kiểm tra harness…" : "Harness đã chọn chưa sẵn sàng. Bản nháp vẫn được giữ."}</span>
+            <span role="status">{isLoading ? "Đang kiểm tra agent…" : "Agent chưa sẵn sàng"}</span>
             {onManageHarness && <button type="button" className="rounded underline underline-offset-4 hover:text-[var(--nk-text)]"
-              onClick={onManageHarness}>Quản lý harness</button>}
+              onClick={onManageHarness}>Thiết lập agent</button>}
           </div>}
           {error ? (
             <div role="alert" className="mb-2 rounded-xl bg-[var(--nk-danger-soft)] px-3 py-2 text-[10.5px] leading-4 text-[var(--nk-danger)]">
@@ -499,15 +473,13 @@ export function ProjectHome({
             </div>
           ) : null}
 
-          {selectedAgent?.id === "neko" && !isLoading && !discoveryError && (profileLoading || profileError || profiles.length === 0) ? (
+          {selectedAgent?.id === "neko" && !isLoading && !discoveryError && (profileLoading || profileError) ? (
             <div className="mb-3 px-3 text-[12px] leading-5 text-[var(--nk-text-2)]" role={profileError ? "alert" : "status"}>
-              <p>{profileLoading ? "Đang đọc cấu hình Neko Core…" : profileError
-                ? "Chưa đọc được cấu hình Neko Core. Bản nháp vẫn được giữ lại."
-                : "Neko Core đã được tìm thấy. Không có profile riêng để chọn; phiên sẽ dùng cấu hình mặc định của Neko."}</p>
+              <p>{profileLoading ? "Đang đọc cấu hình…" : "Chưa đọc được cấu hình Neko Core"}</p>
               {!profileLoading && <details className="mt-1">
                 <summary className="cursor-pointer">{profileError ? "Chi tiết lỗi" : "Cấu hình tài khoản / model"}</summary>
                 {profileError && <p className="mt-1 wrap-break-word text-[var(--nk-text-3)]">{profileError}</p>}
-                <p>Mở Neko Core và dùng <code>/login</code> để đăng nhập, hoặc cấu hình model cục bộ trong Neko. Wiii không yêu cầu tài khoản Wiii Service.</p>
+                <p>Mở Neko Core, dùng <code>/login</code> hoặc chọn model rồi thử lại.</p>
               </details>}
               {!profileLoading && <button type="button" className="mt-1 font-medium underline underline-offset-4"
                 onClick={() => setProfileAttempt((value) => value + 1)}>Đọc lại cấu hình Neko Core</button>}
@@ -527,7 +499,7 @@ export function ProjectHome({
             >
               <Folder aria-hidden="true" className="h-3.5 w-3.5 shrink-0 text-[var(--nk-text-3)]" />
               <span className="min-w-0">
-                <strong className="block truncate text-[11.5px] font-medium text-[var(--nk-text-2)]">{project.name}</strong>
+                <strong className="block truncate text-[11.5px] font-medium text-[var(--nk-text-2)]">{quickChat ? "Thư mục riêng" : project.name}</strong>
               </span>
             </button>
 
@@ -560,9 +532,6 @@ export function ProjectHome({
               </span>
             </div>
 
-            <span className="nk-project-local-badge shrink-0 text-[11px] text-[var(--nk-text-3)]">
-              Trên máy
-            </span>
           </div>
 
           <div className="nk-project-composer relative rounded-2xl border border-[var(--nk-border-strong)] bg-[var(--nk-composer)] p-3 shadow-[0_6px_24px_rgba(38,33,28,0.05)]">
@@ -573,7 +542,7 @@ export function ProjectHome({
               readOnly={Boolean(taskLaunch)}
               disabled={starting}
               className="max-h-44 min-h-[62px] w-full resize-none bg-transparent px-1 text-[13.5px] leading-5 text-[var(--nk-text)] v3-outline-none placeholder:text-[var(--nk-ghost)]"
-              placeholder="Bạn muốn thực hiện việc gì trong dự án này?"
+              placeholder={quickChat ? "Nhắn cho Neko…" : "Mô tả việc bạn muốn làm…"}
               aria-label="Lời nhắn đầu tiên"
               data-testid="project-home-input"
               onChange={(event) => setDraft(event.target.value)}
@@ -661,15 +630,22 @@ export function ProjectHome({
           </div>
 
           <p className="mt-3 flex flex-wrap items-center justify-center gap-x-3 gap-y-1 text-[11px] text-[var(--nk-text-3)]">
-            <span className="inline-flex items-center gap-1.5">
-              <ShieldCheck aria-hidden="true" className="h-3 w-3" />
-              Thư mục đã chọn là ngữ cảnh làm việc của phiên.
-            </span>
             <span className="inline-flex items-center gap-2 text-[10px] text-[var(--nk-ghost)]" aria-hidden="true">
               <span><kbd className="rounded border border-[var(--nk-border)] bg-[var(--nk-raised)] px-1 py-px text-[9.5px]">Enter</kbd> gửi</span>
               <span><kbd className="rounded border border-[var(--nk-border)] bg-[var(--nk-raised)] px-1 py-px text-[9.5px]">Shift+Enter</kbd> xuống dòng</span>
             </span>
           </p>
+          {!taskLaunch && !quickChat ? (
+            <div className="mt-6 flex flex-wrap justify-center gap-2" data-testid="project-home-starters" aria-label="Gợi ý bắt đầu">
+              {NEKO_STARTER_PROMPTS.map((starter) => (
+                <button key={starter.label} type="button" aria-label={`Chèn gợi ý ${starter.label}`}
+                  className="rounded-lg border border-[var(--nk-border)] px-3 py-2 text-[12px] text-[var(--nk-text-2)] transition-colors hover:bg-[var(--nk-overlay)] hover:text-[var(--nk-text)]"
+                  onClick={() => { setDraft(starter.prompt); textareaRef.current?.focus(); }}>
+                  {starter.label}
+                </button>
+              ))}
+            </div>
+          ) : null}
         </div>
       </div>
     </main>

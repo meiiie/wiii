@@ -203,7 +203,6 @@ export const SessionSidebar = memo(function SessionSidebar({
         >
           <PlugZap aria-hidden="true" className="h-3.5 w-3.5 text-[var(--nk-text-3)]" />
           Kết nối
-          <span className="ml-auto text-[9.5px] font-normal text-[var(--nk-ghost)]">Tài khoản</span>
         </button>
         {onQuickChat && <button type="button" onClick={onQuickChat} disabled={quickChatPending}
           className="mt-2 flex min-h-9 w-full items-center gap-2 rounded-lg bg-[var(--nk-inverse)] px-2.5 text-[12.5px] font-medium text-[var(--nk-on-inverse)] disabled:opacity-60"
@@ -267,11 +266,11 @@ export const SessionSidebar = memo(function SessionSidebar({
           ) : (
             <div className="px-2.5 py-3" data-testid="empty-projects-cta">
               <p className="text-[12px] leading-5 text-[var(--nk-text-3)]">
-                Chưa có Project. Tạo Project đầu tiên để gắn thư mục nguồn — rồi mới mở Phiên mới.
+                Chưa có dự án
               </p>
               <button
                 type="button"
-                className="mt-2.5 inline-flex h-8 w-full items-center justify-center gap-1.5 rounded-lg bg-[var(--nk-inverse)] px-3 text-[12px] font-medium text-[var(--nk-on-inverse)] transition-opacity hover:opacity-90"
+                className="mt-2.5 inline-flex h-8 w-full items-center justify-center gap-1.5 rounded-lg border border-[var(--nk-border-strong)] px-3 text-[12px] font-medium text-[var(--nk-text-2)] hover:bg-[var(--nk-overlay)]"
                 onClick={onCreateProject}
                 data-testid="create-first-project"
               >
@@ -356,7 +355,7 @@ export const SessionSidebar = memo(function SessionSidebar({
               <section>
                 <div className="flex h-8 items-center gap-2 px-2 text-[12px] text-[var(--nk-text-3)]">
                   <History aria-hidden="true" className="h-3.5 w-3.5" />
-                  <span className="min-w-0 flex-1 truncate">Chat riêng và phiên chưa gắn dự án</span>
+                  <span className="min-w-0 flex-1 truncate">Chat riêng</span>
                   <span className="text-[9.5px] tabular-nums text-[var(--nk-ghost)]">{legacySessions.length}</span>
                 </div>
                 {legacySessions.slice(0, searching ? 50 : 6).map((session) => renderSession(session, null))}
