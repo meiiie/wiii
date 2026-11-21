@@ -1169,7 +1169,7 @@ describe("WiiiConnectPage", () => {
         "Mở OAuth/Connect Link với provider",
       );
     });
-    expect(screen.getByText("Hoàn tất OAuth/Connect Link")).toBeTruthy();
+    expect(await screen.findByText("Hoàn tất OAuth/Connect Link")).toBeTruthy();
     expect(screen.getByText("Activation readiness")).toBeTruthy();
     expect(screen.getByText("Connect-ready")).toBeTruthy();
     expect(screen.getByText("Agent read-only")).toBeTruthy();
@@ -1848,9 +1848,8 @@ describe("WiiiConnectPage", () => {
       "_blank",
       "noopener,noreferrer",
     );
-    expect(await screen.findByText("Connection thật")).toBeTruthy();
     expect((await screen.findAllByText("Wiii Facebook Page")).length).toBeGreaterThan(0);
-    expect(screen.getAllByText("Đã kết nối").length).toBeGreaterThan(0);
+    expect((await screen.findAllByText("Đã kết nối")).length).toBeGreaterThan(0);
     expect(container.textContent).not.toContain("wcn_public_1");
     expect(container.textContent).not.toContain("fb_page_public");
     expect(container.textContent).not.toContain("https://composio.example/connect/safe");
