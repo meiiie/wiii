@@ -84,6 +84,7 @@ jobs:
       - name: Run ACP contract against the bundled binary
         working-directory: wiii-desktop
         env:
+          WIII_NEKO_CONTRACT_REQUIRED: "1"
           WIII_NEKO_CONTRACT_BINARY: ${{ github.workspace }}/wiii-desktop/.build/neko-bundle/neko
         run: npx vitest run src/__tests__/neko-chill/neko-core-acp-contract.real.test.ts
 
