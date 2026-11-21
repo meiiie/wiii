@@ -848,9 +848,18 @@ impl ResolvedProvider {
     /// A bundled runtime follows Wiii's release lifecycle. This overrides only
     /// the child environment; the user's standalone Neko settings stay intact.
     pub(crate) fn command(&self) -> Command {
+        self.command_with_inherited_dream_mode(std::env::var_os("NEKO_DREAM_MODE").is_some())
+    }
+
+    /// Automatic Dream adds a background model request per turn, so the bundled
+    /// runtime keeps it off unless the user opts in with `NEKO_DREAM_MODE`.
+    fn command_with_inherited_dream_mode(&self, user_set_dream_mode: bool) -> Command {
         let mut command = Command::new(&self.program);
         if self.bundled {
             command.env("NEKO_AUTO_UPDATE", "0");
+            if !user_set_dream_mode {
+                command.env("NEKO_DREAM_MODE", "off");
+            }
         }
         command
     }
@@ -1183,13 +1192,32 @@ mod tests {
             version: Some("neko-core 1.5.1".into()),
             bundled: true,
         };
-        let command = resolved.command();
+        let command = resolved.command_with_inherited_dream_mode(false);
         let overrides: Vec<_> = command.get_envs().collect();
-        assert_eq!(overrides.len(), 1);
-        assert_eq!(overrides[0].0, "NEKO_AUTO_UPDATE");
-        assert_eq!(overrides[0].1.unwrap(), "0");
+        assert_eq!(overrides.len(), 2);
+        assert!(overrides.contains(&("NEKO_AUTO_UPDATE".as_ref(), Some("0".as_ref()))));
+        assert!(overrides.contains(&("NEKO_DREAM_MODE".as_ref(), Some("off".as_ref()))));
         resolved.bundled = false;
-        assert_eq!(resolved.command().get_envs().count(), 0);
+        assert_eq!(
+            resolved
+                .command_with_inherited_dream_mode(false)
+                .get_envs()
+                .count(),
+            0
+        );
+    }
+
+    #[test]
+    fn bundled_dream_default_respects_user_opt_in() {
+        let resolved = ResolvedProvider {
+            definition: definition("neko").unwrap(),
+            program: PathBuf::from("neko"),
+            version: Some("neko-core 1.9.3".into()),
+            bundled: true,
+        };
+        let command = resolved.command_with_inherited_dream_mode(true);
+        let keys: Vec<_> = command.get_envs().map(|(key, _)| key).collect();
+        assert_eq!(keys, vec![std::ffi::OsStr::new("NEKO_AUTO_UPDATE")]);
     }
 
     #[test]
