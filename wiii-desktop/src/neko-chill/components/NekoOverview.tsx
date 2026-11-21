@@ -154,12 +154,12 @@ export function NekoOverview({
     .slice(0, 4), [projects]);
 
   return (
-    <main className="min-w-0 flex-1 overflow-y-auto" data-testid="neko-overview">
+    <main className="nk-overview min-w-0 flex-1 overflow-y-auto" data-testid="neko-overview">
       <div className="mx-auto w-full max-w-[960px] px-6 pb-10 pt-10 sm:px-10">
         <div className="nk-home-welcome">
           <WiiiMark size={48} />
           <h1 className="mt-5 text-[30px] font-medium leading-tight tracking-[-0.035em] text-[var(--nk-text)]">Cùng bắt tay vào việc.</h1>
-          <div className="mt-7 grid gap-3 sm:grid-cols-2">
+          <div className="nk-home-actions mt-7 grid gap-3">
             <button type="button" className="nk-home-action" onClick={onQuickChat ?? onNewSession} disabled={quickChatPending} data-testid="overview-quick-chat">
               <span className="nk-home-action-icon">{quickChatPending ? <LoaderCircle aria-hidden="true" size={20} className="animate-spin motion-reduce:animate-none" /> : <MessageSquare aria-hidden="true" size={20} />}</span>
               <span className="min-w-0 flex-1"><strong className="block text-[14px] font-medium">{quickChatPending ? "Đang mở chat…" : "Chat mới"}</strong><span className="mt-1 block text-[12px] text-[var(--nk-text-3)]">Bắt đầu với một ý tưởng</span></span>
@@ -176,7 +176,7 @@ export function NekoOverview({
 
         {recentProjects.length && onOpenProject ? <section className="mt-9" aria-label="Dự án gần đây">
           <div className="mb-3 flex items-center justify-between"><h2 className="text-[12px] font-medium text-[var(--nk-text-3)]">Dự án của bạn</h2><button type="button" onClick={onCreateProject} className="nk-chrome-button inline-flex items-center gap-1 rounded-md px-2 py-1 text-[11px] text-[var(--nk-text-2)]"><Plus size={13} aria-hidden="true" />Tạo Project</button></div>
-          <div className="grid gap-2 sm:grid-cols-2">{recentProjects.map((project) => <button key={project.id} type="button" className="nk-project-shortcut" onClick={() => onOpenProject(project.id)}>
+          <div className="nk-project-shortcuts grid gap-2">{recentProjects.map((project) => <button key={project.id} type="button" className="nk-project-shortcut" onClick={() => onOpenProject(project.id)}>
             <Folder size={17} aria-hidden="true" className="shrink-0 text-[var(--nk-text-3)]" /><span className="min-w-0 flex-1"><strong className="block truncate text-[12.5px] font-medium">{project.name}</strong><span className="mt-0.5 block truncate text-[11px] text-[var(--nk-text-3)]">{project.roots[0]?.path}</span></span><ArrowUpRight size={14} aria-hidden="true" className="shrink-0 text-[var(--nk-text-3)]" />
           </button>)}</div>
         </section> : null}

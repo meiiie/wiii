@@ -80,14 +80,16 @@ async function elementWithText(driver, css, needle, label, timeoutMs = 30_000) {
   }, label ?? `${css} containing ${needle}`, timeoutMs);
 }
 
-/** Like elementWithText, but only an element that is on screen and not covered, so a click lands on it. */
+/** Scroll a matching element into view, then verify it is not covered before clicking. */
 async function clickableWithText(driver, css, needle, label, timeoutMs = 30_000) {
   return until(async () => {
     const found = await driver.execute(`
       const [css, needle] = arguments;
       return [...document.querySelectorAll(css)].find((node) => {
+        if (!(node.innerText || "").includes(needle)) return false;
+        node.scrollIntoView({ block: "center", inline: "nearest" });
         const box = node.getBoundingClientRect();
-        if (box.width <= 0 || box.height <= 0 || !(node.innerText || "").includes(needle)) return false;
+        if (box.width <= 0 || box.height <= 0) return false;
         const x = box.left + box.width / 2, y = box.top + box.height / 2;
         if (x < 0 || y < 0 || x > innerWidth || y > innerHeight) return false;
         const hit = document.elementFromPoint(x, y);
