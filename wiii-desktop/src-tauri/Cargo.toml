@@ -5,7 +5,7 @@ description = "Wiii — durable AI workbench by The Wiii Lab"
 authors = ["Meiiie (The Wiii Lab)"]
 edition = "2021"
 rust-version = "1.89"
-license = "AGPL-3.0-only"
+license = "MIT"
 homepage = "https://wiii.holilihu.online"
 repository = "https://github.com/meiiie/wiii"
 
