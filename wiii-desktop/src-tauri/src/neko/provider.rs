@@ -855,7 +855,13 @@ impl ResolvedProvider {
                 .or_else(|| std::env::var_os("HOME"))
                 .is_some_and(|home| neko_config_sets_dream_mode(Path::new(&home)))
         };
-        self.command_with_inherited_dream_mode(env_set || config_set())
+        let user_set = env_set || config_set();
+        let mut command = self.command_with_inherited_dream_mode(user_set);
+        if self.bundled && user_set && !env_set {
+            // A blank inherited value would override the config file's mode.
+            command.env_remove("NEKO_DREAM_MODE");
+        }
+        command
     }
 
     /// Automatic Dream adds a background model request per turn, so the bundled
