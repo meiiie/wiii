@@ -85,6 +85,7 @@ def exercise(binary: Path, home: Path, port: int) -> dict:
     environment = {
         "PATH": "/usr/bin:/bin", "HOME": str(home), "TMPDIR": str(home / "tmp"),
         "NEKO_AUTO_UPDATE": "0",
+        "NEKO_DREAM_MODE": "manual",
     }
     process = subprocess.Popen(
         command, env=environment, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
