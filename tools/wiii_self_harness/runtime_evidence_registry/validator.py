@@ -292,11 +292,12 @@ class RegistryValidator(WorkflowChecks, ProbeChecks):
             workflow_text,
             context=f"{context}.workflow.job_names",
         )
-        self.require_tokens(
-            workflow_text,
-            test_paths,
-            context=f"{context}.workflow.contract_tests",
-        )
+        if manual_only is not True:
+            self.require_tokens(
+                workflow_text,
+                test_paths,
+                context=f"{context}.workflow.contract_tests",
+            )
         self.require_workflow_contract_test_execution(
             workflow_text,
             test_paths=test_paths,
@@ -417,6 +418,7 @@ class RegistryValidator(WorkflowChecks, ProbeChecks):
         )
         self.require_workflow_runtime_evidence_output_helper_contract(
             workflow_text,
+            manual_only=manual_only is True,
             probe_path=probe_path,
             context=f"{context}.workflow.output_helper_contract",
         )

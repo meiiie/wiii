@@ -13,6 +13,7 @@ exec python -m pytest -x -p no:capture --tb=short -q \
   tests/unit/test_sprint192_auth_hardening.py \
   tests/unit/test_sprint194b_auth_hardening.py::TestAPIKeyUserIDTrustProduction \
   tests/unit/test_sprint194b_auth_hardening.py::TestAPIKeyRoleRestriction \
+  tests/unit/test_security_timing.py \
   tests/unit/test_org_context.py \
   tests/unit/test_org_middleware.py \
   tests/unit/test_organization_api.py \

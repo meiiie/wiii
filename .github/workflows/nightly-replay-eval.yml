@@ -2,9 +2,8 @@ name: Managed Chat Replay Eval
 
 # Phase 11b of the runtime migration epic (issue #207).
 #
-# This workflow runs the legacy replay_eval harness on demand. It operates
-# in HARNESS-VALIDATION
-# mode: it generates synthetic recordings on the fly and replays them in
+# This workflow runs the legacy replay_eval harness on demand. In harness
+# validation mode it generates synthetic recordings and replays them in
 # --dry-run. That proves the script + EvalRecorder + diff_records loop
 # works end-to-end without a GOOGLE_API_KEY.
 #
