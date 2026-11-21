@@ -295,8 +295,16 @@ async function main() {
     writeFileSync(path.join(artifacts, "model-requests.json"), JSON.stringify(model.requests, null, 2));
     log("PASS");
   } catch (error) {
-    if (driver) await capture(driver, "failure");
-    if (driver) writeFileSync(path.join(artifacts, "failure-body.txt"), await bodyText(driver).catch(() => ""));
+    if (driver) {
+      await capture(driver, "failure");
+      // textContent includes collapsed <details>, where Wiii puts the Neko probe error.
+      const body = await driver.execute("return document.body ? document.body.textContent : '';")
+        .catch((reason) => `body unavailable: ${reason.message}`);
+      writeFileSync(path.join(artifacts, "failure-body.txt"), body);
+      const details = await driver.execute("return [...document.querySelectorAll('details')].map((node) => node.textContent.trim()).join('\\n');")
+        .catch(() => "");
+      if (details) log(`page details at failure:\n${details}`);
+    }
     writeFileSync(path.join(artifacts, "model-requests.json"), JSON.stringify(model.requests, null, 2));
     throw error;
   } finally {
