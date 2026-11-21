@@ -200,11 +200,9 @@ export function ProviderSessionCatalogPanel({
           </span>
           <span className="min-w-0 flex-1">
             <strong className="block truncate text-[12.5px] font-medium text-[var(--nk-text)]">{group.name}</strong>
-            <span className="block truncate text-[10.5px] text-[var(--nk-text-3)]">
-              {group.attentionCount ? `${group.attentionCount} cần bạn · ` : ""}
-              {group.workingCount ? `${group.workingCount} đang chạy` : "Không có phiên đang chạy"}
-              {group.detail ? ` · ${group.detail}` : ""}
-            </span>
+            {group.attentionCount || group.workingCount || group.detail ? <span className="block truncate text-[10.5px] text-[var(--nk-text-3)]">
+              {[group.attentionCount ? `${group.attentionCount} cần bạn` : null, group.workingCount ? `${group.workingCount} đang chạy` : null, group.detail].filter(Boolean).join(" · ")}
+            </span> : null}
           </span>
           <span className="w-10 shrink-0 text-right text-[11px] tabular-nums text-[var(--nk-ghost)]">{group.sessions.length}</span>
         </button>
@@ -251,8 +249,7 @@ export function ProviderSessionCatalogPanel({
     <section className="mt-4 overflow-hidden rounded-2xl border border-[var(--nk-border)] bg-[var(--nk-composer)]">
       <div className="flex flex-wrap items-start justify-between gap-4 px-5 pb-3 pt-4">
         <div>
-          <h2 className="text-[13px] font-medium text-[var(--nk-text)]">Phiên</h2>
-          <p className="mt-0.5 max-w-[700px] text-[10.5px] leading-4 text-[var(--nk-text-3)]">Dự án là chiều điều hướng chính. Harness và trạng thái là bộ lọc trên cùng một catalog.</p>
+          <h2 className="text-[13px] font-medium text-[var(--nk-text)]">Tiếp tục công việc</h2>
         </div>
         <button type="button" className="inline-flex h-8 shrink-0 items-center gap-1.5 rounded-lg px-2.5 text-[11.5px] text-[var(--nk-text-3)] transition-colors hover:bg-[var(--nk-overlay)] hover:text-[var(--nk-text)] disabled:opacity-50" onClick={onRefresh} disabled={discoveryLoading}>
           {discoveryLoading ? <LoaderCircle aria-hidden="true" className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw aria-hidden="true" className="h-3.5 w-3.5" />} Quét lại
@@ -270,7 +267,7 @@ export function ProviderSessionCatalogPanel({
         </select>
         <div className="flex h-9 items-center rounded-lg border border-[var(--nk-border)] bg-[var(--nk-composer)] p-0.5" aria-label="Cách xem phiên">
           {(["projects", "recent", "harnesses"] as const).map((value) => {
-            const label = value === "projects" ? "Dự án" : value === "recent" ? "Gần đây" : "Harness";
+            const label = value === "projects" ? "Dự án" : value === "recent" ? "Gần đây" : "Agent";
             const Icon = value === "projects" ? Folder : value === "recent" ? History : Layers3;
             return <button key={value} type="button" aria-pressed={view === value} onClick={() => setView(value)} className={`inline-flex h-7 items-center gap-1.5 rounded-md px-2.5 text-[11px] transition-colors ${view === value ? "bg-[var(--nk-overlay)] text-[var(--nk-text)] shadow-xs" : "text-[var(--nk-text-3)] hover:text-[var(--nk-text-2)]"}`}><Icon aria-hidden="true" className="h-3 w-3" />{label}</button>;
           })}
@@ -293,11 +290,11 @@ export function ProviderSessionCatalogPanel({
           {groups.length > groupLimit ? <button type="button" className="mx-auto mt-2 block rounded-lg px-3 py-2 text-[11px] font-medium text-[var(--nk-text-3)] hover:bg-[var(--nk-overlay)] hover:text-[var(--nk-text)]" onClick={() => setGroupLimit((current) => current + INITIAL_GROUP_LIMIT)}>Hiện thêm {Math.min(INITIAL_GROUP_LIMIT, groups.length - groupLimit)} nhóm</button> : null}
         </div>
       ) : (
-        <div className="grid min-h-28 place-items-center px-6 text-center text-[11.5px] text-[var(--nk-text-3)]">{discoveryLoading ? "Đang hỏi từng harness về các phiên đã lưu…" : items.length ? "Không có phiên nào khớp bộ lọc." : "Chưa có phiên Wiii hoặc phiên ngoài Wiii nào được phát hiện."}</div>
+        <div className="grid min-h-28 place-items-center px-6 text-center text-[11.5px] text-[var(--nk-text-3)]">{discoveryLoading ? "Đang tải phiên…" : items.length ? "Không có phiên nào khớp bộ lọc." : "Chưa có phiên nào"}</div>
       )}
 
       <div className="flex items-center justify-between border-t border-[var(--nk-border)] px-5 py-2.5 text-[10px] text-[var(--nk-ghost)]">
-        <span>{items.length} phiên · {managedSessions.length} do Wiii quản lý</span>
+        <span>{items.length} phiên</span>
         {providerCatalogs.some((catalog) => catalog.detail) ? (
           <details className="max-w-[70%] text-right"><summary className="cursor-pointer select-none hover:text-[var(--nk-text-3)]">Nguồn & giới hạn</summary><div className="mt-2 v3-space-y-1 text-left leading-4">{providerCatalogs.flatMap((catalog) => catalog.detail ? [<p key={catalog.providerId}><strong>{providerNames.get(catalog.providerId) ?? catalog.providerId}:</strong> {catalog.detail}</p>] : [])}</div></details>
         ) : null}

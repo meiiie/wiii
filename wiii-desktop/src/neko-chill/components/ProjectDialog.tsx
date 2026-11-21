@@ -142,18 +142,14 @@ export function ProjectDialog({
         <header className="flex items-center justify-between gap-4">
           <div>
             <p className="text-[10px] font-semibold uppercase tracking-[0.1em] text-[var(--nk-ghost)]">
-              Neko Chill
+              Wiii
             </p>
             <h1 id="project-dialog-title" className="mt-1 text-[21px] font-semibold tracking-[-0.025em] text-[var(--nk-text)]">
               {project ? "Chỉnh sửa Project" : "Tạo Project"}
             </h1>
             {!project && reason === "new-session" ? (
               <p className="mt-2 max-w-[420px] text-[12.5px] leading-5 text-[var(--nk-text-2)]" data-testid="project-required-hint">
-                Phiên mới cần một Project trước. Hãy tạo Project và chọn thư mục nguồn — sau đó bạn có thể mở phiên trong Project đó.
-              </p>
-            ) : !project ? (
-              <p className="mt-2 max-w-[420px] text-[12.5px] leading-5 text-[var(--nk-text-3)]">
-                Project gắn thư mục nguồn để Neko làm việc. Mỗi phiên thuộc một Project.
+                Chọn thư mục để bắt đầu.
               </p>
             ) : null}
           </div>
@@ -195,9 +191,6 @@ export function ProjectDialog({
           <div className="flex flex-wrap items-end justify-between gap-3">
             <div>
               <h2 className="text-[11.5px] font-medium text-[var(--nk-text-2)]">Thư mục nguồn</h2>
-              <p className="mt-0.5 text-[10.5px] text-[var(--nk-text-3)]">
-                Thêm thư mục để Neko làm việc. Mỗi phiên sử dụng một thư mục đã chọn.
-              </p>
               {!nativeFolderPicker ? (
                 <p className="mt-1.5 text-[10.5px] leading-4 text-[var(--nk-text-3)]" data-testid="browser-folder-picker-hint">
                   Bản xem trước trình duyệt không mở được hộp chọn thư mục máy — dùng app desktop Wiii.

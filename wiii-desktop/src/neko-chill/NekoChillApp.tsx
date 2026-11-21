@@ -981,7 +981,7 @@ function NekoChillScreen({
       onNewSession={handleNewSession}
       onQuickChat={() => void startQuickChat()}
       quickChatPending={quickChatPending}
-      quickChatError={quickChatError}
+      quickChatError={!session && !projectHome && !coworkerHomeOpen ? null : quickChatError}
       onCreateProject={openProjectDialogFromSidebar}
       onSelectProject={selectProject}
       onEditProject={editProjectFromSidebar}
@@ -1201,7 +1201,12 @@ function NekoChillScreen({
                 agents={agents}
                 providerCatalogs={providerCatalogs}
                 discoveryLoading={providerDiscoveryLoading}
-                projectCount={projects.length}
+                projectCount={projects.filter((project) => project.roots[0]?.kind !== "scratch").length}
+                projects={projects}
+                onOpenProject={selectProject}
+                onQuickChat={() => void startQuickChat()}
+                quickChatPending={quickChatPending}
+                quickChatError={quickChatError}
                 onNewSession={handleNewSession}
                 onCreateProject={openProjectDialog}
                 onOpenSession={openSessionFromCatalog}

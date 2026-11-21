@@ -136,7 +136,7 @@ describe("Project Home readiness and missing Neko recovery", () => {
 
   it("removes all four starter actions, keeping the heading and composer", () => {
     home([gemini]);
-    expect(screen.getByRole("heading", { name: /Bạn muốn làm gì trong Wiii/ })).toBeTruthy();
+    expect(screen.getByRole("heading", { name: /Cùng làm việc với Wiii/ })).toBeTruthy();
     for (const name of ["Khám phá dự án", "Xây một thay đổi", "Rà soát code", "Sửa lỗi"]) {
       expect(screen.queryByRole("button", { name: new RegExp(name) })).toBeNull();
     }
@@ -171,7 +171,7 @@ describe("Project Home readiness and missing Neko recovery", () => {
   it("routes missing Neko management away from the draft without launching or installing", () => {
     const input = home([missing]);
     expect(screen.queryByText("Cách cài Neko Core")).toBeNull();
-    fireEvent.click(screen.getByRole("button", { name: "Quản lý harness" }));
+    fireEvent.click(screen.getByRole("button", { name: "Thiết lập agent" }));
     expect(manage).toHaveBeenCalledOnce();
     fireEvent.keyDown(input, { key: "Enter" });
     expect(sendButton().disabled).toBe(true);
@@ -186,7 +186,7 @@ describe("Project Home readiness and missing Neko recovery", () => {
     expect(select.textContent).toMatch(/Neko|Chưa sẵn sàng/i);
     expect(sendButton().disabled).toBe(true);
     await pickHarness("Gemini CLI");
-    expect(screen.queryByRole("button", { name: "Quản lý harness" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Thiết lập agent" })).toBeNull();
     await vi.waitFor(() => expect(sendButton().disabled).toBe(false));
     fireEvent.click(sendButton());
     await vi.waitFor(() => expect(useNekoSessionStore.getState().createSession).toHaveBeenCalledWith(
@@ -196,7 +196,7 @@ describe("Project Home readiness and missing Neko recovery", () => {
 
   it("shows checking instead of missing and blocks launching cached agents", () => {
     const input = home([gemini], { isLoading: true });
-    expect(screen.getByText("Đang kiểm tra harness…")).toBeTruthy();
+    expect(screen.getByText("Đang kiểm tra agent…")).toBeTruthy();
     expect(screen.queryByText("Cách cài Neko Core")).toBeNull();
     fireEvent.keyDown(input, { key: "Enter" });
     expect(sendButton().disabled).toBe(true);
@@ -205,7 +205,7 @@ describe("Project Home readiness and missing Neko recovery", () => {
 
   it("does not treat a global discovery error as a missing install or safe cached result", () => {
     const input = home([gemini], { error: "cleanup could not be proven" });
-    expect(screen.getByText(/Harness đã chọn chưa sẵn sàng/)).toBeTruthy();
+    expect(screen.getByText("Agent chưa sẵn sàng")).toBeTruthy();
     expect(screen.queryByText("cleanup could not be proven")).toBeNull();
     expect(screen.queryByText("Cách cài Neko Core")).toBeNull();
     fireEvent.keyDown(input, { key: "Enter" });
@@ -215,7 +215,7 @@ describe("Project Home readiness and missing Neko recovery", () => {
 
   it("keeps a provider-scoped probe failure separate from an alternative", async () => {
     home([{ ...missing, availability: "probe_failed", detail: "probe timed out" }, gemini]);
-    expect(screen.getByText(/Harness đã chọn chưa sẵn sàng/)).toBeTruthy();
+    expect(screen.getByText("Agent chưa sẵn sàng")).toBeTruthy();
     expect(screen.queryByText("Cách cài Neko Core")).toBeNull();
     expect(sendButton().disabled).toBe(true);
     await pickHarness("Gemini CLI");
@@ -249,7 +249,7 @@ describe("Project Home readiness and missing Neko recovery", () => {
 
   it("does not recommend installation when this Wiii host is unsupported", () => {
     home([{ ...missing, availability: "host_unsupported" }]);
-    expect(screen.getByRole("button", { name: "Quản lý harness" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Thiết lập agent" })).toBeTruthy();
     expect(screen.queryByText("Cách cài Neko Core")).toBeNull();
     expect(sendButton().disabled).toBe(true);
   });
@@ -257,7 +257,7 @@ describe("Project Home readiness and missing Neko recovery", () => {
   it("does not equate an empty browser discovery result with not installed or poll forever", async () => {
     host.providers.mockResolvedValue([]);
     home([]);
-    await vi.waitFor(() => expect(screen.getByText(/Harness đã chọn chưa sẵn sàng/)).toBeTruthy());
+    await vi.waitFor(() => expect(screen.getByText("Agent chưa sẵn sàng")).toBeTruthy());
     expect(host.providers).toHaveBeenCalledExactlyOnceWith("neko");
     expect(screen.queryByText("Chưa cài Neko Core")).toBeNull();
   });
@@ -295,7 +295,8 @@ describe("Project Home readiness and missing Neko recovery", () => {
   it("allows the existing default-profile path without claiming authentication", async () => {
     host.profiles.mockResolvedValue([]);
     home([neko]);
-    await screen.findByText(/phiên sẽ dùng cấu hình mặc định/);
+    await vi.waitFor(() => expect(sendButton().disabled).toBe(false));
+    expect(screen.queryByText(/phiên sẽ dùng cấu hình mặc định/)).toBeNull();
     expect(screen.queryByText("Đã đăng nhập")).toBeNull();
     expect(sendButton().disabled).toBe(false);
   });
@@ -360,7 +361,7 @@ describe("Project Home readiness and missing Neko recovery", () => {
       projectCount={0} onNewSession={vi.fn()} onCreateProject={onCreateProject}
       onOpenSession={vi.fn()} onRefreshDiscovery={vi.fn()}
       onImportProviderSession={vi.fn(async () => {})} />);
-    expect(screen.getByTestId("overview-project-required-hint").textContent).toContain("Cần tạo Project trước");
+    expect(screen.getByTestId("overview-quick-chat")).toBeTruthy();
     fireEvent.click(screen.getByTestId("overview-create-first-project"));
     expect(onCreateProject).toHaveBeenCalledOnce();
     expect(screen.queryByRole("button", { name: "Phiên mới", exact: true })).toBeNull();
@@ -371,6 +372,7 @@ describe("Project Home readiness and missing Neko recovery", () => {
       sessions={[]} providerCatalogs={[]} discoveryLoading={false}
       onNewSession={vi.fn()} onOpenSession={vi.fn()} onRefreshDiscovery={vi.fn()}
       onImportProviderSession={vi.fn(async () => {})} />);
+    fireEvent.click(screen.getByText("Agent & cấu hình"));
     expect(screen.getByText("Đi kèm Wiii · neko-core 1.5.1")).toBeTruthy();
     fireEvent.click(screen.getByText("Cài đặt, cập nhật và gỡ Neko Core"));
     expect(screen.getByText(/Cập nhật hoặc cài lại Wiii/)).toBeTruthy();
@@ -384,8 +386,9 @@ describe("Project Home readiness and missing Neko recovery", () => {
       onNewSession={createProject} onOpenSession={vi.fn()} onRefreshDiscovery={vi.fn()}
       onImportProviderSession={vi.fn(async () => {})} />);
     expect(screen.getByText("Chưa cài Neko Core")).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: "Phiên mới", exact: true }));
+    fireEvent.click(screen.getByTestId("overview-create-first-project"));
     expect(createProject).toHaveBeenCalledOnce();
+    fireEvent.click(screen.getByText("Agent & cấu hình"));
     fireEvent.click(screen.getByRole("button", { name: "Kiểm tra lại", exact: true }));
     await vi.waitFor(() => expect(host.providers).toHaveBeenCalledOnce());
     expect(useNekoSessionStore.getState().createSession).not.toHaveBeenCalled();

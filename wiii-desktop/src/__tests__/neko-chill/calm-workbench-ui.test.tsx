@@ -64,8 +64,6 @@ describe("calm workbench interaction contracts", () => {
     fireEvent.click(folder);
     expect(onClientCommand).not.toHaveBeenCalled();
 
-    expect(document.body.textContent).toMatch(/Enter\s*gửi/);
-    expect(document.body.textContent).toMatch(/Shift\+Enter\s*xuống dòng/);
   });
 
   it("titles an enabled session send as Gửi", () => {

@@ -410,12 +410,13 @@ function NekoComposerComponent({
             ref={textareaRef}
             className="max-h-44 min-h-[48px] w-full resize-none bg-transparent px-1 pt-0.5 text-[13.5px] leading-[20px] text-[var(--nk-text)] placeholder:text-[var(--nk-ghost)] focus:v3-outline-none"
             rows={Math.min(draft.split("\n").length || 1, 6)}
-            placeholder={session.workspace ? "Nhắn cho agent… Gõ / để xem lệnh" : "Gắn dự án trước khi nhắn…"}
+            placeholder={session.workspace ? `Nhắn cho ${session.agentName}…` : "Chọn thư mục để bắt đầu…"}
             value={draft}
             disabled={!session.workspace}
             readOnly={draftReadOnly}
             aria-busy={draftReadOnly}
             aria-label={`Tin nhắn cho ${session.agentName}`}
+            title="Enter gửi · Shift+Enter xuống dòng"
             aria-describedby={composerHint ? hintId : undefined}
             data-testid="neko-composer-input"
             onChange={(event) => {
@@ -539,10 +540,6 @@ function NekoComposerComponent({
             </p>
           ) : null}
         </div>
-        <p className="mx-3 mt-1.5 flex items-center gap-2 px-1 text-[10px] text-[var(--nk-ghost)]" aria-hidden="true">
-          {!composerDisabled && <span><kbd className="rounded border border-[var(--nk-border)] bg-[var(--nk-raised)] px-1 py-px text-[9.5px]">Enter</kbd> gửi</span>}
-          <span><kbd className="rounded border border-[var(--nk-border)] bg-[var(--nk-raised)] px-1 py-px text-[9.5px]">Shift+Enter</kbd> xuống dòng</span>
-        </p>
       </div>
     </div>
   );

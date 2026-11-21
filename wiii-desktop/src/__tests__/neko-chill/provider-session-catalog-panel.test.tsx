@@ -69,7 +69,7 @@ describe("unified session catalog panel", () => {
     expect(screen.getByText("Session 294")).toBeTruthy();
     expect(screen.queryByText("Session 293")).toBeNull();
     expect(screen.getByRole("button", { name: "Xem tất cả 300 phiên" })).toBeTruthy();
-    expect(screen.getByText("300 phiên · 0 do Wiii quản lý")).toBeTruthy();
+    expect(screen.getByText("300 phiên")).toBeTruthy();
   });
 
   it("flattens hierarchy while searching across provider and Wiii metadata", () => {
@@ -92,7 +92,7 @@ describe("unified session catalog panel", () => {
     expect(screen.getByText("Session 1")).toBeTruthy();
     expect(screen.queryByText("Managed auth work")).toBeNull();
 
-    fireEvent.click(screen.getByRole("button", { name: "Harness" }));
+    fireEvent.click(screen.getByRole("button", { name: "Agent" }));
     expect(screen.getAllByText("Codex").length).toBeGreaterThan(0);
     expect(screen.getAllByText("Claude Code").length).toBeGreaterThan(0);
   });
