@@ -680,7 +680,7 @@ describe("WiiiConnectPage", () => {
 
     expect(screen.getByText("document_grounded_answer")).toBeTruthy();
     expect(await screen.findByText("lms_document_apply")).toBeTruthy();
-    expect(screen.getByText("Cần approval_token")).toBeTruthy();
+    expect(await screen.findByText("Cần approval_token")).toBeTruthy();
   });
 
   it("shows a fail-closed connection catalog before a backend snapshot exists", () => {
@@ -742,7 +742,7 @@ describe("WiiiConnectPage", () => {
     );
     expect(await screen.findByText("Danh mục đã đồng bộ")).toBeTruthy();
     expect(await screen.findByRole("button", { name: "Kết nối qua Wiii" })).toBeTruthy();
-    expect(screen.getAllByText("Gmail thử nghiệm của Neko.").length).toBeGreaterThan(0);
+    expect((await screen.findAllByText("Gmail thử nghiệm của Neko.")).length).toBeGreaterThan(0);
   });
 
   it("uses backend runtime snapshot when no chat lifecycle snapshot exists", async () => {
@@ -973,17 +973,10 @@ describe("WiiiConnectPage", () => {
 
     render(<WiiiConnectPage />);
 
-    await act(async () => {
-      await Promise.resolve();
-      await Promise.resolve();
-    });
+    await act(async () => { await vi.advanceTimersByTimeAsync(0); });
     expect(screen.getByText("1/1 sẵn sàng")).toBeTruthy();
 
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(5_000);
-      await Promise.resolve();
-      await Promise.resolve();
-    });
+    await act(async () => { await vi.advanceTimersByTimeAsync(5_000); });
 
     expect(mockFetchWiiiConnectSnapshot).toHaveBeenCalledTimes(2);
     expect(mockFetchWiiiConnectDoctor).toHaveBeenCalledTimes(2);
@@ -1028,7 +1021,7 @@ describe("WiiiConnectPage", () => {
   it("does not request operator diagnostics for an ordinary OAuth user", async () => {
     useAuthStore.setState({ authMode: "oauth" });
     render(<WiiiConnectPage />);
-    await waitFor(() => expect(screen.getByText("Đã đồng bộ")).toBeTruthy());
+    expect(await screen.findByText("Đã đồng bộ")).toBeTruthy();
 
     expect(mockFetchWiiiConnectSnapshot).toHaveBeenCalledWith({ surface: "desktop" });
     expect(mockFetchWiiiConnectDoctor).toHaveBeenCalledWith({ surface: "desktop" });
@@ -1060,7 +1053,7 @@ describe("WiiiConnectPage", () => {
     fireEvent.change(search, { target: { value: "" } });
     expect(screen.getByRole("button", { name: /Facebook/i })).toBeTruthy();
     expect(screen.getByRole("button", { name: /Gmail/i })).toBeTruthy();
-    await waitFor(() => expect(screen.getByText("Đã đồng bộ")).toBeTruthy());
+    expect(await screen.findByText("Đã đồng bộ")).toBeTruthy();
   });
 
   it("uses backend provider registry when available", async () => {
@@ -1163,19 +1156,19 @@ describe("WiiiConnectPage", () => {
     fireEvent.click(screen.getByRole("button", { name: /Gmail/i }));
 
     expect(await screen.findByTestId("wiii-connect-readiness-panel")).toBeTruthy();
-    expect(screen.getByTestId("wiii-connect-lifecycle-panel")).toBeTruthy();
+    expect(await screen.findByTestId("wiii-connect-lifecycle-panel")).toBeTruthy();
     await waitFor(() => {
       expect(screen.getByTestId("wiii-connect-next-action").textContent).toContain(
         "Mở OAuth/Connect Link với provider",
       );
     });
     expect(await screen.findByText("Hoàn tất OAuth/Connect Link")).toBeTruthy();
-    expect(screen.getByText("Activation readiness")).toBeTruthy();
-    expect(screen.getByText("Connect-ready")).toBeTruthy();
-    expect(screen.getByText("Agent read-only")).toBeTruthy();
-    expect(screen.getByText("Adapter")).toBeTruthy();
-    expect(screen.getAllByText("Connection").length).toBeGreaterThan(0);
-    expect(screen.getByText("complete_provider_oauth")).toBeTruthy();
+    expect(await screen.findByText("Activation readiness")).toBeTruthy();
+    expect(await screen.findByText("Connect-ready")).toBeTruthy();
+    expect(await screen.findByText("Agent read-only")).toBeTruthy();
+    expect(await screen.findByText("Adapter")).toBeTruthy();
+    expect((await screen.findAllByText("Connection")).length).toBeGreaterThan(0);
+    expect(await screen.findByText("complete_provider_oauth")).toBeTruthy();
     expect(mockFetchWiiiConnectProviderActivationReadiness).toHaveBeenCalledWith("gmail", {
       actionSlug: "GMAIL_FETCH_EMAILS",
       connectionRef: "",
@@ -1538,9 +1531,7 @@ describe("WiiiConnectPage", () => {
     fireEvent.click(screen.getByRole("button", { name: /Composio/i }));
     fireEvent.click(screen.getByRole("button", { name: /Facebook/i }));
     const loadPagesButton = await screen.findByRole("button", { name: /Page/i });
-    await waitFor(() => {
-      expect((loadPagesButton as HTMLButtonElement).disabled).toBe(false);
-    });
+    await waitFor(() => expect((loadPagesButton as HTMLButtonElement).disabled).toBe(false));
     fireEvent.click(loadPagesButton);
     await waitFor(() => {
       expect(mockFetchWiiiConnectFacebookPages).toHaveBeenCalledWith(
@@ -1554,7 +1545,8 @@ describe("WiiiConnectPage", () => {
     });
     fireEvent.click(previewButton);
 
-    const ledger = await screen.findByTestId("wiii-connect-facebook-approval-ledger");
+    expect(await screen.findByText("Reason: preview_recorded")).toBeTruthy();
+    const ledger = screen.getByTestId("wiii-connect-facebook-approval-ledger");
     expect(ledger.textContent).toContain("Approval ledger");
     expect(ledger.textContent).toContain("pending");
     expect(ledger.textContent).toContain("preview_recorded");
@@ -1666,9 +1658,9 @@ describe("WiiiConnectPage", () => {
     fireEvent.click(screen.getByRole("button", { name: /Gmail/i }));
 
     expect(await screen.findByText("Read-only sẵn sàng")).toBeTruthy();
-    expect(screen.getByTestId("wiii-connect-next-action").textContent).toContain(
+    await waitFor(() => expect(screen.getByTestId("wiii-connect-next-action").textContent).toContain(
       "Sẵn sàng cho agent read-only",
-    );
+    ));
     expect(screen.getByText("Không tự mở write/admin scope")).toBeTruthy();
     expect(
       screen.getByText(
@@ -1744,9 +1736,9 @@ describe("WiiiConnectPage", () => {
       },
     });
     expect(await screen.findByText("Quyết định backend")).toBeTruthy();
-    expect(screen.getByText("provider_disabled")).toBeTruthy();
-    expect(screen.getByText("encrypted_vault_ref")).toBeTruthy();
-    expect(screen.getByText("Không phát hành")).toBeTruthy();
+    expect(await screen.findByText("provider_disabled")).toBeTruthy();
+    expect(await screen.findByText("encrypted_vault_ref")).toBeTruthy();
+    expect(await screen.findByText("Không phát hành")).toBeTruthy();
     expect(screen.queryByText("access_token")).toBeNull();
     expect(screen.queryByText("secret-value")).toBeNull();
   });
@@ -2266,9 +2258,9 @@ describe("WiiiConnectPage", () => {
       "facebook",
       "wcn_public_1",
     );
-    expect((await screen.findByTestId("wiii-connect-disconnect-status")).textContent).toContain("local");
+    await waitFor(() => expect(screen.getByTestId("wiii-connect-disconnect-status").textContent).toContain("local"));
     expect(screen.getByTestId("wiii-connect-disconnect-button").textContent?.toLowerCase()).toContain("ng");
-    expect(screen.getAllByText("user_disconnect_requested").length).toBeGreaterThan(0);
+    expect((await screen.findAllByText("user_disconnect_requested")).length).toBeGreaterThan(0);
     expect(screen.queryByText("wcn_public_1")).toBeNull();
     expect(screen.queryByText("secret-token")).toBeNull();
     expect(screen.queryByText("access_token")).toBeNull();
@@ -2460,7 +2452,7 @@ describe("WiiiConnectPage", () => {
     expect(tracePanel.textContent).toContain("action_completed");
     expect(tracePanel.textContent).toContain("wiii_connect_action_result");
     expect(doctorPanel.textContent).toContain("Runtime doctor");
-    expect(doctorPanel.textContent).toContain("no_agent_ready_external_provider");
+    await waitFor(() => expect(doctorPanel.textContent).toContain("no_agent_ready_external_provider"));
     expect(doctorPanel.textContent).toContain("Facebook");
     expect(doctorPanel.textContent).toContain("connection_storage_unavailable");
     expect(doctorPanel.textContent).toContain("Registry");
@@ -2867,7 +2859,7 @@ describe("WiiiConnectPage", () => {
 
     const panel = await screen.findByTestId("wiii-connect-runtime-flow-doctor-panel");
     expect(panel.textContent).toContain("Aggregate runtime doctor");
-    expect(panel.textContent).toContain("degraded");
+    await waitFor(() => expect(panel.textContent).toContain("degraded"));
     expect(panel.textContent).toContain("missing_request_id");
     expect(panel.textContent).toContain("external_app_action");
     expect(panel.textContent).toContain("document_context_truncated");
@@ -2910,7 +2902,7 @@ describe("WiiiConnectPage", () => {
     expect(historyPanel.textContent).toContain("3");
     const memoryPanel = await screen.findByTestId("wiii-connect-semantic-memory-doctor-panel");
     expect(memoryPanel.textContent).toContain("Semantic memory doctor");
-    expect(memoryPanel.textContent).toContain("Memory write history");
+    await waitFor(() => expect(memoryPanel.textContent).toContain("Memory write history"));
     expect(memoryPanel.textContent).toContain("degraded");
     expect(memoryPanel.textContent).toContain("interaction");
     expect(memoryPanel.textContent).toContain("request_scoped");
@@ -3018,11 +3010,9 @@ describe("WiiiConnectPage", () => {
       );
     });
     const report = screen.getByTestId("wiii-connect-runtime-prune-report");
-    await waitFor(() => {
-      expect(report.textContent).toContain("Matched");
-      expect(report.textContent).toContain("2");
-      expect((applyButton as HTMLButtonElement).disabled).toBe(false);
-    });
+    await waitFor(() => expect((applyButton as HTMLButtonElement).disabled).toBe(false));
+    expect(report.textContent).toContain("Matched");
+    expect(report.textContent).toContain("2");
 
     fireEvent.click(applyButton);
 
@@ -3036,10 +3026,7 @@ describe("WiiiConnectPage", () => {
         }),
       );
     });
-    await waitFor(() => {
-      expect(report.textContent).toContain("Deleted");
-      expect(report.textContent).toContain("2");
-    });
+    await waitFor(() => expect(report.textContent).toContain("Deleted2"));
     const aggregatePanel = screen.getByTestId("wiii-connect-runtime-flow-doctor-panel");
     expect(container.textContent).toContain("aggregate_counts_only");
     expect(container.textContent).not.toContain("org-secret-retention");
@@ -3144,7 +3131,7 @@ describe("WiiiConnectPage", () => {
     );
 
     const doctorPanel = await screen.findByTestId("wiii-connect-doctor-panel");
-    expect(doctorPanel.textContent).toContain("Facebook");
+    await waitFor(() => expect(doctorPanel.textContent).toContain("Facebook"));
     expect(doctorPanel.textContent).toContain("Registry");
     expect(doctorPanel.textContent).toContain("Gateway");
     expect(doctorPanel.textContent).toContain("[đã ẩn]");

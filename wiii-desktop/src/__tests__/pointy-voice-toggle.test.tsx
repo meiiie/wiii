@@ -55,12 +55,8 @@ describe("PointyModeToggle voice readiness", () => {
 
     fireEvent.click(await screen.findByRole("button", { name: "Bật Pointy voice" }));
 
-    await waitFor(() => {
-      expect(useSettingsStore.getState().settings.pointy_voice_enabled).toBe(false);
-      expect(useToastStore.getState().toasts.at(-1)?.message).toContain(
-        "ElevenLabs key",
-      );
-    });
+    await waitFor(() => expect(useToastStore.getState().toasts.at(-1)?.message).toContain("ElevenLabs key"));
+    expect(useSettingsStore.getState().settings.pointy_voice_enabled).toBe(false);
     expect(await screen.findByLabelText("ElevenLabs API key")).toBeTruthy();
   });
 
@@ -71,10 +67,8 @@ describe("PointyModeToggle voice readiness", () => {
 
     fireEvent.click(await screen.findByRole("button", { name: "Bật Pointy voice" }));
 
-    await waitFor(() => {
-      expect(useSettingsStore.getState().settings.pointy_voice_enabled).toBe(true);
-      expect(useToastStore.getState().toasts.at(-1)?.type).toBe("success");
-    });
+    await waitFor(() => expect(useToastStore.getState().toasts.at(-1)?.type).toBe("success"));
+    expect(useSettingsStore.getState().settings.pointy_voice_enabled).toBe(true);
   });
 
   it("saves an ElevenLabs key server-side before enabling Pointy voice", async () => {
@@ -88,14 +82,12 @@ describe("PointyModeToggle voice readiness", () => {
     fireEvent.change(keyInput, { target: { value: "unit-test-elevenlabs-key" } });
     fireEvent.click(screen.getByRole("button", { name: "Lưu key và bật Voice" }));
 
-    await waitFor(() => {
-      expect(updateVoiceConfig).toHaveBeenCalledWith({
-        enabled: true,
-        api_key: "unit-test-elevenlabs-key",
-      });
-      expect(useSettingsStore.getState().settings.pointy_voice_enabled).toBe(true);
-      expect(useToastStore.getState().toasts.at(-1)?.type).toBe("success");
+    await waitFor(() => expect(useToastStore.getState().toasts.at(-1)?.type).toBe("success"));
+    expect(updateVoiceConfig).toHaveBeenCalledWith({
+      enabled: true,
+      api_key: "unit-test-elevenlabs-key",
     });
+    expect(useSettingsStore.getState().settings.pointy_voice_enabled).toBe(true);
     expect(screen.queryByLabelText("ElevenLabs API key")).toBeNull();
   });
 });

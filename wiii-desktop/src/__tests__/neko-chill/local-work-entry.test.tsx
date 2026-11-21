@@ -106,7 +106,7 @@ describe("normal local Work entry preserves Workbench boundaries", () => {
     expect(fixture.hydrateWork).not.toHaveBeenCalled();
     fireEvent.click(screen.getByRole("button", { name: "Mở bản thử nghiệm Công việc" }));
     await screen.findByTestId("work-home");
-    expect(screen.getByTestId("wiii-ade-app")).toBeTruthy();
+    expect(await screen.findByTestId("wiii-ade-app")).toBeTruthy();
     await waitFor(() => expect(fixture.hydrateWork).toHaveBeenCalledOnce());
     expect(fixture.createTaskRun).not.toHaveBeenCalled();
     expect(fixture.disposeRuntimes).not.toHaveBeenCalled();
@@ -181,7 +181,7 @@ describe("normal local Work entry preserves Workbench boundaries", () => {
     fixture.sessions.active = { status: "streaming", cancelPending: false, closePending: false, pendingPermission: null, resolvingPermissionId: null };
     fireEvent.click(screen.getByRole("button", { name: button }));
     await screen.findByTestId("work-navigation-status");
-    expect(screen.getByTestId("local-neko")).toBeTruthy();
+    expect(await screen.findByTestId("local-neko")).toBeTruthy();
     expect(screen.queryByTestId("native-service")).toBeNull();
     expect(screen.queryByTestId("native-connect")).toBeNull();
     expect(fixture.disposeRuntimes).not.toHaveBeenCalled();
@@ -192,7 +192,7 @@ describe("normal local Work entry preserves Workbench boundaries", () => {
     fixture.storage.set("wiii-workbench.json:surface", "local");
     render(<WorkbenchGate host={web} />);
     expect(await screen.findByRole("heading", { name: "Wiii chạy trên ứng dụng desktop" })).toBeTruthy();
-    expect(screen.getByRole("link", { name: "Tải ứng dụng desktop" }).getAttribute("href")).toBe("https://github.com/meiiie/wiii/releases");
+    expect((await screen.findByRole("link", { name: "Tải ứng dụng desktop" })).getAttribute("href")).toBe("https://github.com/meiiie/wiii/releases");
     expect(screen.getByText(/Trò chuyện Wiii trên web đã ngừng hoạt động/)).toBeTruthy();
     await waitFor(() => expect(useWorkbenchStore.getState().isLoaded).toBe(true));
     expect(screen.queryByTestId("local-neko")).toBeNull();
@@ -217,7 +217,7 @@ describe("normal local Work entry preserves Workbench boundaries", () => {
       fixture.sessions["synthetic-active"] = { ...idle, ...busy };
       await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Mở bản thử nghiệm Công việc" })); });
       expect(await screen.findByTestId("work-navigation-status")).toBeTruthy();
-      expect(screen.getByTestId("local-neko")).toBeTruthy();
+      expect(await screen.findByTestId("local-neko")).toBeTruthy();
       expect(screen.queryByTestId("wiii-ade-app")).toBeNull();
       expect(fixture.hydrateWork).not.toHaveBeenCalled();
       expect(fixture.cancelTurn).not.toHaveBeenCalled();
@@ -250,7 +250,7 @@ describe("normal local Work entry preserves Workbench boundaries", () => {
       fixture.sessions["synthetic-scoped-active"] = { ...idle, ...busy };
       fireEvent.click(screen.getByRole("button", { name: "Mở bản thử nghiệm Công việc" }));
       expect(await screen.findByTestId("work-navigation-status")).toBeTruthy();
-      expect(screen.getByTestId("local-neko")).toBeTruthy();
+      expect(await screen.findByTestId("local-neko")).toBeTruthy();
       expect(screen.queryByTestId("work-home")).toBeNull();
       expect(fixture.cancelTurn).not.toHaveBeenCalled();
       expect(fixture.closeSession).not.toHaveBeenCalled();

@@ -189,16 +189,14 @@ describe("LoginScreen — dev-login button (Issue #88)", () => {
       fireEvent.click(screen.getByTestId("dev-login-button"));
     });
 
-    await waitFor(() => {
-      expect(postCalled).toBe(true);
-      expect(loginSpy).toHaveBeenCalledTimes(1);
-      const [accessTok, refreshTok, expiresIn, user] = loginSpy.mock.calls[0];
-      expect(accessTok).toBe("ACCESS");
-      expect(refreshTok).toBe("REFRESH");
-      expect(expiresIn).toBe(1800);
-      // buildAuthUserFromPayload normalises user_id→id; the AuthUser carries
-      // the canonical id field plus the legacy user_id field.
-      expect(user.id).toBe("dev-user-1");
-    });
+    await waitFor(() => expect(loginSpy).toHaveBeenCalledTimes(1));
+    expect(postCalled).toBe(true);
+    const [accessTok, refreshTok, expiresIn, user] = loginSpy.mock.calls[0];
+    expect(accessTok).toBe("ACCESS");
+    expect(refreshTok).toBe("REFRESH");
+    expect(expiresIn).toBe(1800);
+    // buildAuthUserFromPayload normalises user_id→id; the AuthUser carries
+    // the canonical id field plus the legacy user_id field.
+    expect(user.id).toBe("dev-user-1");
   });
 });

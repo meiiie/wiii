@@ -53,8 +53,9 @@ describe("Markdown code routing and safety", () => {
 
   it("keeps a valid GFM table readable alongside an incomplete code fence", async () => {
     render(<MarkdownRenderer content={'| Key | Value |\n| --- | --- |\n| glob | ./src/**/* |\n\n```js\nconst label = "A --- B";'} streaming />);
-    expect(await screen.findByRole("table")).toBeTruthy();
-    expect(screen.getByRole("cell", { name: "./src/**/*" })).toBeTruthy();
+    const table = await screen.findByRole("table");
+    expect(table).toBeTruthy();
+    expect(within(table).getByRole("cell", { name: "./src/**/*" })).toBeTruthy();
     expect((await screen.findByTestId("code-block")).querySelector("code")?.textContent).toBe('const label = "A --- B";');
   });
 
