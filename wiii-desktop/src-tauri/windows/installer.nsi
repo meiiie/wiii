@@ -302,6 +302,15 @@ Function PageLeaveReinstall
     Goto reinst_done
   ${EndIf}
 
+  ; Wiii one-click: install same or newer versions in place, like the updater,
+  ; so shortcut pins survive; uninstall first only when downgrading.
+  ${If} $PassiveMode = 1
+    ${If} $R0 = -1
+      Goto reinst_uninstall
+    ${EndIf}
+    Goto reinst_done
+  ${EndIf}
+
   ; $R0 holds whether same(0)/upgrading(1)/downgrading(-1) version
   ; $R1 holds the radio buttons state:
   ;   1 => first choice was selected
@@ -457,7 +466,9 @@ FunctionEnd
 {{/each}}
 
 Function .onInit
-  ; Wiii one-click: always skip the wizard pages; only the progress page shows.
+  ; Wiii one-click: ask before closing a running Wiii (passive mode would kill
+  ; it silently), then skip the wizard pages; only the progress page shows.
+  !insertmacro CheckIfAppIsRunning "${MAINBINARYNAME}.exe" "${PRODUCTNAME}"
   StrCpy $PassiveMode 1
 
   ${GetOptions} $CMDLINE "/NS" $NoShortcutMode

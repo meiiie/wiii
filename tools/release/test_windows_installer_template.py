@@ -35,6 +35,18 @@ class WindowsInstallerTemplateTests(unittest.TestCase):
         self.assertRegex(on_init, r"(?m)^\s*StrCpy \$PassiveMode 1\s*$")
         self.assertNotIn('"/P" $PassiveMode', on_init)
 
+    def test_running_wiii_is_closed_only_after_asking(self):
+        on_init = self._function(".onInit")
+        check = on_init.index("!insertmacro CheckIfAppIsRunning")
+        self.assertLess(check, on_init.index("StrCpy $PassiveMode 1"))
+
+    def test_reinstall_keeps_same_or_newer_installs_in_place(self):
+        leave = self._function("PageLeaveReinstall")
+        passive = leave.index("${If} $PassiveMode = 1")
+        self.assertLess(leave.index("${If} $UpdateMode = 1"), passive)
+        self.assertLess(passive, leave.index("${If} $R0 = 0"))
+        self.assertRegex(leave[passive:], r"\$\{If\} \$R0 = -1\s+Goto reinst_uninstall")
+
     def test_progress_page_is_the_only_installer_page(self):
         self.assertIn("ShowInstDetails nevershow", self.template)
         pages = []
