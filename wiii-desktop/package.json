@@ -26,6 +26,7 @@
     "test:web:visual:mobile": "node scripts/run-web-visual-smoke.mjs --viewport-width 390 --viewport-height 1440 --result-name web-visual-mobile-result.json --screenshot-name visual-mobile-rendered.png --user-id visual-mobile-smoke-user --display-name \"Visual Mobile Smoke\"",
     "test:e2e:visual": "playwright test -c playwright.visual.config.ts",
     "test:e2e:visual:headed": "playwright test -c playwright.visual.config.ts --headed",
+    "test:e2e:native": "node e2e-native/run.mjs",
     "test:e2e:runtime-ledger": "playwright test -c playwright.runtime-ledger.config.ts",
     "test:e2e:runtime-ledger:browser-replay": "node scripts/run-runtime-ledger-browser-replay.mjs",
     "test:e2e:runtime-ledger:browser-replay:local": "node scripts/run-runtime-ledger-browser-replay-local.mjs",
