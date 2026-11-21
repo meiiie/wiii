@@ -59,7 +59,10 @@ mod tests {
         let a = create_workspace(&base).unwrap();
         let b = create_workspace(&base).unwrap();
         assert_ne!(a.path, b.path);
-        assert!(Path::new(&a.path).starts_with(base.canonicalize().unwrap()));
+        assert!(Path::new(&a.path)
+            .canonicalize()
+            .unwrap()
+            .starts_with(base.canonicalize().unwrap()));
         assert_eq!(fs::read_dir(&a.path).unwrap().count(), 0);
         assert_eq!(a.kind, "scratch");
         #[cfg(unix)] {
