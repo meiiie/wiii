@@ -4,7 +4,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from tests.unit.test_tutor_agent_node import _make_tutor
+from tests.unit.tutor_agent_node_helpers import _make_tutor
 
 
 @pytest.mark.asyncio
