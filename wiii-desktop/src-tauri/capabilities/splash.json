@@ -3,5 +3,5 @@
   "identifier": "splash",
   "description": "Startup-only authority for the Wiii splash window",
   "windows": ["splashscreen"],
-  "permissions": ["allow-close-splash"]
+  "permissions": ["allow-close-splash", "notification:allow-is-permission-granted"]
 }
