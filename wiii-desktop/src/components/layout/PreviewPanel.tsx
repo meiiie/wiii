@@ -6,6 +6,7 @@
 import { useEffect, useRef, useState } from "react";
 import { AnimatePresence, motion } from "motion/react";
 import { X, Eye, ExternalLink } from "lucide-react";
+import { useShallow } from "zustand/react/shallow";
 import {
   submitHostActionAudit,
   type HostActionAuditEventType,
@@ -105,8 +106,8 @@ export function PreviewPanel({ inline }: { inline?: boolean }) {
 
   // Keep the full conversation registry so opening an older preview never
   // resolves against an unrelated last message.
-  const previews = useChatStore((s) => {
-    const conv = s.activeConversation();
+  const previews = useChatStore(useShallow((s) => {
+    const conv = s.conversations.find((c) => c.id === s.activeConversationId);
     if (!conv) return [];
     const registry = new Map<string, PreviewItemData>();
     for (const message of conv.messages) {
@@ -120,7 +121,7 @@ export function PreviewPanel({ inline }: { inline?: boolean }) {
       registry.set(preview.preview_id, preview);
     }
     return [...registry.values()];
-  });
+  }));
 
   // Close on Escape
   useEffect(() => {

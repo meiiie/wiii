@@ -1,4 +1,5 @@
 import {
+  act,
   fireEvent,
   render,
   screen,
@@ -431,6 +432,22 @@ describe("PreviewPanel host action operator flow", () => {
     expect(
       await screen.findByText("Applied with LMS approval from SSE."),
     ).toBeTruthy();
+  });
+
+  it("renders an empty registry and updates when the selected preview starts streaming", () => {
+    const preview = makeLessonPatchPreview();
+    useUIStore.getState().openPreview(preview.preview_id);
+
+    render(<PreviewPanel inline />);
+    expect(screen.getByText("(0)")).toBeTruthy();
+
+    act(() => {
+      seedConversation([]);
+      useChatStore.setState({ streamingPreviews: [preview] });
+    });
+
+    expect(screen.getByText("(1)")).toBeTruthy();
+    expect(screen.getByText(preview.title)).toBeTruthy();
   });
 
   it("treats host_preview_approval_required as the expected LMS safety gate", async () => {
