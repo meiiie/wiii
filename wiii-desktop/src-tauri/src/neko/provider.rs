@@ -1770,6 +1770,26 @@ mod tests {
 
     #[cfg(target_os = "linux")]
     #[test]
+    fn linux_bwrap_child_honors_env_clear() {
+        if !super::linux_containment::containment_available() {
+            return;
+        }
+        let mut command = Command::new("/usr/bin/env");
+        command
+            .env_clear()
+            .env("WIII_CONTAINMENT_ENV_TEST", "only")
+            .stdout(std::process::Stdio::piped());
+        let mut child = spawn_owned(&mut command).expect("bwrap spawn");
+        let mut stdout = String::new();
+        io::Read::read_to_string(child.child.stdout.as_mut().unwrap(), &mut stdout).unwrap();
+        assert!(child.child.wait().unwrap().success());
+        // bwrap itself sets PWD for the sandboxed child.
+        let inherited: Vec<&str> = stdout.lines().filter(|l| !l.starts_with("PWD=")).collect();
+        assert_eq!(inherited, ["WIII_CONTAINMENT_ENV_TEST=only"], "{stdout}");
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
     fn linux_bwrap_termination_kills_descendant_tree() {
         if !super::linux_containment::containment_available() {
             return;
