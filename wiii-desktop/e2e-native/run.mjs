@@ -166,19 +166,36 @@ function xauthority() {
   return existsSync(candidate) ? candidate : undefined;
 }
 
+const appEnv = () => ({
+  ...process.env,
+  HOME: home,
+  TMPDIR: path.join(home, "tmp"),
+  XDG_CONFIG_HOME: path.join(home, ".config"),
+  XDG_DATA_HOME: path.join(home, ".local/share"),
+  XDG_CACHE_HOME: path.join(home, ".cache"),
+  NEKO_AUTO_UPDATE: "0",
+  // HOME is isolated, so keep the X server cookie reachable.
+  ...(xauthority() ? { XAUTHORITY: xauthority() } : {}),
+});
+
+/**
+ * Wiii gives the bundled Neko 10 seconds to answer its startup probe. On a cold CI disk the
+ * first start of the large single-file binary can take longer, so load it once beforehand.
+ */
+function warmBundledNeko() {
+  const neko = path.join(path.dirname(app), "runtime/neko/neko");
+  if (!existsSync(neko)) {
+    log(`no bundled Neko next to the app at ${neko}`);
+    return;
+  }
+  const started = Date.now();
+  const version = execFileSync(neko, ["--version"], { env: appEnv(), encoding: "utf8", timeout: 120_000 }).trim();
+  log(`bundled Neko ${version} answered in ${Date.now() - started} ms`);
+}
+
 function startTauriDriver() {
   const child = spawn(args.driver, ["--port", args.port], {
-    env: {
-      ...process.env,
-      HOME: home,
-      TMPDIR: path.join(home, "tmp"),
-      XDG_CONFIG_HOME: path.join(home, ".config"),
-      XDG_DATA_HOME: path.join(home, ".local/share"),
-      XDG_CACHE_HOME: path.join(home, ".cache"),
-      NEKO_AUTO_UPDATE: "0",
-      // HOME is isolated, so keep the X server cookie reachable.
-      ...(xauthority() ? { XAUTHORITY: xauthority() } : {}),
-    },
+    env: appEnv(),
     stdio: ["ignore", "pipe", "pipe"],
   });
   const driverLog = path.join(artifacts, "tauri-driver.log");
@@ -218,6 +235,7 @@ async function main() {
     mode: "default", dream_mode: "off", auto_update: false, auto_update_check: false,
     max_retries: 0, timeout_seconds: 60,
   }, null, 2));
+  warmBundledNeko();
   const tauriDriver = startTauriDriver();
   const base = `http://127.0.0.1:${args.port}`;
   let driver;
@@ -304,6 +322,12 @@ async function main() {
       const details = await driver.execute("return [...document.querySelectorAll('details')].map((node) => node.textContent.trim()).join('\\n');")
         .catch(() => "");
       if (details) log(`page details at failure:\n${details}`);
+      const providers = await driver.executeAsync(`
+        const done = arguments[arguments.length - 1];
+        window.__TAURI_INTERNALS__.invoke("neko_control_provider_list", { providerId: "neko" })
+          .then((value) => done(JSON.stringify(value)), (reason) => done("error: " + reason));`, [])
+        .catch((reason) => `unavailable: ${reason.message}`);
+      log(`Neko provider probe at failure: ${providers}`);
     }
     writeFileSync(path.join(artifacts, "model-requests.json"), JSON.stringify(model.requests, null, 2));
     throw error;
