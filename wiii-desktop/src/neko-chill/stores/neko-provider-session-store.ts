@@ -2,6 +2,7 @@ import { create } from "zustand";
 import { getNekoControlClient } from "@/neko/control-client";
 import type { NekoProviderSessionCatalog } from "@/neko/contracts";
 import type { DetectedAgent } from "./neko-agent-store";
+import { normalizeSessionTitle } from "../session-title";
 
 interface NekoProviderSessionState {
   catalogs: Record<string, NekoProviderSessionCatalog>;
@@ -62,7 +63,13 @@ export const useNekoProviderSessionStore = create<NekoProviderSessionState>((set
     for (const [index, result] of results.entries()) {
       const agent = available[index];
       if (result.status === "fulfilled") {
-        catalogs[result.value.providerId] = result.value.catalog;
+        catalogs[result.value.providerId] = {
+          ...result.value.catalog,
+          sessions: result.value.catalog.sessions.map((session) => ({
+            ...session,
+            title: normalizeSessionTitle(session.title),
+          })),
+        };
       } else {
         const detail = result.reason instanceof Error ? result.reason.message : String(result.reason);
         failures.push(`${agent.name}: ${detail}`);
