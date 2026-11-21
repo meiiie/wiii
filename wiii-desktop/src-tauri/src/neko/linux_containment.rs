@@ -257,6 +257,16 @@ mod tests {
     use super::*;
 
     #[test]
+    fn required_bwrap_is_usable() {
+        if std::env::var("WIII_REQUIRE_BWRAP").as_deref() == Ok("1") {
+            assert!(
+                probe_bwrap_capability(),
+                "WIII_REQUIRE_BWRAP=1 requires bubblewrap with working PID namespaces"
+            );
+        }
+    }
+
+    #[test]
     fn force_unavailable_hides_bwrap() {
         force_unavailable_for_test(true);
         assert!(bwrap_path().is_none());
