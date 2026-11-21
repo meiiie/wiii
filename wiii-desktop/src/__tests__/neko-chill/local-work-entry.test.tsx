@@ -62,11 +62,6 @@ vi.mock("@/neko-chill/NekoChillApp", () => ({
     {showWorkNavigation ? <button type="button" onClick={onOpenWork}>Mở bản thử nghiệm Công việc</button> : null}
   </div>,
 }));
-vi.mock("@/workbench/WiiiCloudApp", () => ({
-  default: ({ onOpenLocal }: { onOpenLocal?: () => void }) => <div data-testid="managed">
-    {onOpenLocal ? <button type="button" onClick={onOpenLocal}>Back local</button> : null}
-  </div>,
-}));
 vi.mock("@/workbench/WiiiServiceSurface", () => ({
   WiiiServiceSurface: ({ view, onBack, onOpenConnect }: { view: string; onBack: () => void; onOpenConnect: () => void }) => (
     <div data-testid={`native-${view}`}>
@@ -167,7 +162,9 @@ describe("normal local Work entry preserves Workbench boundaries", () => {
     delete (window as unknown as Record<string, unknown>).__TAURI_INTERNALS__;
     fixture.storage.set("wiii-workbench.json:surface", "local");
     render(<WorkbenchGate host={web} />);
-    await screen.findByTestId("managed");
+    expect(await screen.findByRole("heading", { name: "Wiii chạy trên ứng dụng desktop" })).toBeTruthy();
+    expect(screen.getByRole("link", { name: "Tải ứng dụng desktop" }).getAttribute("href")).toBe("https://github.com/meiiie/wiii/releases");
+    expect(screen.getByText(/Trò chuyện Wiii trên web đã ngừng hoạt động/)).toBeTruthy();
     await waitFor(() => expect(useWorkbenchStore.getState().isLoaded).toBe(true));
     expect(screen.queryByTestId("local-neko")).toBeNull();
     expect(screen.queryByTestId("wiii-ade-app")).toBeNull();

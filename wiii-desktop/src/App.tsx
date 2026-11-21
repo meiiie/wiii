@@ -8,8 +8,7 @@ import { useUIStore } from "@/stores/ui-store";
 import { WorkbenchApp } from "@/workbench/WorkbenchApp";
 import { detectWorkbenchHost, type WorkbenchHost } from "@/workbench/host";
 import { BootSplash } from "@/workbench/WorkbenchBoot";
-
-const WiiiCloudApp = lazy(async () => import("@/workbench/WiiiCloudApp"));
+import { WiiiMark } from "@/components/common/WiiiMark";
 
 const AvatarPreview = lazy(async () => {
   const mod = await import("@/components/common/AvatarPreview");
@@ -105,7 +104,7 @@ function LocalWorkbenchScreens() {
  * Host-aware Workbench boundary (#923).
  *
  * The inactive surface stays unmounted. Desktop can run a local agent without
- * cloud bootstrap; hosted web can only open remotely-backed capabilities.
+ * cloud bootstrap; hosted web directs users to the desktop app.
  */
 export function WorkbenchGate({ host = detectWorkbenchHost() }: { host?: WorkbenchHost }) {
   return (
@@ -119,14 +118,23 @@ export function WorkbenchGate({ host = detectWorkbenchHost() }: { host?: Workben
           </Suspense>
         </ErrorBoundary>
       )}
-      renderManaged={({ openLocal }) => (
-        <ErrorBoundary>
-          <Suspense fallback={<BootSplash label="Wiii đang mở không gian được quản lý..." />}>
-            <WiiiCloudApp
-              onOpenLocal={host.capabilities.localProcess ? openLocal : undefined}
-            />
-          </Suspense>
-        </ErrorBoundary>
+      renderManaged={() => (
+        <main className="grid h-screen place-items-center overflow-y-auto bg-surface px-6 py-12 text-text">
+          <section className="w-full max-w-lg rounded-2xl border border-border bg-surface-secondary p-8 text-center">
+            <div className="flex justify-center"><WiiiMark size={48} alt="Wiii" /></div>
+            <h1 className="mt-6 text-2xl font-semibold">Wiii chạy trên ứng dụng desktop</h1>
+            <p className="mt-4 text-sm leading-6 text-text-secondary">
+              Trò chuyện Wiii trên web đã ngừng hoạt động. Hãy tải ứng dụng desktop
+              để tiếp tục làm việc với Neko, agent và dự án trên máy của bạn.
+            </p>
+            <a
+              href="https://github.com/meiiie/wiii/releases"
+              className="mt-6 inline-flex rounded-xl bg-text px-5 py-3 text-sm font-medium text-surface hover:opacity-85 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]/40"
+            >
+              Tải ứng dụng desktop
+            </a>
+          </section>
+        </main>
       )}
     />
   );
