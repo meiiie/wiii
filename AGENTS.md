@@ -104,7 +104,7 @@ Backend:
 ```bash
 cd maritime-ai-service
 set PYTHONIOENCODING=utf-8 && pytest tests/unit/ -p no:capture --tb=short -q
-ruff check app/ --select=E9,F63,F7
+ruff check app/
 ```
 
 Desktop:

@@ -2,8 +2,7 @@
  * SettingsView — Sprint 192: Full-page settings.
  * Sprint 216: Progressive disclosure — dynamic tab visibility, label renames.
  *
- * Replaces SettingsPage modal. Reuses all existing tab sub-components
- * from SettingsPage inside the FullPageView layout.
+ * Hosts the shared settings tabs inside the FullPageView layout.
  */
 import { useState, useMemo, useEffect } from "react";
 import {

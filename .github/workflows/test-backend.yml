@@ -65,7 +65,7 @@ jobs:
         working-directory: maritime-ai-service
         run: |
           pytest tests/unit/ -p no:capture --tb=short -q --co -q 2>/dev/null | tail -1
-          pytest tests/unit/ -p no:capture --tb=short -q --cov=app --cov-report=html --cov-report=term --cov-fail-under=70
+          pytest tests/unit/ -p no:capture --tb=short -q --cov=app --cov-report=html --cov-report=term --cov-fail-under=80
 
       - name: Upload test results
         if: always()
