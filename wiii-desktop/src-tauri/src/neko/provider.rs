@@ -290,7 +290,7 @@ fn run_probe_with_timeout(
     Ok(ProbeOutput { status, stdout })
 }
 
-#[cfg(test)]
+#[cfg(all(test, unix))]
 fn run_probe(command: Command) -> Result<ProbeOutput, SpawnOwnedError> {
     run_probe_with_timeout(command, PROBE_TIMEOUT)
 }
@@ -1208,6 +1208,9 @@ pub fn profiles(provider_id: &str, cwd: &str) -> Result<Vec<AgentProfile>, Strin
 mod tests {
     use super::*;
 
+    #[cfg(windows)]
+    const WINDOWS_FIXTURE_STARTUP_TIMEOUT: Duration = Duration::from_secs(15);
+
     #[test]
     fn bundled_metadata_preserves_legacy_shape_and_serializes_true() {
         let legacy = serde_json::json!({
@@ -1557,7 +1560,7 @@ mod tests {
             command
         };
 
-        match run_probe(command) {
+        match run_probe_with_timeout(command, WINDOWS_FIXTURE_STARTUP_TIMEOUT) {
             Ok(output) => assert!(output.stdout.len() <= MAX_PROBE_OUTPUT_BYTES),
             Err(error) => {
                 assert_eq!(error.kind(), io::ErrorKind::InvalidData);
@@ -1869,13 +1872,14 @@ mod tests {
             &script,
         ]);
         let mut child = spawn_owned(&mut command).unwrap();
-        let deadline = Instant::now() + Duration::from_secs(5);
+        let deadline = Instant::now() + WINDOWS_FIXTURE_STARTUP_TIMEOUT;
         while (!marker.exists() || child.child.try_wait().unwrap().is_none())
             && Instant::now() < deadline
         {
             thread::sleep(PROCESS_POLL_INTERVAL);
         }
         assert!(marker.exists());
+        assert!(child.child.try_wait().unwrap().is_some());
 
         terminate_child_tree(&mut child).unwrap();
         let _ = std::fs::remove_file(marker);
@@ -1911,7 +1915,7 @@ mod tests {
             &script,
         ]);
         let mut child = spawn_owned(&mut command).unwrap();
-        let deadline = Instant::now() + Duration::from_secs(5);
+        let deadline = Instant::now() + WINDOWS_FIXTURE_STARTUP_TIMEOUT;
         while (!marker.exists() || child.child.try_wait().unwrap().is_none())
             && Instant::now() < deadline
         {
