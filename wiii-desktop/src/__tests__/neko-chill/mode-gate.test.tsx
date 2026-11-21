@@ -53,6 +53,7 @@ vi.mock("@/neko-chill/NekoChillApp", () => ({
 vi.mock("@/components/common/WiiiAvatar", () => ({
   WiiiAvatar: () => <span data-testid="avatar-stub" />,
 }));
+vi.mock("@/workbench/WiiiServiceSurface", () => ({ WiiiServiceSurface: () => <div data-testid="native-connect" /> }));
 
 import { WorkbenchGate } from "@/App";
 import { useUIStore } from "@/stores/ui-store";
@@ -104,7 +105,7 @@ describe("WorkbenchGate (App.tsx seam)", () => {
     await screen.findByTestId("neko-chill-root");
 
     fireEvent.click(screen.getByRole("button", { name: "open connections" }));
-
+    await screen.findByTestId("native-connect");
     expect(useUIStore.getState().activeView).toBe("wiii-connect");
     expect(useUIStore.getState().wiiiConnectFocusProvider).toBe("gmail");
   });

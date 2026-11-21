@@ -66,9 +66,9 @@ describe("Workbench surface migration", () => {
     expect(resolveInitialWorkbenchSurface(desktop, null, "wiii", false)).toBe("local");
   });
 
-  it("preserves an existing managed-mode intent without deleting auth", () => {
-    expect(resolveInitialWorkbenchSurface(desktop, null, "wiii", true)).toBe("managed");
-    expect(resolveInitialWorkbenchSurface(desktop, null, null, true)).toBe("managed");
+  it("always opens desktop locally even with an account and managed preferences", () => {
+    expect(resolveInitialWorkbenchSurface(desktop, "managed", "wiii", true)).toBe("local");
+    expect(resolveInitialWorkbenchSurface(desktop, null, null, true)).toBe("local");
   });
 
   it("forces hosted web onto a remote-capable surface", () => {
@@ -80,7 +80,7 @@ describe("Workbench surface migration", () => {
     storage.set("auth_state:data", { user: { id: "existing" } });
 
     await useWorkbenchStore.getState().load(desktop);
-    expect(useWorkbenchStore.getState().surface).toBe("managed");
+    expect(useWorkbenchStore.getState().surface).toBe("local");
 
     await useWorkbenchStore.getState().setSurface("local", desktop);
     expect(storage.get("wiii-workbench.json:surface")).toBe("local");

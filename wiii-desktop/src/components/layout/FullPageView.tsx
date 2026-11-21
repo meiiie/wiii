@@ -24,6 +24,7 @@ interface FullPageViewProps {
   activeTab: string;
   onTabChange: (id: string) => void;
   onClose: () => void;
+  backLabel?: string;
   children: React.ReactNode;
   footer?: React.ReactNode;
 }
@@ -36,6 +37,7 @@ export function FullPageView({
   activeTab,
   onTabChange,
   onClose,
+  backLabel = "Quay lại trò chuyện",
   children,
   footer,
 }: FullPageViewProps) {
@@ -89,7 +91,7 @@ export function FullPageView({
             className="flex items-center gap-2 w-full px-3 py-2 rounded-lg text-sm text-text-secondary hover:bg-surface-tertiary hover:text-text transition-colors"
           >
             <ArrowLeft size={14} />
-            Quay lại trò chuyện
+            {backLabel}
           </button>
         </div>
       </div>
