@@ -56,6 +56,8 @@ pub(crate) fn confined_write_roots(
     canonical: &Path,
     home: &Path,
     scratch_requested: bool,
+    provider_id: &str,
+    codex_home: Option<&Path>,
 ) -> Result<Option<Vec<std::path::PathBuf>>, String> {
     let parent = data_dir
         .canonicalize()
@@ -70,10 +72,25 @@ pub(crate) fn confined_write_roots(
     {
         return Err("Thư mục Quick Chat không hợp lệ.".into());
     }
-    let state = home
+    let home = home
         .canonicalize()
-        .map_err(|error| error.to_string())?
-        .join(".neko-core");
+        .map_err(|error| error.to_string())?;
+    let state = match provider_id {
+        "neko" => home.join(".neko-core"),
+        "codex" => codex_home
+            .filter(|path| !path.as_os_str().is_empty())
+            .map(Path::to_path_buf)
+            .unwrap_or_else(|| home.join(".codex")),
+        _ => return Err(format!(
+            "Quick Chat chưa hỗ trợ vùng ghi an toàn cho nhà cung cấp '{provider_id}'. Vui lòng dùng Neko Core hoặc Codex."
+        )),
+    };
+    if !state.is_absolute()
+        || state.parent().and_then(|parent| parent.canonicalize().ok()).as_deref()
+            != state.parent()
+    {
+        return Err("Thư mục trạng thái Quick Chat phải là đường dẫn tuyệt đối, không qua liên kết.".into());
+    }
     let temp = canonical.join(".tmp");
     for root in [&state, &temp] {
         match fs::symlink_metadata(root) {
@@ -101,14 +118,14 @@ mod tests {
         let project = base.join("project");
         fs::create_dir(&project).unwrap();
         assert!(
-            confined_write_roots(&base, &project, &project, &base, false)
+            confined_write_roots(&base, &project, &project, &base, false, "neko", None)
                 .unwrap()
                 .is_none()
         );
-        assert!(confined_write_roots(&base, &project, &project, &base, true).is_err());
+        assert!(confined_write_roots(&base, &project, &project, &base, true, "neko", None).is_err());
         let workspace = create_workspace(&base).unwrap();
         let scratch = Path::new(&workspace.path);
-        let roots = confined_write_roots(&base, scratch, scratch, &base, true)
+        let roots = confined_write_roots(&base, scratch, scratch, &base, true, "neko", None)
             .unwrap()
             .unwrap();
         assert_eq!(
@@ -119,17 +136,45 @@ mod tests {
                 scratch.join(".tmp")
             ]
         );
-        assert!(confined_write_roots(&base, scratch, &project, &base, true).is_err());
+        assert!(confined_write_roots(&base, scratch, &project, &base, true, "neko", None).is_err());
         let nested = scratch.join("nested");
         fs::create_dir(&nested).unwrap();
-        assert!(confined_write_roots(&base, &nested, &nested, &base, true).is_err());
+        assert!(confined_write_roots(&base, &nested, &nested, &base, true, "neko", None).is_err());
         fs::remove_dir(&roots[1]).unwrap();
         std::os::unix::fs::symlink(&project, &roots[1]).unwrap();
-        assert!(confined_write_roots(&base, scratch, scratch, &base, true).is_err());
+        assert!(confined_write_roots(&base, scratch, scratch, &base, true, "neko", None).is_err());
         fs::remove_file(&roots[1]).unwrap();
         fs::remove_dir(&roots[2]).unwrap();
         std::os::unix::fs::symlink(&project, &roots[2]).unwrap();
-        assert!(confined_write_roots(&base, scratch, scratch, &base, true).is_err());
+        assert!(confined_write_roots(&base, scratch, scratch, &base, true, "neko", None).is_err());
+        fs::remove_dir_all(base).unwrap();
+    }
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn confinement_selects_codex_state_and_rejects_unknown_provider_roots() {
+        let base = std::env::temp_dir().join(format!("wiii-quick-codex-{}", uuid::Uuid::new_v4()));
+        fs::create_dir(&base).unwrap();
+        let workspace = create_workspace(&base).unwrap();
+        let scratch = Path::new(&workspace.path);
+        let roots = confined_write_roots(&base, scratch, scratch, &base, true, "codex", None)
+            .unwrap().unwrap();
+        assert_eq!(roots[1], base.join(".codex"));
+        let custom = base.join("custom-codex");
+        let roots = confined_write_roots(&base, scratch, scratch, &base, true, "codex", Some(&custom))
+            .unwrap().unwrap();
+        assert_eq!(roots[1], custom);
+        fs::remove_dir(&custom).unwrap();
+        std::os::unix::fs::symlink(base.join(".codex"), &custom).unwrap();
+        assert!(confined_write_roots(&base, scratch, scratch, &base, true, "codex", Some(&custom)).is_err());
+        fs::remove_file(&custom).unwrap();
+        fs::write(&custom, "not a directory").unwrap();
+        assert!(confined_write_roots(&base, scratch, scratch, &base, true, "codex", Some(&custom)).is_err());
+        assert!(confined_write_roots(&base, scratch, scratch, &base, true, "codex", Some(Path::new("relative"))).is_err());
+        for provider in ["gemini", "opencode", "claude", "cursor", "copilot", "unknown"] {
+            let error = confined_write_roots(&base, scratch, scratch, &base, true, provider, None).unwrap_err();
+            assert!(error.contains("chưa hỗ trợ vùng ghi an toàn"));
+            assert!(confined_write_roots(&base, &base, &base, &base, false, provider, None).unwrap().is_none());
+        }
         fs::remove_dir_all(base).unwrap();
     }
     #[test]

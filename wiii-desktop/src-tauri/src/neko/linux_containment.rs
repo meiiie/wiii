@@ -172,7 +172,7 @@ fn supervisor_args(write_roots: Option<&[PathBuf]>) -> io::Result<Vec<OsString>>
         .map(OsString::from)
         .collect();
     if let Some(roots) = write_roots {
-        if roots.len() != 3
+        if roots.len() < 3
             || roots
                 .iter()
                 .any(|root| !root.is_absolute() || !root.is_dir())

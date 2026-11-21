@@ -456,6 +456,8 @@ impl NekoRuntime {
                     &canonical_workspace_path,
                     Path::new(&home),
                     request.workspace_kind.as_deref() == Some("scratch"),
+                    &request.provider_id,
+                    std::env::var_os("CODEX_HOME").as_deref().map(Path::new),
                 )
             })();
             match roots {
