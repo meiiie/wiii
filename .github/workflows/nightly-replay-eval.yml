@@ -1,10 +1,9 @@
-name: Nightly Replay Eval
+name: Managed Chat Replay Eval
 
 # Phase 11b of the runtime migration epic (issue #207).
 #
-# This workflow runs the replay_eval harness daily so a regression in the
-# response shape, latency profile, or source overlap shows up in the
-# morning instead of weeks later. Today it operates in HARNESS-VALIDATION
+# This workflow runs the legacy replay_eval harness on demand. It operates
+# in HARNESS-VALIDATION
 # mode: it generates synthetic recordings on the fly and replays them in
 # --dry-run. That proves the script + EvalRecorder + diff_records loop
 # works end-to-end without a GOOGLE_API_KEY.
@@ -15,8 +14,6 @@ name: Nightly Replay Eval
 # exposes). The replay step itself does not change.
 
 on:
-  schedule:
-    - cron: '0 2 * * *'  # 02:00 UTC daily
   workflow_dispatch:
 
 permissions:

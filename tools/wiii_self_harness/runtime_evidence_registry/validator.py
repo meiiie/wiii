@@ -253,12 +253,14 @@ class RegistryValidator(WorkflowChecks, ProbeChecks):
         elif workflow_text:
             self.pass_check()
 
+        manual_only = item.get("manual_only", False)
+        if not isinstance(manual_only, bool):
+            self.error(f"{context}: `manual_only` must be a boolean")
+
         workflow_required = [
             "permissions:",
             "contents: read",
-            "pull_request:",
             "workflow_dispatch:",
-            "schedule:",
             "actions/upload-artifact@",
             "validate_runtime_evidence_artifact.py",
             str(item.get("id") or ""),
@@ -274,6 +276,8 @@ class RegistryValidator(WorkflowChecks, ProbeChecks):
             ],
             *[diagnostic_upload.path for diagnostic_upload in diagnostic_uploads],
         ]
+        if manual_only is not True:
+            workflow_required.extend(["pull_request:", "schedule:"])
         self.require_tokens(workflow_text, workflow_required, context=f"{context}.workflow")
         self.require_workflow_top_level_key_uniqueness(
             workflow_text,
@@ -405,6 +409,7 @@ class RegistryValidator(WorkflowChecks, ProbeChecks):
         )
         self.require_workflow_path_filters(
             workflow_text,
+            manual_only=manual_only is True,
             workflow_path=str(item.get("workflow") or ""),
             probe_path=str(item.get("probe") or ""),
             test_paths=test_paths,

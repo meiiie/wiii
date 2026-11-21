@@ -999,6 +999,31 @@ class RuntimeEvidenceRegistryTests(unittest.TestCase):
 
         self.assertTrue(result.ok, result.errors)
 
+    def test_manual_only_workflow_rejects_automatic_triggers(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            repo_root = Path(temp_dir)
+            _write_sample_repo(repo_root)
+            sample = _sample_registry()
+            sample["requirements"][0]["manual_only"] = True
+
+            result = registry.validate_registry(
+                sample, repo_root=repo_root, registry_path=repo_root / "registry.json",
+            )
+            self.assertFalse(result.ok)
+            self.assertTrue(any("manual-only workflow" in error for error in result.errors))
+
+            workflow_path = repo_root / sample["requirements"][0]["workflow"]
+            workflow = workflow_path.read_text(encoding="utf-8")
+            _write(
+                workflow_path,
+                workflow[:workflow.index("  pull_request:")]
+                + workflow[workflow.index("  workflow_dispatch:"):],
+            )
+            result = registry.validate_registry(
+                sample, repo_root=repo_root, registry_path=repo_root / "registry.json",
+            )
+            self.assertTrue(result.ok, result.errors)
+
     def test_pull_request_target_fails_closed(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             repo_root = Path(temp_dir)

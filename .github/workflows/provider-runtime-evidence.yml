@@ -1,34 +1,6 @@
 name: Provider Runtime Evidence
 
 on:
-  pull_request:
-    branches: [main]
-    paths:
-      - ".github/workflows/provider-runtime-evidence.yml"
-      - "docs/operations/WIII_SYSTEM_CONTROL_PLANE.md"
-      - "tools/wiii_self_harness/**"
-      - "maritime-ai-service/scripts/runtime_evidence_output.py"
-      - "maritime-ai-service/tests/unit/test_runtime_evidence_output.py"
-      - "maritime-ai-service/app/engine/runtime/**"
-      - "maritime-ai-service/app/engine/llm_pool.py"
-      - "maritime-ai-service/app/engine/messages.py"
-      - "maritime-ai-service/scripts/probe_live_provider_runtime.py"
-      - "maritime-ai-service/tests/unit/test_probe_live_provider_runtime.py"
-  push:
-    branches: [main]
-    paths:
-      - ".github/workflows/provider-runtime-evidence.yml"
-      - "docs/operations/WIII_SYSTEM_CONTROL_PLANE.md"
-      - "tools/wiii_self_harness/**"
-      - "maritime-ai-service/scripts/runtime_evidence_output.py"
-      - "maritime-ai-service/tests/unit/test_runtime_evidence_output.py"
-      - "maritime-ai-service/app/engine/runtime/**"
-      - "maritime-ai-service/app/engine/llm_pool.py"
-      - "maritime-ai-service/app/engine/messages.py"
-      - "maritime-ai-service/scripts/probe_live_provider_runtime.py"
-      - "maritime-ai-service/tests/unit/test_probe_live_provider_runtime.py"
-  schedule:
-    - cron: "45 3 * * *"
   workflow_dispatch:
     inputs:
       allow_live_call:

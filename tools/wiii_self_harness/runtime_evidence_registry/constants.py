@@ -29,6 +29,7 @@ ALLOWED_REQUIREMENT_KEYS = {
     "title",
     "layer",
     "workflow",
+    "manual_only",
     "artifact",
     "schema_version",
     "freshness",

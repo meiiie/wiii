@@ -8,6 +8,7 @@
       "title": "Provider runtime tool-loop evidence",
       "layer": "Wiii Core",
       "workflow": ".github/workflows/provider-runtime-evidence.yml",
+      "manual_only": true,
       "artifact": "provider-runtime-evidence.json",
       "schema_version": "wiii.live_provider_runtime_probe.v1",
       "freshness": {
@@ -523,6 +524,7 @@
       "title": "Parallel subagent boundary replay evidence",
       "layer": "Wiii Core",
       "workflow": ".github/workflows/subagent-boundary-evidence.yml",
+      "manual_only": true,
       "artifact": "subagent-boundary-evidence.json",
       "schema_version": "wiii.live_subagent_boundary_replay.v1",
       "freshness": {
@@ -860,6 +862,7 @@
       "title": "Scheduled autonomy replay evidence",
       "layer": "Wiii Living",
       "workflow": ".github/workflows/autonomy-runtime-evidence.yml",
+      "manual_only": true,
       "artifact": "autonomy-scheduler-evidence.json",
       "schema_version": "wiii.live_scheduler_replay_probe.v1",
       "freshness": {
@@ -1294,6 +1297,7 @@
       "title": "Living heartbeat cycle evidence",
       "layer": "Wiii Living",
       "workflow": ".github/workflows/autonomy-runtime-evidence.yml",
+      "manual_only": true,
       "artifact": "autonomy-heartbeat-evidence.json",
       "schema_version": "wiii.live_heartbeat_cycle_probe.v1",
       "freshness": {
@@ -1710,6 +1714,7 @@
       "title": "Proactive outbound channel evidence",
       "layer": "Wiii Living",
       "workflow": ".github/workflows/autonomy-runtime-evidence.yml",
+      "manual_only": true,
       "artifact": "autonomy-proactive-channel-evidence.json",
       "schema_version": "wiii.live_proactive_channel_probe.v1",
       "freshness": {
@@ -2062,6 +2067,7 @@
       "title": "LMS test-course preview/apply replay evidence",
       "layer": "Wiii Host",
       "workflow": ".github/workflows/wiii-connect-lms-adapter-evidence.yml",
+      "manual_only": true,
       "artifact": "lms-test-course-evidence.json",
       "schema_version": "wiii.live_lms_test_course_replay.v1",
       "freshness": {
@@ -2929,6 +2935,7 @@
       "title": "Semantic-memory write doctor evidence",
       "layer": "Wiii Data",
       "workflow": ".github/workflows/semantic-memory-write-evidence.yml",
+      "manual_only": true,
       "artifact": "semantic-memory-write-evidence.json",
       "schema_version": "wiii.live_semantic_memory_write_doctor.v1",
       "freshness": {
@@ -4660,6 +4667,7 @@
       "title": "Backend evidence to desktop Runtime-tab replay summary",
       "layer": "Wiii Host",
       "workflow": ".github/workflows/runtime-ledger-browser-replay-evidence.yml",
+      "manual_only": true,
       "artifact": "runtime-flow-browser-replay-summary.json",
       "schema_version": "wiii.runtime_flow_browser_replay_summary.v1",
       "freshness": {

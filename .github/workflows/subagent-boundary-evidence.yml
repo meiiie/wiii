@@ -1,40 +1,6 @@
 name: Subagent Boundary Evidence
 
 on:
-  pull_request:
-    branches: [main]
-    paths:
-      - ".github/workflows/subagent-boundary-evidence.yml"
-      - "docs/operations/WIII_SYSTEM_CONTROL_PLANE.md"
-      - "tools/wiii_self_harness/**"
-      - "maritime-ai-service/scripts/runtime_evidence_output.py"
-      - "maritime-ai-service/tests/unit/test_runtime_evidence_output.py"
-      - "maritime-ai-service/app/engine/multi_agent/runtime_flow_doctor.py"
-      - "maritime-ai-service/app/engine/multi_agent/runtime_flow_ledger.py"
-      - "maritime-ai-service/app/engine/multi_agent/subagents/**"
-      - "maritime-ai-service/scripts/probe_live_subagent_boundary_replay.py"
-      - "maritime-ai-service/scripts/wiii_runtime_flow_acceptance.py"
-      - "maritime-ai-service/tests/unit/test_probe_live_subagent_boundary_replay.py"
-      - "maritime-ai-service/tests/unit/test_runtime_flow_doctor.py"
-      - "maritime-ai-service/tests/unit/test_wiii_runtime_flow_acceptance.py"
-  push:
-    branches: [main]
-    paths:
-      - ".github/workflows/subagent-boundary-evidence.yml"
-      - "docs/operations/WIII_SYSTEM_CONTROL_PLANE.md"
-      - "tools/wiii_self_harness/**"
-      - "maritime-ai-service/scripts/runtime_evidence_output.py"
-      - "maritime-ai-service/tests/unit/test_runtime_evidence_output.py"
-      - "maritime-ai-service/app/engine/multi_agent/runtime_flow_doctor.py"
-      - "maritime-ai-service/app/engine/multi_agent/runtime_flow_ledger.py"
-      - "maritime-ai-service/app/engine/multi_agent/subagents/**"
-      - "maritime-ai-service/scripts/probe_live_subagent_boundary_replay.py"
-      - "maritime-ai-service/scripts/wiii_runtime_flow_acceptance.py"
-      - "maritime-ai-service/tests/unit/test_probe_live_subagent_boundary_replay.py"
-      - "maritime-ai-service/tests/unit/test_runtime_flow_doctor.py"
-      - "maritime-ai-service/tests/unit/test_wiii_runtime_flow_acceptance.py"
-  schedule:
-    - cron: "20 3 * * *"
   workflow_dispatch:
     inputs:
       run_subagent_boundary_replay:

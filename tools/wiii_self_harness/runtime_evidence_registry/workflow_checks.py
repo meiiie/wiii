@@ -1196,11 +1196,26 @@ class WorkflowChecks(ValidationChecks):
         self,
         workflow_text: str,
         *,
+        manual_only: bool,
         workflow_path: str,
         probe_path: str,
         test_paths: list[str],
         context: str,
     ) -> None:
+        if manual_only:
+            triggers = [
+                line.strip()
+                for line in _workflow_top_level_block(workflow_text, "on")[1:]
+                if line.startswith("  ")
+                and not line.startswith(("   ", "  #"))
+                and line.strip()
+            ]
+            if triggers == ["workflow_dispatch:"]:
+                self.pass_check()
+            else:
+                self.error(f"{context}: manual-only workflow must only trigger on workflow_dispatch")
+            return
+
         required_paths = [
             workflow_path.replace("\\", "/"),
             "tools/wiii_self_harness/**",

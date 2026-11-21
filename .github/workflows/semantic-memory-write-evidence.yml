@@ -1,48 +1,6 @@
 name: Semantic Memory Write Evidence
 
 on:
-  pull_request:
-    branches: [main]
-    paths:
-      - ".github/workflows/semantic-memory-write-evidence.yml"
-      - "docs/operations/WIII_REPOSITORY_HARNESS.md"
-      - "docs/operations/WIII_SYSTEM_CONTROL_PLANE.md"
-      - "tools/wiii_self_harness/**"
-      - "maritime-ai-service/scripts/runtime_evidence_output.py"
-      - "maritime-ai-service/tests/unit/test_runtime_evidence_output.py"
-      - "maritime-ai-service/app/api/v1/admin.py"
-      - "maritime-ai-service/app/engine/multi_agent/runtime_flow_doctor.py"
-      - "maritime-ai-service/app/engine/multi_agent/runtime_flow_ledger.py"
-      - "maritime-ai-service/app/engine/runtime/session_event_log.py"
-      - "maritime-ai-service/app/engine/semantic_memory/**"
-      - "maritime-ai-service/app/services/post_turn_lifecycle.py"
-      - "maritime-ai-service/scripts/probe_live_semantic_memory_write_doctor.py"
-      - "maritime-ai-service/tests/unit/test_post_turn_lifecycle.py"
-      - "maritime-ai-service/tests/unit/test_probe_live_semantic_memory_write_doctor.py"
-      - "maritime-ai-service/tests/unit/test_runtime_flow_doctor.py"
-      - "maritime-ai-service/tests/unit/test_semantic_memory_privacy.py"
-  push:
-    branches: [main]
-    paths:
-      - ".github/workflows/semantic-memory-write-evidence.yml"
-      - "docs/operations/WIII_REPOSITORY_HARNESS.md"
-      - "docs/operations/WIII_SYSTEM_CONTROL_PLANE.md"
-      - "tools/wiii_self_harness/**"
-      - "maritime-ai-service/scripts/runtime_evidence_output.py"
-      - "maritime-ai-service/tests/unit/test_runtime_evidence_output.py"
-      - "maritime-ai-service/app/api/v1/admin.py"
-      - "maritime-ai-service/app/engine/multi_agent/runtime_flow_doctor.py"
-      - "maritime-ai-service/app/engine/multi_agent/runtime_flow_ledger.py"
-      - "maritime-ai-service/app/engine/runtime/session_event_log.py"
-      - "maritime-ai-service/app/engine/semantic_memory/**"
-      - "maritime-ai-service/app/services/post_turn_lifecycle.py"
-      - "maritime-ai-service/scripts/probe_live_semantic_memory_write_doctor.py"
-      - "maritime-ai-service/tests/unit/test_post_turn_lifecycle.py"
-      - "maritime-ai-service/tests/unit/test_probe_live_semantic_memory_write_doctor.py"
-      - "maritime-ai-service/tests/unit/test_runtime_flow_doctor.py"
-      - "maritime-ai-service/tests/unit/test_semantic_memory_privacy.py"
-  schedule:
-    - cron: "20 4 * * *"
   workflow_dispatch:
     inputs:
       run_semantic_memory_write_doctor:

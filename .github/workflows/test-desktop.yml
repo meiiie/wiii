@@ -41,7 +41,7 @@ jobs:
 
       - name: Run tests with coverage
         working-directory: wiii-desktop
-        run: npx vitest run --coverage
+        run: npm run test:desktop -- --coverage
 
       - name: Type check
         working-directory: wiii-desktop
