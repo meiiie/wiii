@@ -608,7 +608,7 @@ class CharacterRepository:
                     conditions.append("user_id = :user_id")
                     params["user_id"] = user_id
 
-                conditions.append(org_filter.lstrip(" AND "))
+                conditions.append(org_filter.removeprefix(" AND "))
                 params.update(org_params)
 
                 where_clause = f"WHERE {' AND '.join(conditions)}" if conditions else ""

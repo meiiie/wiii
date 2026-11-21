@@ -471,7 +471,6 @@ def _build_known_docs_answer_lines(
     search_hits: list[dict[str, str]],
     fetch_summaries: list[dict[str, str]],
 ) -> list[str]:
-    folded = _fold_known_docs_text(query)
     if not _looks_openai_responses_endpoint_query(query):
         return []
 

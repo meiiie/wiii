@@ -187,10 +187,7 @@ class VisualVerifier:
         issues: list[str] = []
         lowered = html.lower()
 
-        has_aria = "aria-" in lowered
-        has_role = 'role="' in lowered
         has_label = "aria-label" in lowered or "<label" in lowered
-        has_alt = "alt=" in lowered
 
         interactive_elements = (
             lowered.count("<button")
