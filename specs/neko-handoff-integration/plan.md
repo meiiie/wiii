@@ -7,6 +7,8 @@ Shared paths: runtime.rs, driver-factory.test.ts, control-client.ts. Runtime mus
 ## Runtime compatibility
 The existing published Neko 1.7.0 pin lacks task-v1. Do not present it as compatible with the new task-scoped flow. Development candidate: Neko 8b3354fcb5b76c55061b9e439c241faf7ecbbcae, compiled with CI-pinned Bun 1.4.0, separate filename and SHA256. Its source version string remains 1.7.0 and is insufficient identity. Never replace the official release lock digest with development bytes. Release integration remains blocked until a compatible governed artifact or separately reviewed candidate channel exists.
 
+Update: immutable Neko Core v1.9.3 (`fded0db74eacc38897b1f15e0fa26609c41a5c94`) advertises task-v1 and is now the bundle pin; the development candidate is no longer needed.
+
 ## Verification
 Run 231-file frontend suite, tsc, frontend/embed builds, Python release suite, native Rust suite and build. Use fresh synthetic HOME/project and loopback provider for task capability/root/identity and response validation. Native UI acceptance and live OpenCode acceptance remain separate; existing outbound policy denial is not bypassed.
 

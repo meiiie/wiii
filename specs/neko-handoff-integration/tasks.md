@@ -9,6 +9,7 @@
 - [x] Compile exact candidate and validate task-scoped ACP loopback response with actual Wiii codec
 - [x] Native Rust: 162 passed / 4 ignored; Clippy and native QA build passed
 - [ ] Complete native task/recovery matrix (plain-chat GUI fixture reply and runtime-confirmed Stop observed; task-scoped protocol/codec smoke passed separately)
-- [ ] Governed compatible bundle selection (published 1.7 is incompatible with task-v1)
+- [x] Governed compatible bundle selection: immutable Neko Core v1.9.3 pinned (published 1.7 is incompatible with task-v1)
+- [x] Real-binary ACP task-v1 contract (admission, receipt/root binding, prompt, cancel, close, cold resume, writer-unavailable and stale-receipt refusal) in desktop CI
 - [ ] Live OpenCode/Bunny acceptance after legitimate network resolution
 - [ ] Independent review and remote publication decision
