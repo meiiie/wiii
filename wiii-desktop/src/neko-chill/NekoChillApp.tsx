@@ -319,7 +319,7 @@ function SessionRecoveryState({
           <div className="flex h-12 items-center px-3">
             <span className="nk-skeleton h-4 w-16 rounded" />
           </div>
-          <div className="space-y-2 px-3 pb-3">
+          <div className="v3-space-y-2 px-3 pb-3">
             <span className="nk-skeleton block h-8 w-full rounded-lg" />
             <span className="nk-skeleton block h-8 w-[85%] rounded-lg" />
             <span className="nk-skeleton block h-8 w-[70%] rounded-lg" />
@@ -347,7 +347,7 @@ function SessionRecoveryState({
   return (
     <main className="grid min-h-0 flex-1 place-items-center px-6">
       <section
-        className="w-full max-w-md rounded-2xl border border-[var(--nk-border-strong)] bg-[var(--nk-raised)] p-6 shadow-sm"
+        className="w-full max-w-md rounded-2xl border border-[var(--nk-border-strong)] bg-[var(--nk-raised)] p-6 shadow-xs"
         role="alert"
         aria-labelledby="neko-history-error-title"
       >
@@ -363,13 +363,13 @@ function SessionRecoveryState({
               Neko Chill đã khóa việc tạo và mở phiên để không ghi đè dữ liệu đang có.
             </p>
             {error ? (
-              <p className="mt-2 break-words rounded-lg bg-[var(--nk-inset)] px-3 py-2 text-[11px] leading-4 text-[var(--nk-text-3)]">
+              <p className="mt-2 wrap-break-word rounded-lg bg-[var(--nk-inset)] px-3 py-2 text-[11px] leading-4 text-[var(--nk-text-3)]">
                 {error}
               </p>
             ) : null}
             <button
               type="button"
-              className="mt-4 inline-flex h-8 items-center gap-2 rounded-lg bg-[var(--nk-inverse)] px-3 text-[12px] font-medium text-[var(--nk-on-inverse)] hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--nk-focus-soft)]"
+              className="mt-4 inline-flex h-8 items-center gap-2 rounded-lg bg-[var(--nk-inverse)] px-3 text-[12px] font-medium text-[var(--nk-on-inverse)] hover:opacity-90 focus-visible:v3-outline-none focus-visible:ring-2 focus-visible:ring-[var(--nk-focus-soft)]"
               onClick={onRetry}
             >
               <RefreshCw aria-hidden="true" className="h-3.5 w-3.5" />

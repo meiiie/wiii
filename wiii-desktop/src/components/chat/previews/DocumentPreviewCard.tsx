@@ -21,11 +21,11 @@ export function DocumentPreviewCard({ item, onClick }: Props) {
       className="flex items-start gap-3 p-3 rounded-lg border border-[var(--border,#e5e5e0)]
         bg-[var(--surface,#ffffff)] hover:bg-[var(--surface-hover,#fafaf5)]
         transition-colors text-left w-full group
-        focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]"
+        focus-visible:v3-outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]"
       aria-label={`Nguồn tài liệu: ${item.title}`}
     >
       {/* Icon */}
-      <span className="w-10 h-10 rounded-md bg-[var(--surface-secondary,#f5f5f0)] flex items-center justify-center flex-shrink-0">
+      <span className="w-10 h-10 rounded-md bg-[var(--surface-secondary,#f5f5f0)] flex items-center justify-center shrink-0">
         <FileText size={20} className="text-[var(--accent,#c2662d)]" />
       </span>
 
@@ -33,7 +33,7 @@ export function DocumentPreviewCard({ item, onClick }: Props) {
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-2">
           {item.citation_index != null && (
-            <span className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-[var(--accent,#c2662d)] text-white text-xs font-medium flex-shrink-0">
+            <span className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-[var(--accent,#c2662d)] text-white text-xs font-medium shrink-0">
               {item.citation_index}
             </span>
           )}
@@ -58,13 +58,13 @@ export function DocumentPreviewCard({ item, onClick }: Props) {
                   style={{ width: `${Math.round(relevance * 100)}%` }}
                 />
               </div>
-              <span className="text-[10px] text-[var(--text-tertiary,#999)] flex-shrink-0">
+              <span className="text-[10px] text-[var(--text-tertiary,#999)] shrink-0">
                 {Math.round(relevance * 100)}%
               </span>
             </div>
           )}
           {pageNum != null && (
-            <span className="text-[10px] px-1.5 py-0.5 rounded bg-[var(--surface-secondary,#f5f5f0)] text-[var(--text-tertiary,#999)] flex-shrink-0">
+            <span className="text-[10px] px-1.5 py-0.5 rounded bg-[var(--surface-secondary,#f5f5f0)] text-[var(--text-tertiary,#999)] shrink-0">
               Tr. {pageNum}
             </span>
           )}

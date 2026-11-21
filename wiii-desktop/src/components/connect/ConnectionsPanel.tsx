@@ -115,7 +115,7 @@ export function ConnectionsGrid({
               </div>
             </dl>
 
-            <div className="mt-3 space-y-1.5 text-xs text-text-secondary">
+            <div className="mt-3 v3-space-y-1.5 text-xs text-text-secondary">
               <div className="flex min-w-0 justify-between gap-3">
                 <span className="shrink-0 text-text-tertiary">Nguồn</span>
                 <span className="truncate">{compactText(connection.source)}</span>

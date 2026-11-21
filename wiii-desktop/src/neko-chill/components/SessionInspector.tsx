@@ -59,7 +59,7 @@ export function SessionInspector({
           <h2 className="mb-3 truncate text-[13px] font-medium text-[var(--nk-text)]" title={session.title}>
             {session.title}
           </h2>
-          <dl className="space-y-2.5 text-[11.5px]">
+          <dl className="v3-space-y-2.5 text-[11.5px]">
             <div className="flex gap-2.5">
               <Folder aria-hidden="true" className="mt-0.5 h-3.5 w-3.5 shrink-0 text-[var(--nk-text-3)]" />
               <div className="min-w-0">
@@ -110,7 +110,7 @@ export function SessionInspector({
               <BriefcaseBusiness aria-hidden="true" className="h-3 w-3" />
               Công việc Wiii
             </h2>
-            <dl className="space-y-1.5 font-mono text-[10px] leading-4 text-[var(--nk-text-3)]">
+            <dl className="v3-space-y-1.5 font-mono text-[10px] leading-4 text-[var(--nk-text-3)]">
               <div className="flex justify-between gap-2"><dt>Mã task</dt><dd className="truncate">{session.execution.taskId}</dd></div>
               <div className="flex justify-between gap-2"><dt>Mã run</dt><dd className="truncate">{session.execution.runId}</dd></div>
               <div className="flex justify-between gap-2"><dt>Môi trường</dt><dd className="truncate">{session.execution.environmentId}</dd></div>
@@ -162,7 +162,7 @@ export function SessionInspector({
             Điều khiển phiên
           </h2>
           {session.controls.length ? (
-            <div className="space-y-2">
+            <div className="v3-space-y-2">
               {session.controls.map((option) => (
                 <label key={option.id} className="block">
                   <span className="mb-1 flex items-center justify-between gap-2 text-[11px] text-[var(--nk-text-3)]">
@@ -178,7 +178,7 @@ export function SessionInspector({
                     />
                   ) : (
                     <select
-                      className="w-full rounded-md border border-[var(--nk-border)] bg-[var(--nk-raised)] px-2 py-1.5 text-[11.5px] text-[var(--nk-text)] focus:outline-none disabled:opacity-50"
+                      className="w-full rounded-md border border-[var(--nk-border)] bg-[var(--nk-raised)] px-2 py-1.5 text-[11.5px] text-[var(--nk-text)] focus:v3-outline-none disabled:opacity-50"
                       value={String(option.currentValue)}
                       disabled={controlsDisabled}
                       onChange={(event) => onSetConfigOption(option.id, event.target.value)}
@@ -209,7 +209,7 @@ export function SessionInspector({
             Lệnh agent · {session.commands.length}
           </h2>
           {session.commands.length ? (
-            <ul className="space-y-1.5">
+            <ul className="v3-space-y-1.5">
               {session.commands.map((command) => (
                 <li key={command.name}>
                   <button

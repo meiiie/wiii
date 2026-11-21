@@ -225,7 +225,7 @@ export const InlineVisualFrame = memo(function InlineVisualFrame({
     frameKind === "legacy"
       ? shellVariant === "editorial"
         ? "overflow-visible bg-transparent"
-        : "overflow-clip rounded-2xl border border-[var(--border)] bg-[rgba(255,255,255,0.92)] shadow-[var(--shadow-md)]"
+        : "overflow-clip rounded-2xl border border-[var(--border)] bg-[rgba(255,255,255,0.92)] shadow-[color:var(--shadow-md)]"
       : shellVariant === "editorial"
         ? "overflow-visible bg-transparent"
         : "overflow-clip rounded-2xl bg-transparent";
@@ -274,7 +274,7 @@ export const InlineVisualFrame = memo(function InlineVisualFrame({
           className={`absolute bottom-2 right-2 z-50 flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium transition-all ${
             tweaksActive
               ? "bg-[var(--accent)] text-white shadow-md"
-              : "bg-white/90 text-text-secondary border border-border shadow-sm hover:bg-white hover:border-[var(--accent)]/40"
+              : "bg-white/90 text-text-secondary border border-border shadow-xs hover:bg-white hover:border-[var(--accent)]/40"
           }`}
           title={tweaksActive ? "Tắt Tweaks" : "Tùy chỉnh Tweaks"}
           aria-label={tweaksActive ? "Tắt Tweaks" : "Bật Tweaks"}

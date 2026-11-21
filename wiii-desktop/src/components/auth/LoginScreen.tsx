@@ -543,7 +543,7 @@ export function LoginScreen({ onOpenLocal }: { onOpenLocal?: () => void }) {
             {onOpenLocal ? (
               <button
                 onClick={onOpenLocal}
-                className="mt-7 flex w-full max-w-[430px] items-center gap-3 rounded-2xl border border-border bg-surface px-4 py-3.5 text-left shadow-sm transition-all hover:border-[var(--border-secondary)] hover:bg-surface-secondary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]/35"
+                className="mt-7 flex w-full max-w-[430px] items-center gap-3 rounded-2xl border border-border bg-surface px-4 py-3.5 text-left shadow-xs transition-all hover:border-[var(--border-secondary)] hover:bg-surface-secondary focus-visible:v3-outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]/35"
                 data-testid="login-neko-chill-escape"
               >
                 <span className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-text text-surface">
@@ -658,12 +658,12 @@ export function LoginScreen({ onOpenLocal }: { onOpenLocal?: () => void }) {
                   handleEmailLogin();
                 }
               }}
-              className="w-full h-[44px] px-4 rounded-xl bg-surface border border-border text-[15px] text-text placeholder:text-text-tertiary focus:outline-none focus:ring-2 focus:ring-[var(--accent)]/30 focus:border-[var(--accent)] transition-all"
+              className="w-full h-[44px] px-4 rounded-xl bg-surface border border-border text-[15px] text-text placeholder:text-text-tertiary focus:v3-outline-none focus:ring-2 focus:ring-[var(--accent)]/30 focus:border-[var(--accent)] transition-all"
             />
             <button
               onClick={handleEmailLogin}
               disabled={isLoading || !emailValue.includes("@")}
-              className="w-full h-[44px] rounded-2xl bg-[var(--accent)] text-[15px] text-white font-semibold hover:opacity-90 active:scale-[0.97] transition-all disabled:opacity-35 shadow-sm"
+              className="w-full h-[44px] rounded-2xl bg-[var(--accent)] text-[15px] text-white font-semibold hover:opacity-90 active:scale-[0.97] transition-all disabled:opacity-35 shadow-xs"
             >
               {isLoading ? "Đang gửi..." : "Tiếp tục"}
             </button>
@@ -751,7 +751,7 @@ export function LoginScreen({ onOpenLocal }: { onOpenLocal?: () => void }) {
                     if (event.key === "Enter") void handleSaveServer();
                   }}
                   placeholder="https://api.example.com"
-                  className="h-9 min-w-0 flex-1 rounded-lg border border-border bg-surface px-3 text-xs text-text outline-none placeholder:text-text-quaternary focus:border-[var(--accent)] focus:ring-2 focus:ring-[var(--accent)]/15"
+                  className="h-9 min-w-0 flex-1 rounded-lg border border-border bg-surface px-3 text-xs text-text v3-outline-none placeholder:text-text-quaternary focus:border-[var(--accent)] focus:ring-2 focus:ring-[var(--accent)]/15"
                 />
                 <button
                   type="button"
@@ -802,7 +802,7 @@ export function LoginScreen({ onOpenLocal }: { onOpenLocal?: () => void }) {
               placeholder="Khóa API"
               value={settings.api_key}
               onChange={(e) => updateSettings({ api_key: e.target.value })}
-              className="w-full h-9 px-3 rounded-lg bg-surface-secondary border border-border text-sm text-text placeholder:text-text-tertiary focus:outline-none focus:ring-1 focus:ring-[var(--accent)]"
+              className="w-full h-9 px-3 rounded-lg bg-surface-secondary border border-border text-sm text-text placeholder:text-text-tertiary focus:v3-outline-none focus:ring-1 focus:ring-[var(--accent)]"
             />
             <button
               onClick={handleDevModeActivate}
@@ -815,7 +815,7 @@ export function LoginScreen({ onOpenLocal }: { onOpenLocal?: () => void }) {
         )}
 
         {/* Footer — Terms & Privacy */}
-        <div className="text-center mt-6 space-y-1.5">
+        <div className="text-center mt-6 v3-space-y-1.5">
           <p className="text-[11px] text-text-tertiary leading-relaxed">
             Bằng việc tiếp tục, bạn đồng ý với{" "}
             <a

@@ -171,7 +171,7 @@ export function ConnectionDetailPanel({
           {card.detailRows.map(([label, value]) => (
             <div key={`${card.id}-${label}`} className="min-w-0 rounded-md bg-surface px-3 py-2">
               <dt className="text-text-tertiary">{label}</dt>
-              <dd className="mt-0.5 break-words font-medium text-text">{value}</dd>
+              <dd className="mt-0.5 wrap-break-word font-medium text-text">{value}</dd>
             </div>
           ))}
         </dl>
@@ -198,7 +198,7 @@ export function ConnectionDetailPanel({
             <Lock size={13} aria-hidden="true" />
             Yêu cầu kỹ thuật
           </summary>
-          <ul className="mt-3 space-y-1.5 text-sm text-text-secondary">
+          <ul className="mt-3 v3-space-y-1.5 text-sm text-text-secondary">
             {card.requirements.map((requirement) => (
               <li key={`${card.id}-${requirement}`} className="flex gap-2">
                 <span className="mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-zinc-400" aria-hidden="true" />
@@ -273,7 +273,7 @@ export function ConnectionDetailPanel({
                       {gate.ready ? "ok" : "blocked"}
                     </StatusPill>
                   </div>
-                  <div className="mt-1 break-words text-xs text-text-tertiary">
+                  <div className="mt-1 wrap-break-word text-xs text-text-tertiary">
                     {compactText(gate.reason)}
                   </div>
                   {gate.required_next && gate.required_next.length > 0 && (

@@ -226,7 +226,7 @@ function NekoCommandCenterComponent({
             }}
             onKeyDown={handleKeyDown}
             placeholder="Tìm phiên, dự án, nội dung hoặc lệnh…"
-            className="min-w-0 flex-1 bg-transparent text-[14px] text-[var(--nk-text)] placeholder:text-[var(--nk-ghost)] focus:outline-none"
+            className="min-w-0 flex-1 bg-transparent text-[14px] text-[var(--nk-text)] placeholder:text-[var(--nk-ghost)] focus:v3-outline-none"
           />
           <kbd className="rounded-md border border-[var(--nk-border)] bg-[var(--nk-raised)] px-1.5 py-0.5 text-[10px] text-[var(--nk-text-3)]">
             Esc

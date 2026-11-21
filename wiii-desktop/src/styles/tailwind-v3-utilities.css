@@ -1,0 +1,63 @@
+@utility rounded-full {
+  border-radius: 9999px;
+}
+
+@utility rounded-r-full {
+  border-top-right-radius: 9999px;
+  border-bottom-right-radius: 9999px;
+}
+
+@utility outline {
+  outline-width: 3px;
+}
+
+@utility v3-outline-none {
+  outline: 2px solid transparent;
+  outline-offset: 2px;
+}
+
+@utility ring {
+  --tw-ring-shadow: var(--tw-ring-inset,) 0 0 0 calc(3px + var(--tw-ring-offset-width)) var(--tw-ring-color, var(--default-ring-color));
+}
+
+@utility v3-space-y-* {
+  & > :not([hidden]) ~ :not([hidden]) {
+    --tw-space-y-reverse: 0;
+    margin-top: calc(--value(number) * 0.25rem * (1 - var(--tw-space-y-reverse)));
+    margin-bottom: calc(--value(number) * 0.25rem * var(--tw-space-y-reverse));
+  }
+}
+
+@utility v3-space-y-px {
+  & > :not([hidden]) ~ :not([hidden]) {
+    --tw-space-y-reverse: 0;
+    margin-top: calc(1px * (1 - var(--tw-space-y-reverse)));
+    margin-bottom: calc(1px * var(--tw-space-y-reverse));
+  }
+}
+
+@utility v3-divide-y {
+  & > :not([hidden]) ~ :not([hidden]) {
+    --tw-divide-y-reverse: 0;
+    border-top-width: calc(1px * (1 - var(--tw-divide-y-reverse)));
+    border-bottom-width: calc(1px * var(--tw-divide-y-reverse));
+  }
+}
+
+@utility v3-divide-x {
+  & > :not([hidden]) ~ :not([hidden]) {
+    --tw-divide-x-reverse: 0;
+    border-right-width: calc(1px * var(--tw-divide-x-reverse));
+    border-left-width: calc(1px * (1 - var(--tw-divide-x-reverse)));
+  }
+}
+
+@utility v3-divide-nk-border {
+  & > :not([hidden]) ~ :not([hidden]) {
+    border-color: var(--nk-border);
+  }
+}
+
+@utility bg-linear-to-br {
+  --tw-gradient-position: to bottom right in srgb;
+}

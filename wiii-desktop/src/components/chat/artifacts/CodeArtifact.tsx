@@ -85,7 +85,7 @@ export default function CodeArtifact({ artifact, mode }: Props) {
   }
 
   return (
-    <div className="space-y-3">
+    <div className="v3-space-y-3">
       {/* Code display */}
       <div className="text-sm">
         <MarkdownRenderer content={codeBlock} />

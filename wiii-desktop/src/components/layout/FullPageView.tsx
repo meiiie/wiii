@@ -63,7 +63,7 @@ export function FullPageView({
 
         {/* Navigation */}
         <nav
-          className="flex md:block flex-none md:flex-1 gap-1 md:space-y-0.5 px-3 md:px-2 overflow-x-auto md:overflow-x-visible md:overflow-y-auto"
+          className="flex md:block flex-none md:flex-1 gap-1 md:v3-space-y-0.5 px-3 md:px-2 overflow-x-auto md:overflow-x-visible md:overflow-y-auto"
           aria-label={title}
         >
           {tabs.map((tab) => (

@@ -236,7 +236,7 @@ export function PointyModeToggle() {
           className="
             absolute bottom-full left-0 z-50 mb-2 w-[min(22rem,calc(100vw-2rem))]
             rounded-2xl border border-border bg-surface-primary/95 p-3 text-xs
-            shadow-2xl backdrop-blur
+            shadow-2xl backdrop-blur-sm
           "
           data-wiii-id="pointy-voice-setup"
           role="dialog"
@@ -258,7 +258,7 @@ export function PointyModeToggle() {
             placeholder="sk_..."
             className="
               w-full rounded-xl border border-border bg-surface-secondary px-3 py-2
-              text-text outline-none transition focus:border-orange-400 focus:ring-2
+              text-text v3-outline-none transition focus:border-orange-400 focus:ring-2
               focus:ring-orange-400/20
             "
           />

@@ -159,7 +159,7 @@ export function ProjectDialog({
           </div>
           <button
             type="button"
-            className="grid h-8 w-8 place-items-center rounded-lg text-[var(--nk-text-3)] transition-colors hover:bg-[var(--nk-overlay)] hover:text-[var(--nk-text)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--nk-focus-soft)]"
+            className="grid h-8 w-8 place-items-center rounded-lg text-[var(--nk-text-3)] transition-colors hover:bg-[var(--nk-overlay)] hover:text-[var(--nk-text)] focus-visible:v3-outline-none focus-visible:ring-2 focus-visible:ring-[var(--nk-focus-soft)]"
             aria-label="Đóng"
             disabled={saving}
             onClick={onCancel}
@@ -178,7 +178,7 @@ export function ProjectDialog({
               value={name}
               maxLength={80}
               disabled={saving}
-              className="min-w-0 flex-1 bg-transparent pr-3 text-[13px] text-[var(--nk-text)] outline-none placeholder:text-[var(--nk-ghost)]"
+              className="min-w-0 flex-1 bg-transparent pr-3 text-[13px] text-[var(--nk-text)] v3-outline-none placeholder:text-[var(--nk-ghost)]"
               placeholder="Ví dụ: Wiii"
               onChange={(event) => setName(event.target.value)}
               onKeyDown={(event) => {

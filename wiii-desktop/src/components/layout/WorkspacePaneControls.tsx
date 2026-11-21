@@ -14,7 +14,7 @@ export function WorkspacePaneControls() {
         aria-label="Theo nội dung agent đang tạo"
         aria-pressed={follow}
         title="Follow agent"
-        className={`grid h-7 w-7 place-items-center rounded-md transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]/30 ${follow ? "bg-surface-tertiary text-[var(--accent)]" : "text-text-tertiary hover:bg-surface-tertiary hover:text-text"}`}
+        className={`grid h-7 w-7 place-items-center rounded-md transition-colors focus-visible:v3-outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]/30 ${follow ? "bg-surface-tertiary text-[var(--accent)]" : "text-text-tertiary hover:bg-surface-tertiary hover:text-text"}`}
         onClick={() => setFollow(!follow)}
       >
         <Radio aria-hidden="true" size={14} />
@@ -24,7 +24,7 @@ export function WorkspacePaneControls() {
         aria-label="Ghim nội dung hiện tại"
         aria-pressed={pinned}
         title="Pin current surface"
-        className={`grid h-7 w-7 place-items-center rounded-md transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]/30 ${pinned ? "bg-surface-tertiary text-[var(--accent)]" : "text-text-tertiary hover:bg-surface-tertiary hover:text-text"}`}
+        className={`grid h-7 w-7 place-items-center rounded-md transition-colors focus-visible:v3-outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]/30 ${pinned ? "bg-surface-tertiary text-[var(--accent)]" : "text-text-tertiary hover:bg-surface-tertiary hover:text-text"}`}
         onClick={() => setPinned(!pinned)}
       >
         <Pin aria-hidden="true" size={14} />

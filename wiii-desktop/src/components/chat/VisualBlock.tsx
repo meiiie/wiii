@@ -432,9 +432,9 @@ export function VisualBlock({
     data-visual-embedded={embedded ? "true" : "false"}
   >
     <div className={`visual-block-shell__header ${embedded ? "visual-block-shell__header--embedded" : ""}`.trim()}>
-      <div className="space-y-4">
+      <div className="v3-space-y-4">
         {/* Badge/pill removed — visual_type/pedagogical_role are internal metadata */}
-        <div className="space-y-2">
+        <div className="v3-space-y-2">
           <h3 id={titleId} className="font-serif text-[clamp(1.55rem,4vw,2.25rem)] leading-tight text-text">
             {visual.title}
           </h3>

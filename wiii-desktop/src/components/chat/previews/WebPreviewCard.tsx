@@ -34,11 +34,11 @@ export function WebPreviewCard({ item, onClick }: Props) {
       className="flex items-start gap-3 p-3 rounded-lg border border-[var(--border,#e5e5e0)]
         bg-[var(--surface,#ffffff)] hover:bg-[var(--surface-hover,#fafaf5)]
         transition-colors text-left w-full group
-        focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]"
+        focus-visible:v3-outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]"
       aria-label={`Kết quả web: ${item.title}`}
     >
       {/* Favicon or globe icon */}
-      <span className="w-8 h-8 rounded-md bg-[var(--surface-secondary,#f5f5f0)] flex items-center justify-center flex-shrink-0 overflow-hidden">
+      <span className="w-8 h-8 rounded-md bg-[var(--surface-secondary,#f5f5f0)] flex items-center justify-center shrink-0 overflow-hidden">
         {faviconUrl ? (
           <img
             src={faviconUrl}
@@ -76,7 +76,7 @@ export function WebPreviewCard({ item, onClick }: Props) {
             </span>
           )}
           {date && (
-            <span className="text-[10px] text-[var(--text-tertiary,#999)] flex-shrink-0">
+            <span className="text-[10px] text-[var(--text-tertiary,#999)] shrink-0">
               {date}
             </span>
           )}

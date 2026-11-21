@@ -8,7 +8,7 @@ export function CompletionPreferences() {
     enabled: state.enabled, sound: state.sound, setEnabled: state.setEnabled, setSound: state.setSound,
   })));
   const [message, setMessage] = useState("");
-  return <div className="space-y-4 text-[13px] leading-5">
+  return <div className="v3-space-y-4 text-[13px] leading-5">
     <label className="flex items-center justify-between gap-4"><span>Báo khi trả lời xong</span>
       <input type="checkbox" checked={enabled} onChange={(event) => setEnabled(event.target.checked)} /></label>
     <p className="text-[var(--nk-text-2)]">Thông báo ở góc trái Wiii, tự ẩn sau 7 giây. Trỏ chuột hoặc chọn bằng bàn phím để giữ lại; bấm “Xem kết quả” để mở đúng phiên.</p>

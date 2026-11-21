@@ -45,18 +45,18 @@ export function WiiiServiceSurface({ view, onBack, onOpenConnect }: {
     <div className="nk-root flex h-screen flex-col bg-[var(--nk-canvas)] text-[var(--nk-text)]">
       <TitleBar minimal />
       <main className="min-h-0 flex-1 overflow-y-auto p-6">
-      <div className="mx-auto max-w-2xl space-y-6">
+      <div className="mx-auto max-w-2xl v3-space-y-6">
         <button className={buttonClass} onClick={onBack}>Quay lại Neko</button>
         <header>
           <h1 className="text-2xl font-semibold">Wiii Service</h1>
           <p className="mt-2 text-sm text-[var(--nk-text-2)]">Tài khoản, tổ chức và kết nối của bạn.</p>
         </header>
-        <section className="space-y-5 rounded-2xl border border-[var(--nk-border)] bg-[var(--nk-composer)] p-6" aria-label="Tài khoản Wiii Service">
+        <section className="v3-space-y-5 rounded-2xl border border-[var(--nk-border)] bg-[var(--nk-composer)] p-6" aria-label="Tài khoản Wiii Service">
           <div>
             <h2 className="font-medium">{user?.name || settings.display_name || "Tài khoản API"}</h2>
             {user?.email && <p className="text-sm text-[var(--nk-text-2)]">{user.email}</p>}
           </div>
-          <dl className="space-y-2 text-sm">
+          <dl className="v3-space-y-2 text-sm">
             <div><dt className="text-[var(--nk-text-2)]">Máy chủ Service</dt><dd className="break-all">{settings.server_url}</dd></div>
             <div><dt className="text-[var(--nk-text-2)]">Trạng thái kết nối</dt><dd role="status">{statusLabel}</dd></div>
           </dl>

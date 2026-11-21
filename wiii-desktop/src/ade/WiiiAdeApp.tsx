@@ -106,7 +106,7 @@ function WorkRecovery({ error, retry }: { error: string | null; retry: () => voi
           <p className="mt-2 text-[12.5px] leading-5 text-[var(--nk-text-3)]">
             Wiii đã khóa việc ghi mới để không biến lỗi đọc thành một workspace trống.
           </p>
-          <p className="mt-3 break-words rounded-lg bg-[var(--nk-inset)] px-3 py-2 text-[11px] text-[var(--nk-text-3)]">{error}</p>
+          <p className="mt-3 wrap-break-word rounded-lg bg-[var(--nk-inset)] px-3 py-2 text-[11px] text-[var(--nk-text-3)]">{error}</p>
           <button type="button" className="mt-4 inline-flex h-8 items-center gap-2 rounded-lg bg-[var(--nk-inverse)] px-3 text-[12px] font-medium text-[var(--nk-on-inverse)]" onClick={retry}>
             <RefreshCw aria-hidden="true" className="h-3.5 w-3.5" /> Thử tải lại
           </button>
@@ -188,7 +188,7 @@ function NewTaskForm({
           Wiii giữ mục tiêu và tiêu chí. Neko Chill sẽ điều hành agent trong môi trường bạn chọn.
         </p>
 
-        <div className="mt-8 space-y-6">
+        <div className="mt-8 v3-space-y-6">
           <section>
             <label className="mb-2 block text-[11.5px] font-semibold uppercase tracking-wide text-[var(--nk-text-3)]">Project</label>
             <button
@@ -216,7 +216,7 @@ function NewTaskForm({
               value={title}
               onChange={(event) => setTitle(event.target.value)}
               placeholder="Ví dụ: Refactor luồng đăng nhập và giữ nguyên toàn bộ hành vi hiện có"
-              className="w-full resize-none rounded-xl border border-[var(--nk-border-strong)] bg-[var(--nk-composer)] px-4 py-3 text-[14px] leading-6 outline-none placeholder:text-[var(--nk-ghost)] focus:ring-2 focus:ring-[var(--nk-focus-soft)]"
+              className="w-full resize-none rounded-xl border border-[var(--nk-border-strong)] bg-[var(--nk-composer)] px-4 py-3 text-[14px] leading-6 v3-outline-none placeholder:text-[var(--nk-ghost)] focus:ring-2 focus:ring-[var(--nk-focus-soft)]"
             />
           </section>
 
@@ -228,7 +228,7 @@ function NewTaskForm({
               value={criteria}
               onChange={(event) => setCriteria(event.target.value)}
               placeholder={"Đăng nhập hiện tại không regression\nTypeScript và test đều pass"}
-              className="w-full resize-none rounded-xl border border-[var(--nk-border)] bg-[var(--nk-composer)] px-4 py-3 text-[13px] leading-5 outline-none placeholder:text-[var(--nk-ghost)] focus:ring-2 focus:ring-[var(--nk-focus-soft)]"
+              className="w-full resize-none rounded-xl border border-[var(--nk-border)] bg-[var(--nk-composer)] px-4 py-3 text-[13px] leading-5 v3-outline-none placeholder:text-[var(--nk-ghost)] focus:ring-2 focus:ring-[var(--nk-focus-soft)]"
             />
           </section>
         </div>
@@ -542,14 +542,14 @@ function WiiiAdeScreen({ active = true, onOpenManaged = () => {}, onOpenConnecti
                   <h2 className="text-[12px] font-semibold uppercase tracking-wide text-[var(--nk-text-3)]">Tiêu chí chấp nhận</h2>
                   {selectedSpec?.acceptanceCriteria.length ? <>
                     <p className="mt-2 text-[11.5px] leading-5 text-[var(--nk-text-3)]">Danh sách yêu cầu, chưa phải kết quả kiểm chứng.</p>
-                    <ol aria-label="Tiêu chí cần đáp ứng" className="mt-4 list-decimal space-y-3 pl-5 marker:text-[var(--nk-ghost)]">
+                    <ol aria-label="Tiêu chí cần đáp ứng" className="mt-4 list-decimal v3-space-y-3 pl-5 marker:text-[var(--nk-ghost)]">
                       {selectedSpec.acceptanceCriteria.map((criterion, index) => <li key={`${index}:${criterion}`} className="pl-1 text-[13px] leading-5">{criterion}</li>)}
                     </ol>
                   </> : <p className="mt-3 text-[12.5px] text-[var(--nk-text-3)]">Chưa có tiêu chí riêng. Mục tiêu Task vẫn là yêu cầu gốc.</p>}
                 </section>
                 <aside className="rounded-2xl border border-[var(--nk-border)] bg-[var(--nk-raised)] p-5">
                   <h2 className="text-[12px] font-semibold uppercase tracking-wide text-[var(--nk-text-3)]">Thực thi</h2>
-                  <dl className="mt-4 space-y-3 text-[11.5px]"><div><dt className="text-[var(--nk-ghost)]">Môi trường</dt><dd className="mt-0.5">Thư mục trên máy</dd></div><div><dt className="text-[var(--nk-ghost)]">Agent</dt><dd className="mt-0.5">{selectedSession?.agentName ?? "Chưa gắn"}</dd></div><div><dt className="text-[var(--nk-ghost)]">Phiên</dt><dd className="mt-0.5 font-mono text-[10.5px]">{selectedSession ? shortId(selectedSession.id) : "—"}</dd></div></dl>
+                  <dl className="mt-4 v3-space-y-3 text-[11.5px]"><div><dt className="text-[var(--nk-ghost)]">Môi trường</dt><dd className="mt-0.5">Thư mục trên máy</dd></div><div><dt className="text-[var(--nk-ghost)]">Agent</dt><dd className="mt-0.5">{selectedSession?.agentName ?? "Chưa gắn"}</dd></div><div><dt className="text-[var(--nk-ghost)]">Phiên</dt><dd className="mt-0.5 font-mono text-[10.5px]">{selectedSession ? shortId(selectedSession.id) : "—"}</dd></div></dl>
                   {selectedSession ? <p className="mt-3 text-[11.5px] text-[var(--nk-text-2)]">Phiên: {workSessionStatusLabel(selectedSession)}</p> : null}
                   {selectedSession ? <button type="button" className="mt-5 flex h-8 w-full items-center justify-center gap-2 rounded-lg bg-[var(--nk-inverse)] text-[11.5px] font-medium text-[var(--nk-on-inverse)]" onClick={() => openNeko(selectedSession.id)}>Mở phiên agent <ArrowRight aria-hidden="true" className="h-3.5 w-3.5" /></button> : selectedRun.state === "starting" && selectedWorkspace?.roots[0] ? <button type="button" className="mt-5 flex h-8 w-full items-center justify-center gap-2 rounded-lg bg-[var(--nk-inverse)] text-[11.5px] font-medium text-[var(--nk-on-inverse)]" onClick={() => beginTaskExecution({ execution: { taskId: selectedTask.id, runId: selectedRun.id, environmentId: selectedRun.environmentId }, workspace: workspaceFromPath(selectedWorkspace.roots[0]), title: selectedTask.title, acceptanceCriteria: selectedSpec?.acceptanceCriteria })}>Chọn agent <ArrowRight aria-hidden="true" className="h-3.5 w-3.5" /></button> : null}
                 </aside>
@@ -561,7 +561,7 @@ function WiiiAdeScreen({ active = true, onOpenManaged = () => {}, onOpenConnecti
             <div className="mx-auto max-w-[980px]">
               <div className="flex items-end justify-between gap-6"><div><p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-[var(--nk-accent)]">Wiii ADE</p><h1 className="mt-2 text-[30px] font-normal tracking-[-0.03em]" style={{ fontFamily: "var(--font-serif)" }}>Công việc</h1><p className="mt-2 text-[13px] text-[var(--nk-text-2)]">Theo dõi điều cần hoàn thành; Neko lo phần thực thi.</p></div><button type="button" className="inline-flex h-9 shrink-0 items-center gap-2 whitespace-nowrap rounded-lg bg-[var(--nk-inverse)] px-4 text-[12.5px] font-medium text-[var(--nk-on-inverse)]" onClick={() => setNewTask(true)}><Plus aria-hidden="true" className="h-3.5 w-3.5" />Công việc mới</button></div>
               {visibleTasks.length ? (
-                <div className="mt-8 space-y-2">
+                <div className="mt-8 v3-space-y-2">
                   {[...visibleTasks].reverse().map(task => {
                     const run = latestRuns.get(task.id);
                     const project = graph.projects.find(item => item.id === task.projectId);

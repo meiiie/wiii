@@ -436,7 +436,7 @@ export function ProjectHome({
         <div className="mt-5 flex max-w-[760px] items-center gap-2">
           <h1
             id="project-home-title"
-            className="nk-project-heading min-w-0 break-words text-center text-[28px] font-medium leading-tight tracking-[-0.035em] text-[var(--nk-text)]"
+            className="nk-project-heading min-w-0 wrap-break-word text-center text-[28px] font-medium leading-tight tracking-[-0.035em] text-[var(--nk-text)]"
           >
             {quickChat ? "Bạn muốn trao đổi điều gì?" : <>Bạn muốn làm gì trong <span className="underline decoration-[var(--nk-border-strong)] decoration-dotted underline-offset-4">{project.name}</span>?</>}
           </h1>
@@ -506,7 +506,7 @@ export function ProjectHome({
                 : "Neko Core đã được tìm thấy. Không có profile riêng để chọn; phiên sẽ dùng cấu hình mặc định của Neko."}</p>
               {!profileLoading && <details className="mt-1">
                 <summary className="cursor-pointer">{profileError ? "Chi tiết lỗi" : "Cấu hình tài khoản / model"}</summary>
-                {profileError && <p className="mt-1 break-words text-[var(--nk-text-3)]">{profileError}</p>}
+                {profileError && <p className="mt-1 wrap-break-word text-[var(--nk-text-3)]">{profileError}</p>}
                 <p>Mở Neko Core và dùng <code>/login</code> để đăng nhập, hoặc cấu hình model cục bộ trong Neko. Wiii không yêu cầu tài khoản Wiii Service.</p>
               </details>}
               {!profileLoading && <button type="button" className="mt-1 font-medium underline underline-offset-4"
@@ -572,7 +572,7 @@ export function ProjectHome({
               value={draft}
               readOnly={Boolean(taskLaunch)}
               disabled={starting}
-              className="max-h-44 min-h-[62px] w-full resize-none bg-transparent px-1 text-[13.5px] leading-5 text-[var(--nk-text)] outline-none placeholder:text-[var(--nk-ghost)]"
+              className="max-h-44 min-h-[62px] w-full resize-none bg-transparent px-1 text-[13.5px] leading-5 text-[var(--nk-text)] v3-outline-none placeholder:text-[var(--nk-ghost)]"
               placeholder="Bạn muốn thực hiện việc gì trong dự án này?"
               aria-label="Lời nhắn đầu tiên"
               data-testid="project-home-input"

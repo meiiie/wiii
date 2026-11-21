@@ -240,9 +240,9 @@ export function NekoMenuBar(props: NekoMenuBarProps) {
         <div className="mb-5 flex items-center justify-between"><h2 id="wiii-help-title" className="text-base font-semibold">{help === "shortcuts" ? "Phím tắt Wiii" : help === "notifications" ? "Thông báo & âm thanh" : "Giới thiệu Wiii"}</h2>
           <button type="button" aria-label={help === "notifications" ? "Đóng cài đặt thông báo" : "Đóng trợ giúp"} className="nk-chrome-button grid h-8 w-8 place-items-center rounded-md" onClick={() => dialog.current?.close()}><X size={16} /></button>
         </div>
-        {help === "notifications" ? <CompletionPreferences /> : help === "shortcuts" ? <dl className="space-y-3 text-[13px]">
+        {help === "notifications" ? <CompletionPreferences /> : help === "shortcuts" ? <dl className="v3-space-y-3 text-[13px]">
           {[["Tìm kiếm và lệnh", `${modifier}K`], ["Ẩn / hiện thanh bên", `${modifier}B`], ["Ẩn / hiện công cụ", `${modifier}Alt+B`], ["Gửi tin nhắn trong ô soạn", "Enter"], ["Xuống dòng trong ô soạn", "Shift+Enter"], ["Chọn menu ứng dụng", "F10"], ["Điều hướng menu", "↑ ↓ ← →"], ["Đóng menu đang chọn", "Esc"]].map(([name, keys]) => <div key={name} className="flex justify-between gap-3"><dt>{name}</dt><dd><kbd>{keys}</kbd></dd></div>)}
-        </dl> : <div className="space-y-3 text-[13px] leading-6"><p>Wiii — không gian làm việc cùng Neko.</p><p className="text-[var(--nk-text-2)]">Phiên bản mã nguồn: {APP_VERSION}{import.meta.env.DEV ? " · Bản phát triển cục bộ" : ""}</p><p className="text-[var(--nk-text-2)]">Project, phiên làm việc và công cụ trên máy. Wiii Service là kết nối tùy chọn.</p></div>}
+        </dl> : <div className="v3-space-y-3 text-[13px] leading-6"><p>Wiii — không gian làm việc cùng Neko.</p><p className="text-[var(--nk-text-2)]">Phiên bản mã nguồn: {APP_VERSION}{import.meta.env.DEV ? " · Bản phát triển cục bộ" : ""}</p><p className="text-[var(--nk-text-2)]">Project, phiên làm việc và công cụ trên máy. Wiii Service là kết nối tùy chọn.</p></div>}
       </dialog>}
     </>
   );

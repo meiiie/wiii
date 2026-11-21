@@ -38,7 +38,7 @@ export function LazyImage({ src, alt }: { src: string; alt: string }) {
 
   if (error) {
     return (
-      <div className="w-16 h-16 rounded-md flex-shrink-0 bg-surface-tertiary flex items-center justify-center text-text-quaternary text-xs">
+      <div className="w-16 h-16 rounded-md shrink-0 bg-surface-tertiary flex items-center justify-center text-text-quaternary text-xs">
         ?
       </div>
     );
@@ -50,7 +50,7 @@ export function LazyImage({ src, alt }: { src: string; alt: string }) {
       alt={alt}
       onLoad={() => setLoaded(true)}
       onError={() => setError(true)}
-      className={`w-16 h-16 rounded-md object-cover flex-shrink-0 transition-opacity ${loaded ? "opacity-100" : "opacity-0"}`}
+      className={`w-16 h-16 rounded-md object-cover shrink-0 transition-opacity ${loaded ? "opacity-100" : "opacity-0"}`}
     />
   );
 }

@@ -82,7 +82,7 @@ export function EffectiveActionInventoryPanel({
       </p>
 
       {actions.length > 0 && (
-        <ul className="mt-3 space-y-2">
+        <ul className="mt-3 v3-space-y-2">
           {actions.slice(0, 6).map((action) => (
             <li
               key={`${action.provider_slug}-${action.slug}`}

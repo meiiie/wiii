@@ -120,7 +120,7 @@ export function ChillCatalogPicker({ items, value, onChange, ariaLabel, disabled
           <input ref={searchRef} role="combobox" aria-autocomplete="list" aria-expanded="true" aria-controls={listId}
             aria-activedescendant={activeId ? optionId(activeId) : undefined} value={query}
             onChange={event => { setQuery(event.target.value); setHighlightId(null); }} placeholder={searchPlaceholder} aria-label={searchPlaceholder}
-            className="h-8 w-full rounded-lg border border-[var(--nk-border)] bg-[var(--nk-sidebar)] pl-8 pr-8 text-[12px] text-[var(--nk-text)] outline-none placeholder:text-[var(--nk-ghost)] focus:border-[var(--nk-accent)]" />
+            className="h-8 w-full rounded-lg border border-[var(--nk-border)] bg-[var(--nk-sidebar)] pl-8 pr-8 text-[12px] text-[var(--nk-text)] v3-outline-none placeholder:text-[var(--nk-ghost)] focus:border-[var(--nk-accent)]" />
           {query && <button type="button" tabIndex={-1} aria-label="Xóa bộ lọc" title="Xóa bộ lọc" onMouseDown={event => event.preventDefault()}
             onClick={() => { setQuery(""); setHighlightId(null); searchRef.current?.focus(); }} className="absolute right-0 top-0 grid h-8 w-8 place-items-center text-[var(--nk-text-2)]"><X size={13} aria-hidden="true" /></button>}
         </div>

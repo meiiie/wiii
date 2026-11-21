@@ -98,7 +98,7 @@ function LocalWorkbenchScreens() {
       ) : null}
       {navigationError ? (
         <p role="status" data-testid="work-navigation-status"
-          className="fixed bottom-4 left-1/2 z-50 w-[calc(100%-2rem)] max-w-lg -translate-x-1/2 rounded-xl border border-[var(--nk-border)] bg-[var(--nk-composer)] px-4 py-3 text-[12px] leading-5 text-[var(--nk-text-2)] shadow-lg">
+          className="fixed bottom-4 left-1/2 z-50 w-[calc(100%-2rem)] max-w-lg -translate-x-1/2 rounded-xl border border-(--nk-border) bg-(--nk-composer) px-4 py-3 text-[12px] leading-5 text-(--nk-text-2) shadow-lg">
           {navigationError}
         </p>
       ) : null}
@@ -134,7 +134,7 @@ export function WorkbenchGate({ host = detectWorkbenchHost() }: { host?: Workben
             </p>
             <a
               href="https://github.com/meiiie/wiii/releases"
-              className="mt-6 inline-flex rounded-xl bg-text px-5 py-3 text-sm font-medium text-surface hover:opacity-85 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]/40"
+              className="mt-6 inline-flex rounded-xl bg-text px-5 py-3 text-sm font-medium text-surface hover:opacity-85 focus-visible:v3-outline-none focus-visible:ring-2 focus-visible:ring-(--accent)/40"
             >
               Tải ứng dụng desktop
             </a>

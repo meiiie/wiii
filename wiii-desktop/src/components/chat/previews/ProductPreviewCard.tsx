@@ -70,7 +70,7 @@ function ProductImage({ src, alt }: { src: string; alt: string }) {
 
   if (error) {
     return (
-      <div className="w-full h-[140px] bg-gradient-to-br from-[var(--surface-secondary,#f5f5f0)] to-[var(--surface-tertiary,#e8e8e3)] flex items-center justify-center">
+      <div className="w-full h-[140px] bg-linear-to-br from-[var(--surface-secondary,#f5f5f0)] to-[var(--surface-tertiary,#e8e8e3)] flex items-center justify-center">
         <ShoppingBag size={32} className="text-[var(--text-tertiary,#999)]" />
       </div>
     );
@@ -121,7 +121,7 @@ export function ProductPreviewCard({ item, onClick }: Props) {
       className="flex flex-col rounded-lg border border-[var(--border,#e5e5e0)]
         bg-[var(--surface,#ffffff)] hover:bg-[var(--surface-hover,#fafaf5)]
         hover:shadow-md transition-all text-left w-[220px] overflow-hidden group
-        focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]"
+        focus-visible:v3-outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]"
       aria-label={`Sản phẩm: ${item.title}`}
     >
       {/* Image section with platform badge overlay */}
@@ -129,14 +129,14 @@ export function ProductPreviewCard({ item, onClick }: Props) {
         {item.image_url ? (
           <ProductImage src={item.image_url} alt={item.title} />
         ) : (
-          <div className="w-full h-[140px] bg-gradient-to-br from-[var(--surface-secondary,#f5f5f0)] to-[var(--surface-tertiary,#e8e8e3)] flex items-center justify-center">
+          <div className="w-full h-[140px] bg-linear-to-br from-[var(--surface-secondary,#f5f5f0)] to-[var(--surface-tertiary,#e8e8e3)] flex items-center justify-center">
             <ShoppingBag size={32} className="text-[var(--accent,#c2662d)] opacity-60" />
           </div>
         )}
         {/* Platform badge */}
         {platformLabel && (
           <span className="absolute top-2 left-2 text-[10px] px-1.5 py-0.5 rounded
-            bg-black/60 text-white font-medium backdrop-blur-sm">
+            bg-black/60 text-white font-medium backdrop-blur-xs">
             {platformLabel}
           </span>
         )}

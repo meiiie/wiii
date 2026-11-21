@@ -116,7 +116,7 @@ function TreeRow({
         type="button"
         aria-expanded={expanded}
         aria-label={`${expanded ? "Thu gọn" : "Mở"} thư mục ${node.path}`}
-        className="group flex h-8 w-full items-center gap-1.5 rounded-md pr-2 text-left text-[11.5px] font-medium text-[var(--nk-text-2)] transition-colors hover:bg-[var(--nk-overlay)] active:translate-y-px focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--nk-focus-soft)]"
+        className="group flex h-8 w-full items-center gap-1.5 rounded-md pr-2 text-left text-[11.5px] font-medium text-[var(--nk-text-2)] transition-colors hover:bg-[var(--nk-overlay)] active:translate-y-px focus-visible:v3-outline-none focus-visible:ring-2 focus-visible:ring-[var(--nk-focus-soft)]"
         style={{ paddingLeft }}
         onClick={onToggle}
       >
@@ -138,7 +138,7 @@ function TreeRow({
     <button
       type="button"
       aria-label={`Mở ${node.path}`}
-      className={`group flex h-8 w-full items-center gap-1.5 rounded-md pr-2 text-left transition-colors active:translate-y-px focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--nk-focus-soft)] ${
+      className={`group flex h-8 w-full items-center gap-1.5 rounded-md pr-2 text-left transition-colors active:translate-y-px focus-visible:v3-outline-none focus-visible:ring-2 focus-visible:ring-[var(--nk-focus-soft)] ${
         selected
           ? "bg-[var(--nk-item-active)] text-[var(--nk-text)]"
           : "text-[var(--nk-text-2)] hover:bg-[var(--nk-overlay)]"
@@ -298,7 +298,7 @@ function FilePreview({ file, workspacePath }: { file: WorkspaceFile; workspacePa
   if (file.kind === "image" && file.dataUrl) {
     return (
       <div className="grid h-full place-items-center overflow-auto bg-[var(--nk-inset)] p-6">
-        <img src={file.dataUrl} alt={file.name} className="max-h-full max-w-full rounded-lg shadow-sm" />
+        <img src={file.dataUrl} alt={file.name} className="max-h-full max-w-full rounded-lg shadow-xs" />
       </div>
     );
   }
@@ -372,7 +372,7 @@ function BrowserSurface({
           <img
             src={browserImageSource(screenshot.image)}
             alt={screenshot.label || "Ảnh chụp từ Browser agent"}
-            className="max-h-full max-w-full rounded-lg bg-white shadow-sm"
+            className="max-h-full max-w-full rounded-lg bg-white shadow-xs"
           />
         </div>
       </div>
@@ -428,7 +428,7 @@ function WorkspaceLauncher({ onSelect }: { onSelect: (surface: WorkspaceSurface)
         <button
           key={action.id}
           type="button"
-          className="group flex items-center gap-3 rounded-lg px-3 py-2.5 text-left transition-colors hover:bg-[var(--nk-overlay)] active:translate-y-px focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--nk-focus-soft)]"
+          className="group flex items-center gap-3 rounded-lg px-3 py-2.5 text-left transition-colors hover:bg-[var(--nk-overlay)] active:translate-y-px focus-visible:v3-outline-none focus-visible:ring-2 focus-visible:ring-[var(--nk-focus-soft)]"
           onClick={() => onSelect(action.id)}
         >
           <action.icon aria-hidden="true" className="h-4 w-4 text-[var(--nk-text-3)] transition-colors group-hover:text-[var(--nk-text)]" />
@@ -477,7 +477,7 @@ function FileRow({
   return (
     <button
       type="button"
-      className={`group flex w-full items-start gap-2 rounded-md px-2 py-1.5 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--nk-focus-soft)] ${
+      className={`group flex w-full items-start gap-2 rounded-md px-2 py-1.5 text-left transition-colors focus-visible:v3-outline-none focus-visible:ring-2 focus-visible:ring-[var(--nk-focus-soft)] ${
         selected ? "bg-[var(--nk-item-active)] text-[var(--nk-text)]" : "text-[var(--nk-text-2)] hover:bg-[var(--nk-overlay)]"
       }`}
       onClick={onClick}
@@ -763,7 +763,7 @@ function NekoWorkspacePaneComponent({
                 placeholder="Tìm tệp…"
                 aria-label="Tìm tệp trong workspace"
                 aria-busy={query !== deferredQuery}
-                className="h-7 w-full rounded-md border border-[var(--nk-border)] bg-[var(--nk-composer)] pl-7 pr-2 text-[10.5px] text-[var(--nk-text)] outline-none placeholder:text-[var(--nk-ghost)] focus:border-[var(--nk-border-strong)] focus:ring-2 focus:ring-[var(--nk-focus-soft)]"
+                className="h-7 w-full rounded-md border border-[var(--nk-border)] bg-[var(--nk-composer)] pl-7 pr-2 text-[10.5px] text-[var(--nk-text)] v3-outline-none placeholder:text-[var(--nk-ghost)] focus:border-[var(--nk-border-strong)] focus:ring-2 focus:ring-[var(--nk-focus-soft)]"
               />
             </div>
           ) : null}
@@ -898,8 +898,8 @@ function NekoWorkspacePaneComponent({
               {selectedActivityLabel ? <span className="text-[9px] text-[var(--nk-accent)]">{selectedActivityLabel}</span> : null}
               {pane.selectedFile && canPreview(pane.selectedFile) ? (
                 <div className="flex rounded-md bg-[var(--nk-inset)] p-0.5">
-                  <button type="button" aria-label="Xem mã" className={`grid h-6 w-6 place-items-center rounded ${surface === "files" ? "bg-[var(--nk-composer)] text-[var(--nk-text)] shadow-sm" : "text-[var(--nk-text-3)] hover:text-[var(--nk-text)]"}`} onClick={() => selectSurface("files")}><Code2 aria-hidden="true" className="h-3 w-3" /></button>
-                  <button type="button" aria-label="Xem trước" className={`grid h-6 w-6 place-items-center rounded ${surface === "preview" ? "bg-[var(--nk-composer)] text-[var(--nk-text)] shadow-sm" : "text-[var(--nk-text-3)] hover:text-[var(--nk-text)]"}`} onClick={() => selectSurface("preview")}><Eye aria-hidden="true" className="h-3 w-3" /></button>
+                  <button type="button" aria-label="Xem mã" className={`grid h-6 w-6 place-items-center rounded ${surface === "files" ? "bg-[var(--nk-composer)] text-[var(--nk-text)] shadow-xs" : "text-[var(--nk-text-3)] hover:text-[var(--nk-text)]"}`} onClick={() => selectSurface("files")}><Code2 aria-hidden="true" className="h-3 w-3" /></button>
+                  <button type="button" aria-label="Xem trước" className={`grid h-6 w-6 place-items-center rounded ${surface === "preview" ? "bg-[var(--nk-composer)] text-[var(--nk-text)] shadow-xs" : "text-[var(--nk-text-3)] hover:text-[var(--nk-text)]"}`} onClick={() => selectSurface("preview")}><Eye aria-hidden="true" className="h-3 w-3" /></button>
                 </div>
               ) : null}
             </div>
@@ -930,7 +930,7 @@ function NekoWorkspacePaneComponent({
                   </button>
                   <details className="mt-4 text-left text-[11px] leading-5 text-[var(--nk-text-3)]">
                     <summary className="cursor-pointer text-center">Chi tiết kỹ thuật</summary>
-                    <p className="mt-2 break-words [overflow-wrap:anywhere]">{pane.error}</p>
+                    <p className="mt-2 wrap-break-word [overflow-wrap:anywhere]">{pane.error}</p>
                   </details>
                 </div>
               </div>

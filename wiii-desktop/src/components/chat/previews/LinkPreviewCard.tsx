@@ -32,7 +32,7 @@ export function LinkPreviewCard({ item, onClick }: Props) {
       className="flex flex-col rounded-lg border border-[var(--border,#e5e5e0)] overflow-hidden
         bg-[var(--surface,#ffffff)] hover:bg-[var(--surface-hover,#fafaf5)]
         transition-colors text-left w-full group
-        focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]"
+        focus-visible:v3-outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]"
       aria-label={`Liên kết: ${item.title}`}
     >
       {/* OG image — large, top-aligned */}
@@ -50,7 +50,7 @@ export function LinkPreviewCard({ item, onClick }: Props) {
       {/* Text content */}
       <div className="p-3 flex-1 min-w-0">
         <div className="flex items-center gap-2">
-          <Link size={14} className="text-[var(--text-tertiary,#999)] flex-shrink-0" />
+          <Link size={14} className="text-[var(--text-tertiary,#999)] shrink-0" />
           <h4 className="text-sm font-medium text-[var(--text-primary,#1a1a1a)] line-clamp-1">
             {item.title}
           </h4>

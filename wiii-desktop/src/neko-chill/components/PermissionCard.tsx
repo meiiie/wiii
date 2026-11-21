@@ -57,7 +57,7 @@ export function PermissionCard({
         {preview.source === "missing" ? (
           <p>Chưa có dữ liệu công cụ hoặc mục tiêu được liên kết cho yêu cầu này.</p>
         ) : (
-          <dl className="space-y-2">
+          <dl className="v3-space-y-2">
             <div>
               <dt className="text-[var(--nk-text-3)]">{preview.toolName ? "Công cụ" : "Hoạt động"}</dt>
               <dd>{preview.toolName ?? preview.title ?? "Chưa được agent cung cấp."}</dd>
@@ -67,7 +67,7 @@ export function PermissionCard({
               <dt className="text-[var(--nk-text-3)]">Mục tiêu agent cung cấp</dt>
               <dd>
                 {preview.targets.length ? (
-                  <ul className="space-y-1">
+                  <ul className="v3-space-y-1">
                     {preview.targets.map((target, index) => (
                       <li key={index} className="min-w-0 font-mono text-[11px]">
                         {target.path}{target.line ? ` · dòng ${target.line}` : ""}

@@ -39,7 +39,7 @@ export default function ChartArtifact({ artifact, mode }: Props) {
 
   if (imgError || !src) {
     return (
-      <div className="p-4 text-sm text-text-tertiary text-center space-y-3">
+      <div className="p-4 text-sm text-text-tertiary text-center v3-space-y-3">
         <div>Không thể hiển thị xem trước biểu đồ ngay trong khung này.</div>
         {fileUrl && (
           <a

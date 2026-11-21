@@ -360,7 +360,7 @@ export function ModelSelector({ compact: _compact }: ModelSelectorProps = {}) {
                     value={searchQuery}
                     onChange={(event) => setSearchQuery(event.target.value)}
                     placeholder="Tìm model..."
-                    className="h-8 w-full rounded-lg border border-border bg-surface-secondary pl-8 pr-2 text-xs text-text outline-none transition-colors placeholder:text-text-tertiary focus:border-[var(--accent)] focus:ring-1 focus:ring-[var(--accent)]"
+                    className="h-8 w-full rounded-lg border border-border bg-surface-secondary pl-8 pr-2 text-xs text-text v3-outline-none transition-colors placeholder:text-text-tertiary focus:border-[var(--accent)] focus:ring-1 focus:ring-[var(--accent)]"
                   />
                 </div>
                 <button

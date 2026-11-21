@@ -231,7 +231,7 @@ export const SessionSidebar = memo(function SessionSidebar({
             onKeyDown={event => { if (event.key === "Escape" && query) { event.preventDefault(); event.stopPropagation(); setQuery(""); } }}
             value={query}
             onChange={(event) => setQuery(event.target.value)}
-            className="min-w-0 flex-1 bg-transparent text-[12px] text-[var(--nk-text)] placeholder:text-[var(--nk-ghost)] focus:outline-none"
+            className="min-w-0 flex-1 bg-transparent text-[12px] text-[var(--nk-text)] placeholder:text-[var(--nk-ghost)] focus:v3-outline-none"
             placeholder="Lọc cây dự án…"
             aria-label="Tìm phiên Neko Chill"
             aria-busy={query !== deferredQuery}
@@ -281,7 +281,7 @@ export const SessionSidebar = memo(function SessionSidebar({
             </div>
           )
         ) : (
-          <div className="space-y-1" data-testid="project-session-tree">
+          <div className="v3-space-y-1" data-testid="project-session-tree">
             {projectRows.map(({ project, sessions: projectSessions }) => {
               const isCollapsed = collapsed.has(project.id) && !searching;
               const selected = selectedProjectId === project.id && !activeSessionId;
@@ -333,7 +333,7 @@ export const SessionSidebar = memo(function SessionSidebar({
                     </button>
                   </div>
                   {!isCollapsed ? (
-                    <div className="space-y-px pb-1">
+                    <div className="v3-space-y-px pb-1">
                       {visibleSessions.map((session) => renderSession(session, project.id))}
                       {projectSessions.length === 0 ? <p className="py-1 pl-8 text-[10.5px] text-[var(--nk-ghost)]">Chưa có phiên</p> : null}
                       {projectSessions.length > visibleSessions.length ? (

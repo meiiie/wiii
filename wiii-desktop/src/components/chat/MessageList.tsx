@@ -187,7 +187,7 @@ export function MessageList({
             </div>
           </div>
         ) : (
-          <div className="chat-lane space-y-5">
+          <div className="chat-lane v3-space-y-5">
             {messages.map((msg, idx) => {
               const isLast = idx === lastAssistantIdx && msg.role === "assistant";
               return (

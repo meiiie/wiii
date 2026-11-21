@@ -141,7 +141,7 @@ export function ThinkingDisclosure({
       data-testid="thinking-block"
     >
       <summary
-        className="flex min-h-6 w-full min-w-0 cursor-pointer list-none items-center gap-2 overflow-hidden rounded-md px-1 outline-none transition-colors hover:bg-[var(--nk-inset)] focus-visible:ring-2 focus-visible:ring-[var(--nk-focus)] [&::-webkit-details-marker]:hidden"
+        className="flex min-h-6 w-full min-w-0 cursor-pointer list-none items-center gap-2 overflow-hidden rounded-md px-1 v3-outline-none transition-colors hover:bg-[var(--nk-inset)] focus-visible:ring-2 focus-visible:ring-[var(--nk-focus)] [&::-webkit-details-marker]:hidden"
         aria-label={`${label}. Mở chi tiết suy luận`}
       >
         <NekoActivityIcon
@@ -184,7 +184,7 @@ export function ToolDisclosure({ block }: { block: ToolExecutionBlockData }) {
       data-testid="tool-strip"
     >
       <summary
-        className="flex min-h-6 w-full min-w-0 cursor-pointer list-none items-center gap-2 overflow-hidden rounded-md px-1 outline-none transition-colors hover:bg-[var(--nk-inset)] focus-visible:ring-2 focus-visible:ring-[var(--nk-focus)] [&::-webkit-details-marker]:hidden"
+        className="flex min-h-6 w-full min-w-0 cursor-pointer list-none items-center gap-2 overflow-hidden rounded-md px-1 v3-outline-none transition-colors hover:bg-[var(--nk-inset)] focus-visible:ring-2 focus-visible:ring-[var(--nk-focus)] [&::-webkit-details-marker]:hidden"
         aria-label={`${label} ${running ? "đang chạy" : failed ? "thất bại" : "hoàn tất"}. Mở chi tiết`}
       >
         <NekoActivityIcon
@@ -205,9 +205,9 @@ export function ToolDisclosure({ block }: { block: ToolExecutionBlockData }) {
         />
       </summary>
       <div className="ml-[7px] max-h-56 overflow-y-auto border-l border-[var(--nk-border)] py-1 pl-4 pr-2 text-[11.5px] leading-[18px]">
-        <p className="break-words font-mono text-[var(--nk-text-2)]">{block.tool.name}</p>
+        <p className="wrap-break-word font-mono text-[var(--nk-text-2)]">{block.tool.name}</p>
         {block.tool.result ? (
-          <p className="mt-1 whitespace-pre-wrap break-words text-[var(--nk-text-3)]">{block.tool.result}</p>
+          <p className="mt-1 whitespace-pre-wrap wrap-break-word text-[var(--nk-text-3)]">{block.tool.result}</p>
         ) : null}
       </div>
     </details>
@@ -252,7 +252,7 @@ function ActivityGroup({
       data-testid="activity-group"
     >
       <summary
-        className="flex min-h-6 w-full min-w-0 cursor-pointer list-none items-center gap-2 overflow-hidden rounded-md px-1 outline-none transition-colors hover:bg-[var(--nk-inset)] focus-visible:ring-2 focus-visible:ring-[var(--nk-focus)] [&::-webkit-details-marker]:hidden"
+        className="flex min-h-6 w-full min-w-0 cursor-pointer list-none items-center gap-2 overflow-hidden rounded-md px-1 v3-outline-none transition-colors hover:bg-[var(--nk-inset)] focus-visible:ring-2 focus-visible:ring-[var(--nk-focus)] [&::-webkit-details-marker]:hidden"
         aria-label={`${title}, ${summary}. Mở chi tiết`}
       >
         <NekoActivityIcon
@@ -508,7 +508,7 @@ export function NekoTranscript({
     <div className="relative min-h-0 flex-1">
       <div
         ref={scrollRef}
-        className="nk-scroll-surface h-full min-w-0 overflow-x-hidden overflow-y-auto focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[var(--nk-focus-soft)]"
+        className="nk-scroll-surface h-full min-w-0 overflow-x-hidden overflow-y-auto focus-visible:v3-outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[var(--nk-focus-soft)]"
         tabIndex={0}
         data-testid="neko-transcript"
         role="log"
@@ -597,7 +597,7 @@ export function NekoTranscript({
               <BookOpen aria-hidden="true" className="h-3.5 w-3.5 text-[var(--nk-accent)]" />
               Wiii Knowledge · {context.sources.length} nguồn đã đưa vào model
             </summary>
-            <ol className="mt-2 space-y-1 border-t border-[var(--nk-border)] pt-2 text-[10.5px] text-[var(--nk-text-3)]">
+            <ol className="mt-2 v3-space-y-1 border-t border-[var(--nk-border)] pt-2 text-[10.5px] text-[var(--nk-text-3)]">
               {context.sources.map((source, index) => (
                 <li key={source.sourceId} className="flex gap-2">
                   <span className="tabular-nums text-[var(--nk-text-2)]">[{index + 1}]</span>
@@ -642,7 +642,7 @@ export function NekoTranscript({
       {!followingTail ? (
         <button
           type="button"
-          className="absolute bottom-3 left-1/2 z-10 flex h-8 -translate-x-1/2 items-center gap-1.5 rounded-full border border-[var(--nk-border-strong)] bg-[var(--nk-composer)] px-3 text-[11px] font-medium text-[var(--nk-text-2)] shadow-sm transition-colors hover:bg-[var(--nk-raised)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--nk-focus-soft)]"
+          className="absolute bottom-3 left-1/2 z-10 flex h-8 -translate-x-1/2 items-center gap-1.5 rounded-full border border-[var(--nk-border-strong)] bg-[var(--nk-composer)] px-3 text-[11px] font-medium text-[var(--nk-text-2)] shadow-xs transition-colors hover:bg-[var(--nk-raised)] focus-visible:v3-outline-none focus-visible:ring-2 focus-visible:ring-[var(--nk-focus-soft)]"
           onClick={() => {
             updateFollowingTail(true);
             const reducedMotion = typeof window.matchMedia === "function"
