@@ -114,7 +114,7 @@ describe("Neko Chill shell UI", () => {
     await act(async () => fireEvent.click(screen.getByRole("button", { name: "Chat mới", exact: true })));
     expect(createQuickChatWorkspace).toHaveBeenCalledOnce();
     expect(await screen.findByRole("heading", { name: "Bạn muốn trao đổi điều gì?" })).toBeTruthy();
-    expect(screen.getByText(/không phải sandbox/)).toBeTruthy();
+    expect(await screen.findByText(/không phải sandbox/)).toBeTruthy();
     expect(create).not.toHaveBeenCalled();
     expect(useNekoProjectStore.getState().projects[0]?.roots[0]?.kind).toBe("scratch");
     useNekoSessionStore.setState({ createSession: originalCreate });
@@ -485,10 +485,8 @@ describe("Neko Chill shell UI", () => {
       target: { value: "Kiểm tra runtime" },
     });
     fireEvent.click(screen.getByRole("button", { name: "Gửi và mở phiên" }));
-    await vi.waitFor(() => {
-      expect(createSession).toHaveBeenCalledTimes(1);
-      expect(sendPromptToSession).toHaveBeenCalledWith("new-session-id", "Kiểm tra runtime", expect.any(Function));
-    });
+    await vi.waitFor(() => expect(sendPromptToSession).toHaveBeenCalledWith("new-session-id", "Kiểm tra runtime", expect.any(Function)));
+    expect(createSession).toHaveBeenCalledTimes(1);
     expect(createSession).toHaveBeenCalledWith(
       expect.objectContaining({ id: "gemini" }),
       { path: "C:/work/wiii", name: "wiii" },
@@ -579,7 +577,7 @@ describe("Neko Chill shell UI", () => {
     expect(screen.getByRole("heading", { name: "Phiên trên máy" })).toBeTruthy();
     expect(within(screen.getByLabelText("Tổng quan phiên")).getByText("3")).toBeTruthy();
     expect(await screen.findByRole("button", { name: "Wiii 2" })).toBeTruthy();
-    expect(screen.getByRole("button", { name: "neko-video-cut 1" })).toBeTruthy();
+    expect(await screen.findByRole("button", { name: "neko-video-cut 1" })).toBeTruthy();
 
     const overview = screen.getByTestId("neko-overview");
     fireEvent.click(within(overview).getByRole("button", { name: "Harness" }));
@@ -1107,7 +1105,7 @@ describe("Neko Chill shell UI", () => {
 
     fireEvent.click(screen.getByTestId("new-session"));
     expect(await screen.findByTestId("project-home")).toBeTruthy();
-    expect(screen.getAllByText("C:/Users/me/project").length).toBeGreaterThan(0);
+    expect((await screen.findAllByText("C:/Users/me/project")).length).toBeGreaterThan(0);
     expect(createSession).not.toHaveBeenCalled();
     expect(sendPromptToSession).not.toHaveBeenCalled();
   });
@@ -1153,10 +1151,8 @@ describe("Neko Chill shell UI", () => {
     await vi.waitFor(() => expect(start.disabled).toBe(false));
     fireEvent.click(start);
 
-    await vi.waitFor(() => {
-      expect(createSession).toHaveBeenCalledTimes(1);
-      expect(sendPromptToSession).toHaveBeenCalledWith("created", "Kiểm tra authentication", expect.any(Function));
-    });
+    await vi.waitFor(() => expect(sendPromptToSession).toHaveBeenCalledWith("created", "Kiểm tra authentication", expect.any(Function)));
+    expect(createSession).toHaveBeenCalledTimes(1);
     expect(createSession.mock.invocationCallOrder[0])
       .toBeLessThan(sendPromptToSession.mock.invocationCallOrder[0]);
   });
@@ -1328,11 +1324,9 @@ describe("Neko Chill shell UI", () => {
     await vi.waitFor(() => expect(document.activeElement).toBe(search));
     fireEvent.change(search, { target: { value: "memory show" } });
     fireEvent.click(screen.getByRole("option", { name: /memory show.*Agent/i }));
-    await vi.waitFor(() => {
-      expect(screen.queryByRole("dialog", { name: "Trung tâm lệnh Neko Chill" })).toBeNull();
-      expect(composer.value).toBe("/memory show");
-      expect(document.activeElement).toBe(composer);
-    });
+    await vi.waitFor(() => expect(document.activeElement).toBe(composer));
+    expect(screen.queryByRole("dialog", { name: "Trung tâm lệnh Neko Chill" })).toBeNull();
+    expect(composer.value).toBe("/memory show");
     await act(async () => {
       await new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
     });
@@ -1373,10 +1367,8 @@ describe("Neko Chill shell UI", () => {
     await vi.waitFor(() => expect(document.activeElement).toBe(search));
     fireEvent.change(search, { target: { value: "memory show" } });
     fireEvent.keyDown(search, { key: "Escape" });
-    await vi.waitFor(() => {
-      expect(screen.queryByRole("dialog", { name: "Trung tâm lệnh Neko Chill" })).toBeNull();
-      expect(document.activeElement).toBe(opener);
-    });
+    await vi.waitFor(() => expect(document.activeElement).toBe(opener));
+    expect(screen.queryByRole("dialog", { name: "Trung tâm lệnh Neko Chill" })).toBeNull();
     await act(async () => {
       await new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
     });

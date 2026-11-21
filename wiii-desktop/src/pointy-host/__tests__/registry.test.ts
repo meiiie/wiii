@@ -3,7 +3,7 @@
  * and DOM contract. Uses jsdom default environment.
  */
 
-import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { CursorRegistry } from "../registry";
 import { WIII_IDENTITY, identityFor } from "../identity";
 
@@ -18,6 +18,7 @@ describe("CursorRegistry", () => {
 
   afterEach(() => {
     registry.dispose();
+    vi.useRealTimers();
   });
 
   it("creates a cursor element on first upsert", () => {
@@ -235,7 +236,8 @@ describe("CursorRegistry", () => {
     expect(cursor?.querySelector(".pointy-live-ring")).toBeNull();
   });
 
-  it("remove fades the cursor and detaches it after timeout", async () => {
+  it("remove fades the cursor and detaches it after timeout", () => {
+    vi.useFakeTimers();
     registry.upsert(WIII_IDENTITY, { x: 0, y: 0 });
     registry.remove("wiii");
     // Immediately set to opacity 0 + state 'gone'
@@ -243,8 +245,7 @@ describe("CursorRegistry", () => {
       '[data-pointy-cursor="wiii"]',
     ) as HTMLElement | null;
     expect(el?.style.opacity).toBe("0");
-    // Wait past the 500ms detach timeout.
-    await new Promise((r) => setTimeout(r, 550));
+    vi.advanceTimersByTime(500);
     expect(document.querySelectorAll("[data-pointy-cursor]")).toHaveLength(0);
     expect(registry.ids()).toEqual([]);
   });

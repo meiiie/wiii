@@ -92,11 +92,9 @@ describe("Pointy voice bridge", () => {
       }),
     );
 
-    await vi.waitFor(() => {
-      expect(synthesizePointySpeech).toHaveBeenCalledWith("Đây là nút gửi tin nhắn.");
-      expect(audioInstances).toHaveLength(1);
-      expect(audioInstances[0].play).toHaveBeenCalledTimes(1);
-    });
+    await vi.waitFor(() => expect(audioInstances[0]?.play).toHaveBeenCalledTimes(1));
+    expect(synthesizePointySpeech).toHaveBeenCalledWith("Đây là nút gửi tin nhắn.");
+    expect(audioInstances).toHaveLength(1);
     expect(audioInstances[0].src).toBe("blob:wiii-pointy-voice");
     expect(audioInstances[0].preload).toBe("auto");
     expect(audioInstances[0].volume).toBe(0.92);
@@ -118,7 +116,6 @@ describe("Pointy voice bridge", () => {
       }),
     );
 
-    await new Promise((resolve) => setTimeout(resolve, 0));
     expect(synthesizePointySpeech).not.toHaveBeenCalled();
     expect(audioInstances).toHaveLength(0);
   });

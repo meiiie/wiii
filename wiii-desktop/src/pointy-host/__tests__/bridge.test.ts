@@ -380,8 +380,7 @@ describe("createBridge", () => {
     });
     Object.defineProperty(event, "source", { value: fakeSource });
     window.dispatchEvent(event);
-    await new Promise((r) => setTimeout(r, 10));
-    expect(replies).toHaveLength(1);
+    await vi.waitFor(() => expect(replies).toHaveLength(1));
     const reply = replies[0] as { type: string; id: string; result: { success: boolean } };
     expect(reply.type).toBe("wiii:action-response");
     expect(reply.id).toBe("req-42");
@@ -405,7 +404,7 @@ describe("createBridge", () => {
     });
     Object.defineProperty(event, "source", { value: fakeSource });
     window.dispatchEvent(event);
-    await new Promise((r) => setTimeout(r, 5));
+    await vi.waitFor(() => expect(replies).toHaveLength(1));
     const reply = replies[0] as { result: { success: boolean; error?: string } };
     expect(reply.result.success).toBe(false);
     expect(reply.result.error).toContain("unsupported_action");
@@ -438,7 +437,6 @@ describe("createBridge", () => {
     });
     // No source set on the event — bridge must not throw.
     window.dispatchEvent(event);
-    await new Promise((r) => setTimeout(r, 5));
-    expect(logSpy).toHaveBeenCalledWith("warn", "no_event_source");
+    await vi.waitFor(() => expect(logSpy).toHaveBeenCalledWith("warn", "no_event_source"));
   });
 });

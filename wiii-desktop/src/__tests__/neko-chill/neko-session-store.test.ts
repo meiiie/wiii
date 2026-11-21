@@ -133,7 +133,7 @@ describe("neko-session-store", () => {
     expect(result.sessionId).toBe(id);
     useCompletionNoticeStore.getState().dismiss(result.id);
     emit({ type: "turn-finished", sessionId: id, stopReason: "end_turn" });
-    await new Promise((resolve) => setTimeout(resolve, 20));
+    await persistSessionStrict(session(id));
     expect(useCompletionNoticeStore.getState().notices).toEqual([]);
   });
 
@@ -143,7 +143,7 @@ describe("neko-session-store", () => {
       emit({ type: "turn-started", sessionId: id });
       emit({ type: "answer-delta", sessionId: id, text: "Partial result" });
       emit({ type: "turn-finished", sessionId: id, stopReason });
-      await new Promise((resolve) => setTimeout(resolve, 20));
+      await persistSessionStrict(session(id));
       expect(useCompletionNoticeStore.getState().notices).toEqual([]);
     },
   );
@@ -164,7 +164,7 @@ describe("neko-session-store", () => {
     emit({ type: "answer-delta", sessionId: id, text: "First result" });
     emit({ type: "turn-finished", sessionId: id, stopReason: "end_turn" });
     emit({ type: "turn-started", sessionId: id });
-    await new Promise((resolve) => setTimeout(resolve, 20));
+    await persistSessionStrict(session(id));
     expect(useCompletionNoticeStore.getState().notices).toEqual([]);
   });
 
@@ -788,10 +788,8 @@ describe("neko-session-store", () => {
     useNekoSessionStore.getState().setActiveSession(id);
 
     const respawning = useNekoSessionStore.getState().sendPrompt("thử khởi động lại");
-    await vi.waitFor(() => {
-      expect(session(id).status).toBe("connecting");
-      expect(replacement).toBeDefined();
-    });
+    await vi.waitFor(() => expect(replacement).toBeDefined());
+    expect(session(id).status).toBe("connecting");
     const closing = useNekoSessionStore.getState().closeSession(id);
     expect(session(id).status).toBe("stopping");
     await closing;
