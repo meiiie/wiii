@@ -990,6 +990,79 @@ describe("WiiiConnectPage", () => {
     expect(screen.getByText("2/2 sẵn sàng")).toBeTruthy();
   });
 
+  it("keeps the last runtime snapshot when a polling request fails and stops polling on unmount", async () => {
+    vi.useFakeTimers();
+    mockFetchWiiiConnectSnapshot.mockResolvedValueOnce({
+      version: "wiii_connect_snapshot.v0",
+      generated_at: "2026-05-29T00:00:00.000Z",
+      surface: "desktop",
+      connections: [{
+        slug: "server",
+        label: "Wiii backend",
+        provider_kind: "wiii_native",
+        status: "connected",
+        active: true,
+        agent_ready: true,
+        scopes: { read: true },
+        capabilities: ["server.health"],
+        required_for_paths: [],
+      }],
+      path_capabilities: [],
+      warnings: [],
+    });
+    const { unmount } = render(<WiiiConnectPage />);
+    await act(async () => { await vi.advanceTimersByTimeAsync(0); });
+    expect(screen.getByText("1/1 sẵn sàng")).toBeTruthy();
+
+    await act(async () => { await vi.advanceTimersByTimeAsync(5_000); });
+    expect(mockFetchWiiiConnectSnapshot).toHaveBeenCalledTimes(2);
+    expect(screen.getByText("1/1 sẵn sàng")).toBeTruthy();
+    expect(screen.getByText("0+API")).toBeTruthy();
+
+    unmount();
+    await act(async () => { await vi.advanceTimersByTimeAsync(10_000); });
+    expect(mockFetchWiiiConnectSnapshot).toHaveBeenCalledTimes(2);
+    expect(mockFetchWiiiConnectDoctor).toHaveBeenCalledTimes(2);
+  });
+
+  it("does not request operator diagnostics for an ordinary OAuth user", async () => {
+    useAuthStore.setState({ authMode: "oauth" });
+    render(<WiiiConnectPage />);
+    await waitFor(() => expect(screen.getByText("Đã đồng bộ")).toBeTruthy());
+
+    expect(mockFetchWiiiConnectSnapshot).toHaveBeenCalledWith({ surface: "desktop" });
+    expect(mockFetchWiiiConnectDoctor).toHaveBeenCalledWith({ surface: "desktop" });
+    expect(mockFetchRecentRuntimeFlowDoctor).not.toHaveBeenCalled();
+    expect(mockFetchRuntimeFlowDoctorHistory).not.toHaveBeenCalled();
+    expect(mockFetchRecentSemanticMemoryDoctor).not.toHaveBeenCalled();
+    expect(mockFetchSemanticMemoryDoctorHistory).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole("button", { name: /Chẩn đoán/i }));
+    const diagnostics = await screen.findByTestId("wiii-connect-runtime-flow-doctor-panel");
+    expect(within(diagnostics).getAllByText("unavailable").length).toBeGreaterThan(0);
+    const dryRun = within(diagnostics).getByRole("button", { name: /dry.run/i }) as HTMLButtonElement;
+    expect(dryRun.disabled).toBe(true);
+    expect(mockPruneRuntimeFlowSessionEvents).not.toHaveBeenCalled();
+  });
+
+  it("filters the catalog case-insensitively and restores cards after an empty search", async () => {
+    render(<WiiiConnectPage />);
+    fireEvent.click(screen.getByRole("button", { name: /Composio/i }));
+    const search = screen.getByPlaceholderText("Tìm kết nối...");
+    fireEvent.change(search, { target: { value: "  FaCeBoOk  " } });
+    expect(screen.getByRole("button", { name: /Facebook/i }).getAttribute("aria-pressed")).toBe("true");
+    expect(screen.queryByRole("button", { name: /Gmail/i })).toBeNull();
+
+    fireEvent.change(search, { target: { value: "no-such-provider" } });
+    expect(screen.getByText("Không tìm thấy kết nối phù hợp với bộ lọc hiện tại.")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: /Facebook/i })).toBeNull();
+
+    fireEvent.change(search, { target: { value: "" } });
+    expect(screen.getByRole("button", { name: /Facebook/i })).toBeTruthy();
+    expect(screen.getByRole("button", { name: /Gmail/i })).toBeTruthy();
+    await waitFor(() => expect(screen.getByText("Đã đồng bộ")).toBeTruthy());
+  });
+
   it("uses backend provider registry when available", async () => {
     mockFetchWiiiConnectProviders.mockResolvedValue({
       version: "wiii_connect_provider_registry.v1",
