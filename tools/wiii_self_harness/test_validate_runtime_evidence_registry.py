@@ -4,6 +4,7 @@ import io
 import json
 import os
 from pathlib import Path
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -468,6 +469,76 @@ def _add_probe_production_override_support(probe: Path) -> None:
 
 
 class RuntimeEvidenceRegistryTests(unittest.TestCase):
+    def test_script_preserves_validation_report_and_exit_status(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir).resolve()
+            _write_sample_repo(root)
+            registry_path = root / "registry.json"
+            script = Path(__file__).with_name("validate_runtime_evidence_registry.py")
+            args = [sys.executable, str(script), "--registry", str(registry_path),
+                    "--repo-root", str(root)]
+            data = _sample_registry()
+            errors = [
+                "registry: `version` must be an integer >= 1",
+                "requirements[sample-runtime-evidence]: `title` must be a non-empty string",
+            ]
+            error_codes = ["registry_version_invalid", "validation_error"]
+
+            for ok in (True, False):
+                with self.subTest(ok=ok):
+                    if not ok:
+                        data["version"] = 0
+                        data["requirements"][0]["title"] = ""
+                    _write(registry_path, json.dumps(data))
+                    fingerprint = (
+                        "09743e6fa50bde741dc0fce784a9c4af26cd04071b43606763953bd4f7b143f8"
+                        if ok else
+                        "5aeaa96c4c7524171b24bf5b503451ffe696e152c8659e6996e65695291f9865"
+                    )
+                    passed_checks = 177 if ok else 175
+                    status = "PASS" if ok else "FAIL"
+                    version = "1" if ok else "-"
+                    schema = "wiii.runtime_evidence_registry_validation.v1"
+                    expected_text = (
+                        f"Wiii Runtime Evidence Registry: {status}\n"
+                        f"validation_schema: {schema}\n"
+                        f"registry: {registry_path.as_posix()}\n"
+                        f"registry_version: {version}\n"
+                        f"registry_fingerprint_sha256: {fingerprint}\n"
+                        "requirements: 1\n"
+                        f"checks passed: {passed_checks}\n"
+                    )
+                    if not ok:
+                        expected_text += (
+                            "\nError codes: registry_version_invalid, validation_error\n"
+                            "Error code counts: registry_version_invalid=1, validation_error=1\n"
+                            f"\nErrors:\n- {errors[0]}\n- {errors[1]}\n"
+                        )
+                    expected_json = {
+                        "error_code_counts": {} if ok else dict.fromkeys(error_codes, 1),
+                        "error_codes": [] if ok else error_codes,
+                        "errors": [] if ok else errors,
+                        "ok": ok,
+                        "passed_checks": passed_checks,
+                        "registry": "Wiii Runtime Evidence Registry",
+                        "registry_fingerprint_sha256": fingerprint,
+                        "registry_path": registry_path.as_posix(),
+                        "registry_version": 1 if ok else None,
+                        "requirement_count": 1,
+                        "validation_schema_version": schema,
+                    }
+                    plain = subprocess.run(args, capture_output=True, text=True, check=False)
+                    machine = subprocess.run(
+                        [*args, "--json"], capture_output=True, text=True, check=False,
+                    )
+
+                    self.assertEqual((int(not ok), expected_text, ""),
+                                     (plain.returncode, plain.stdout, plain.stderr))
+                    self.assertEqual(
+                        (int(not ok), json.dumps(expected_json, indent=2, sort_keys=True) + "\n", ""),
+                        (machine.returncode, machine.stdout, machine.stderr),
+                    )
+
     def test_default_registry_validates_against_repository(self) -> None:
         data = registry.load_registry(registry.DEFAULT_REGISTRY)
 
