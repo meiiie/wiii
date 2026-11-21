@@ -69,11 +69,9 @@ describe("Neko coworker browser computer-invoke honesty", () => {
     expect(screen.queryByText(/Cannot read properties of undefined/i)).toBeNull();
     expect(screen.queryByRole("alert")).toBeNull();
 
-    await waitFor(() => {
-      expect(mocks.doctorComputer).not.toHaveBeenCalled();
-      expect(mocks.refresh).not.toHaveBeenCalled();
-      expect(mocks.consultSignalInbox).not.toHaveBeenCalled();
-    });
+    expect(mocks.doctorComputer).not.toHaveBeenCalled();
+    expect(mocks.refresh).not.toHaveBeenCalled();
+    expect(mocks.consultSignalInbox).not.toHaveBeenCalled();
 
     const check = screen.getByRole("button", { name: "Kiểm tra" });
     expect((check as HTMLButtonElement).disabled).toBe(true);

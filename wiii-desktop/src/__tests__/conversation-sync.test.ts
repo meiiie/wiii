@@ -530,10 +530,7 @@ describe("Sprint 225: chat-store server propagation", () => {
 
     useChatStore.getState().deleteConversation(convId);
 
-    // Give dynamic import + promise a tick to resolve
-    await new Promise((r) => setTimeout(r, 50));
-
-    expect(mockDeleteServerThread).toHaveBeenCalledWith("user_u1__session_s1");
+    await vi.waitFor(() => expect(mockDeleteServerThread).toHaveBeenCalledWith("user_u1__session_s1"));
   });
 
   it("deleteConversation does NOT call server when no thread_id", async () => {
@@ -544,7 +541,7 @@ describe("Sprint 225: chat-store server propagation", () => {
 
     useChatStore.getState().deleteConversation(convId);
 
-    await new Promise((r) => setTimeout(r, 50));
+    await vi.dynamicImportSettled();
 
     expect(mockDeleteServerThread).not.toHaveBeenCalled();
   });
@@ -560,9 +557,7 @@ describe("Sprint 225: chat-store server propagation", () => {
 
     useChatStore.getState().renameConversation(convId, "New Title");
 
-    await new Promise((r) => setTimeout(r, 50));
-
-    expect(mockRenameServerThread).toHaveBeenCalledWith("user_u1__session_s1", "New Title");
+    await vi.waitFor(() => expect(mockRenameServerThread).toHaveBeenCalledWith("user_u1__session_s1", "New Title"));
   });
 });
 
