@@ -33,9 +33,14 @@ class ProcessTransport implements AcpTransport {
   private readonly child: ChildProcessWithoutNullStreams;
   private readonly exited: Promise<void>;
   private stderr = "";
-  constructor(binary: string, home: string) {
-    this.child = spawn(binary, ["acp"], { cwd: home, stdio: ["pipe", "pipe", "pipe"], env: {
-      PATH: "/usr/bin:/bin", HOME: home, TMPDIR: path.join(home, "tmp"), NEKO_AUTO_UPDATE: "0",
+  constructor(binary: string, home: string, confined = false) {
+    // Keep in sync with linux_containment.rs::supervisor_args (Quick Chat profile).
+    const roots = [path.join(home, "scratch"), path.join(home, ".neko-core"), path.join(home, "tmp")];
+    const args = confined ? ["--unshare-pid", "--as-pid-1", "--die-with-parent",
+      "--ro-bind", "/", "/", "--dev", "/dev", "--proc", "/proc",
+      ...roots.flatMap(root => ["--bind", root, root]), "--", binary, "acp"] : ["acp"];
+    this.child = spawn(confined ? "/usr/bin/bwrap" : binary, args, { cwd: confined ? roots[0] : home, stdio: ["pipe", "pipe", "pipe"], env: {
+      PATH: "/usr/bin:/bin", HOME: home, TMPDIR: path.join(home, "tmp"), NEKO_AUTO_UPDATE: "0", NEKO_DREAM_MODE: "manual",
     } });
     this.child.stderr.on("data", chunk => { this.stderr = (this.stderr + chunk).slice(-4096); });
     this.exited = new Promise(resolve => this.child.once("exit", () => resolve()));
@@ -132,15 +137,15 @@ describe.skipIf(!BINARY)("Neko Core ACP desktop contracts (real binary)", () => 
     }));
   }
 
-  function driverFor(resume?: { sessionId: string; receipt: NekoTaskReceipt }) {
-    const transport = new ProcessTransport(BINARY!, home);
+  function driverFor(resume?: { sessionId: string; receipt: NekoTaskReceipt }, confined = false) {
+    const transport = new ProcessTransport(BINARY!, home, confined);
     live.push(transport);
     const events: DriverEvent[] = [];
     const admitted: Array<{ sessionId: string; receipt: NekoTaskReceipt }> = [];
     const driver = new AcpDriver({ sessionId: "wiii-scratch-thread", cwd: root, transport,
       resumeSessionId: resume?.sessionId, onEvent: event => events.push(event),
-      taskScope: { authorizedRoot: root, label: LABEL, expectedReceipt: resume?.receipt,
-        onAdmitted: async (sessionId, receipt) => { admitted.push({ sessionId, receipt }); } } });
+      ...(confined ? {} : { taskScope: { authorizedRoot: root, label: LABEL, expectedReceipt: resume?.receipt,
+        onAdmitted: async (sessionId: string, receipt: NekoTaskReceipt) => { admitted.push({ sessionId, receipt }); } } }) });
     return { driver, events, admitted,
       answer: () => events.flatMap(event => event.type === "answer-delta" ? [event.text] : []).join(""),
       finished: () => events.flatMap(event => event.type === "turn-finished" ? [event.stopReason] : []),
@@ -231,6 +236,31 @@ describe.skipIf(!BINARY)("Neko Core ACP desktop contracts (real binary)", () => 
     expect(h.driver.runtime.workspaceIsolation).toBe("advisory");
     await h.driver.dispose();
   });
+
+  for (const target of ["absolute", "../escape.txt", "inside.txt"]) {
+    it.skipIf(process.platform !== "linux")(`confines Quick Chat writes: ${target}`, async () => {
+      const requested = target === "absolute" ? path.join(home, "absolute-escape.txt") : target;
+      const actual = path.resolve(root, requested);
+      await configure({ name: "write_file", arguments: { path: requested, content: "CONFINED_WRITE" } });
+      const h = driverFor(undefined, true);
+      try {
+        await h.driver.start();
+        await h.driver.prompt("Write the fixture evidence.");
+        expect(h.finished()).toEqual(["end_turn"]);
+        const toolResult = JSON.stringify(model.bodies.flatMap(body => body.messages.filter(message => message.role === "tool")));
+        expect(toolResult).not.toBe("[]");
+        if (target === "inside.txt") {
+          expect(readFileSync(actual, "utf8")).toBe("CONFINED_WRITE");
+          expect(toolResult).toContain("Wrote inside.txt");
+        } else {
+          expect(existsSync(actual)).toBe(false);
+          expect(toolResult).toMatch(/EROFS|EACCES|read-only|permission denied/i);
+        }
+      } finally {
+        await h.driver.dispose();
+      }
+    });
+  }
 
   it("cold-resumes a durable queued prompt exactly once and holds uncertain delivery", async () => {
     await configure();

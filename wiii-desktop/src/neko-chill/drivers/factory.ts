@@ -115,6 +115,7 @@ export async function createDriverForAgent(
         ...(launch.execution ? { execution: launch.execution } : {}),
       }),
     workspacePath: taskBinding?.workspacePath ?? launch.workspace.path,
+    ...(launch.workspace.kind === "scratch" ? { workspaceKind: "scratch" as const } : {}),
     ...(launch.profileId ? { profileId: launch.profileId } : {}),
   });
   const { transport } = spawned;

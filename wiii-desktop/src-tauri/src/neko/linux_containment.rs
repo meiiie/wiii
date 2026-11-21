@@ -16,8 +16,8 @@
 //! approved Linux enablement path: fail closed when `bwrap` is missing or
 //! cannot create the PID namespace.
 //!
-//! Filesystem/network sandboxing is intentionally out of scope here — Wiii's
-//! Job Object path also confines process lifetime, not the FS policy.
+//! Project sessions retain host filesystem access. Quick Chat additionally
+//! mounts the host read-only, with explicit state, scratch and temporary roots.
 
 use std::ffi::{CString, OsString};
 use std::io;
@@ -116,6 +116,13 @@ fn probe_bwrap_capability() -> bool {
 /// Rewrite the soon-to-be-spawned child so it `exec`s `bwrap` while preserving
 /// stdio/cwd/env already configured on `command` (via `pre_exec`).
 pub(crate) fn attach_bwrap_supervisor(command: &mut Command) -> io::Result<()> {
+    attach_bwrap_supervisor_with_roots(command, None)
+}
+
+pub(crate) fn attach_bwrap_supervisor_with_roots(
+    command: &mut Command,
+    write_roots: Option<&[PathBuf]>,
+) -> io::Result<()> {
     use std::os::unix::ffi::OsStrExt;
     use std::os::unix::process::CommandExt;
 
@@ -130,19 +137,7 @@ pub(crate) fn attach_bwrap_supervisor(command: &mut Command) -> io::Result<()> {
 
     let mut argv_os: Vec<OsString> = Vec::with_capacity(16 + program_args.len());
     argv_os.push(bwrap.into_os_string());
-    for flag in [
-        "--unshare-pid",
-        "--as-pid-1",
-        "--die-with-parent",
-        "--dev-bind",
-        "/",
-        "/",
-        "--proc",
-        "/proc",
-        "--",
-    ] {
-        argv_os.push(OsString::from(flag));
-    }
+    argv_os.extend(supervisor_args(write_roots)?);
     argv_os.push(program);
     argv_os.extend(program_args);
 
@@ -169,6 +164,37 @@ pub(crate) fn attach_bwrap_supervisor(command: &mut Command) -> io::Result<()> {
         command.pre_exec(move || Err(image.exec()));
     }
     Ok(())
+}
+
+fn supervisor_args(write_roots: Option<&[PathBuf]>) -> io::Result<Vec<OsString>> {
+    let mut args: Vec<OsString> = ["--unshare-pid", "--as-pid-1", "--die-with-parent"]
+        .into_iter()
+        .map(OsString::from)
+        .collect();
+    if let Some(roots) = write_roots {
+        if roots.len() < 3
+            || roots
+                .iter()
+                .any(|root| !root.is_absolute() || !root.is_dir())
+        {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "Quick Chat requires scratch, state and temp directories",
+            ));
+        }
+        args.extend(
+            ["--ro-bind", "/", "/", "--dev", "/dev", "--proc", "/proc"].map(OsString::from),
+        );
+        for root in roots {
+            args.push("--bind".into());
+            args.push(root.as_os_str().to_owned());
+            args.push(root.as_os_str().to_owned());
+        }
+    } else {
+        args.extend(["--dev-bind", "/", "/", "--proc", "/proc"].map(OsString::from));
+    }
+    args.push("--".into());
+    Ok(args)
 }
 
 /// argv/envp for execve, built before fork: null-terminated pointer arrays into
@@ -255,6 +281,85 @@ pub(crate) fn unavailable_message() -> &'static str {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn project_supervisor_argv_is_unchanged() {
+        assert_eq!(
+            supervisor_args(None).unwrap(),
+            [
+                "--unshare-pid",
+                "--as-pid-1",
+                "--die-with-parent",
+                "--dev-bind",
+                "/",
+                "/",
+                "--proc",
+                "/proc",
+                "--",
+            ]
+            .map(OsString::from)
+        );
+    }
+
+    #[test]
+    fn quick_chat_supervisor_argv_and_write_boundary() {
+        let base = std::env::temp_dir().join(format!("wiii-confined-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir(&base).unwrap();
+        let roots: Vec<PathBuf> = ["scratch", "state", "tmp"]
+            .map(|name| base.join(name))
+            .into();
+        for root in &roots {
+            std::fs::create_dir(root).unwrap();
+        }
+        let args = supervisor_args(Some(&roots)).unwrap();
+        let mut expected: Vec<OsString> = [
+            "--unshare-pid",
+            "--as-pid-1",
+            "--die-with-parent",
+            "--ro-bind",
+            "/",
+            "/",
+            "--dev",
+            "/dev",
+            "--proc",
+            "/proc",
+        ]
+        .map(OsString::from)
+        .into();
+        for root in &roots {
+            expected.extend([
+                OsString::from("--bind"),
+                root.as_os_str().to_owned(),
+                root.as_os_str().to_owned(),
+            ]);
+        }
+        expected.push("--".into());
+        assert_eq!(args, expected);
+        if containment_available() {
+            let mut command = Command::new("/bin/sh");
+            command.args(["-c", "printf inside > inside.txt && printf state > \"$1/state.txt\" && printf temp > \"$2/temp.txt\" && ! (printf outside > ../escape.txt) && ! (printf outside > \"$3\") && ! (printf outside > linked.txt)", "sh"])
+                .arg(&roots[1]).arg(&roots[2]).arg(base.join("absolute.txt"))
+                .current_dir(&roots[0]);
+            std::os::unix::fs::symlink(
+                base.join("linked-outside.txt"),
+                roots[0].join("linked.txt"),
+            )
+            .unwrap();
+            attach_bwrap_supervisor_with_roots(&mut command, Some(&roots)).unwrap();
+            assert!(command.status().unwrap().success());
+            assert_eq!(
+                std::fs::read_to_string(roots[0].join("inside.txt")).unwrap(),
+                "inside"
+            );
+            assert!(!base.join("escape.txt").exists());
+            assert!(!base.join("absolute.txt").exists());
+            assert!(!base.join("linked-outside.txt").exists());
+        }
+        assert!(supervisor_args(Some(&[])).is_err());
+        let missing = vec![base.join("missing"); 3];
+        assert!(supervisor_args(Some(&missing)).is_err());
+        std::fs::remove_dir_all(base).unwrap();
+    }
 
     #[test]
     fn required_bwrap_is_usable() {

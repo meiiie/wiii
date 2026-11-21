@@ -487,6 +487,15 @@ fn spawn_linux_child_on_stable_parent_thread(
 }
 
 pub(crate) fn spawn_owned(command: &mut Command) -> Result<OwnedChild, SpawnOwnedError> {
+    spawn_owned_with_write_roots(command, None)
+}
+
+pub(crate) fn spawn_owned_with_write_roots(
+    command: &mut Command,
+    write_roots: Option<&[PathBuf]>,
+) -> Result<OwnedChild, SpawnOwnedError> {
+    #[cfg(not(target_os = "linux"))]
+    let _ = write_roots;
     #[cfg(windows)]
     {
         use std::os::windows::io::AsRawHandle;
@@ -536,8 +545,13 @@ pub(crate) fn spawn_owned(command: &mut Command) -> Result<OwnedChild, SpawnOwne
         // *thread*; when that worker exits, the kernel SIGKILLs the live ACP
         // supervisor (~10.6s after attach). Spawn on a process-lifetime thread
         // so PDEATHSIG stays aimed at a parent that outlives the session.
-        linux_containment::attach_bwrap_supervisor(command)
-            .map_err(SpawnOwnedError::safe)?;
+        match write_roots {
+            Some(roots) => {
+                linux_containment::attach_bwrap_supervisor_with_roots(command, Some(roots))
+            }
+            None => linux_containment::attach_bwrap_supervisor(command),
+        }
+        .map_err(SpawnOwnedError::safe)?;
         let mut to_spawn = Command::new("true");
         std::mem::swap(command, &mut to_spawn);
         let child = spawn_linux_child_on_stable_parent_thread(to_spawn)

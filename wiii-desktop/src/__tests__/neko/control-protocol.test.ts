@@ -8,6 +8,17 @@ import {
 } from "@/neko/control-protocol";
 
 describe("Neko Control Protocol", () => {
+  for (const workspaceKind of [undefined, "scratch", "unknown", false]) {
+    it(`validates session workspace kind: ${workspaceKind}`, () => {
+      const result = parseNekoControlRequest({
+        v: 1, requestId: "workspace-kind", method: "session/start",
+        params: { agentSessionId: "session", taskId: "task", runId: "run", providerId: "neko",
+          environmentId: "environment", workspacePath: "/workspace", workspaceKind },
+      });
+      expect(result.ok).toBe(workspaceKind === undefined || workspaceKind === "scratch");
+    });
+  }
+
   it("accepts a versioned provider discovery request", () => {
     expect(parseNekoControlRequest({
       v: NEKO_CONTROL_PROTOCOL_VERSION,
