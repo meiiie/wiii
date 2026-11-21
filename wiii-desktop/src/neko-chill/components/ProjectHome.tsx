@@ -536,6 +536,7 @@ export function ProjectHome({
 
           <div className="nk-project-composer relative rounded-2xl border border-[var(--nk-border-strong)] bg-[var(--nk-composer)] p-3 shadow-[0_6px_24px_rgba(38,33,28,0.05)]">
             <textarea
+              title="Enter gửi · Shift+Enter xuống dòng"
               ref={textareaRef}
               rows={Math.min(draft.split("\n").length || 1, 6)}
               value={draft}
@@ -629,12 +630,6 @@ export function ProjectHome({
             </div>
           </div>
 
-          <p className="mt-3 flex flex-wrap items-center justify-center gap-x-3 gap-y-1 text-[11px] text-[var(--nk-text-3)]">
-            <span className="inline-flex items-center gap-2 text-[10px] text-[var(--nk-ghost)]" aria-hidden="true">
-              <span><kbd className="rounded border border-[var(--nk-border)] bg-[var(--nk-raised)] px-1 py-px text-[9.5px]">Enter</kbd> gửi</span>
-              <span><kbd className="rounded border border-[var(--nk-border)] bg-[var(--nk-raised)] px-1 py-px text-[9.5px]">Shift+Enter</kbd> xuống dòng</span>
-            </span>
-          </p>
           {!taskLaunch && !quickChat ? (
             <div className="mt-6 flex flex-wrap justify-center gap-2" data-testid="project-home-starters" aria-label="Gợi ý bắt đầu">
               {NEKO_STARTER_PROMPTS.map((starter) => (

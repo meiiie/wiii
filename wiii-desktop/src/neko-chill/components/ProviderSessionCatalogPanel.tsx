@@ -200,11 +200,9 @@ export function ProviderSessionCatalogPanel({
           </span>
           <span className="min-w-0 flex-1">
             <strong className="block truncate text-[12.5px] font-medium text-[var(--nk-text)]">{group.name}</strong>
-            <span className="block truncate text-[10.5px] text-[var(--nk-text-3)]">
-              {group.attentionCount ? `${group.attentionCount} cần bạn · ` : ""}
-              {group.workingCount ? `${group.workingCount} đang chạy` : "Không có phiên đang chạy"}
-              {group.detail ? ` · ${group.detail}` : ""}
-            </span>
+            {group.attentionCount || group.workingCount || group.detail ? <span className="block truncate text-[10.5px] text-[var(--nk-text-3)]">
+              {[group.attentionCount ? `${group.attentionCount} cần bạn` : null, group.workingCount ? `${group.workingCount} đang chạy` : null, group.detail].filter(Boolean).join(" · ")}
+            </span> : null}
           </span>
           <span className="w-10 shrink-0 text-right text-[11px] tabular-nums text-[var(--nk-ghost)]">{group.sessions.length}</span>
         </button>

@@ -111,7 +111,7 @@ describe("Neko Chill shell UI", () => {
     const create = vi.fn();
     useNekoSessionStore.setState({ createSession: create });
     render(<NekoChillApp />);
-    await act(async () => fireEvent.click(screen.getByRole("button", { name: "Chat mới", exact: true })));
+    await act(async () => fireEvent.click(screen.getByTestId("overview-quick-chat")));
     expect(createQuickChatWorkspace).toHaveBeenCalledOnce();
     expect(await screen.findByRole("heading", { name: "Bạn đang nghĩ gì?" })).toBeTruthy();
     expect(await screen.findByText("Thư mục riêng")).toBeTruthy();
@@ -123,10 +123,10 @@ describe("Neko Chill shell UI", () => {
   it("keeps quick-chat failure retryable without substituting a project", async () => {
     vi.mocked(createQuickChatWorkspace).mockRejectedValueOnce(new Error("Disk full"));
     render(<NekoChillApp />);
-    await act(async () => fireEvent.click(screen.getByRole("button", { name: "Chat mới", exact: true })));
+    await act(async () => fireEvent.click(screen.getByTestId("overview-quick-chat")));
     expect(screen.getByRole("alert").textContent).toContain("Disk full");
     expect(screen.queryByRole("heading", { name: "Bạn đang nghĩ gì?" })).toBeNull();
-    await act(async () => fireEvent.click(screen.getByRole("button", { name: "Chat mới", exact: true })));
+    await act(async () => fireEvent.click(screen.getByTestId("overview-quick-chat")));
     expect(await screen.findByRole("heading", { name: "Bạn đang nghĩ gì?" })).toBeTruthy();
   });
 
@@ -134,7 +134,7 @@ describe("Neko Chill shell UI", () => {
     let finish!: (value: { path: string; name: string; kind: "scratch" }) => void;
     vi.mocked(createQuickChatWorkspace).mockImplementationOnce(() => new Promise(resolve => { finish = resolve; }));
     render(<NekoChillApp />);
-    fireEvent.click(screen.getByRole("button", { name: "Chat mới", exact: true }));
+    fireEvent.click(screen.getByTestId("overview-quick-chat"));
     expect((screen.getByRole("button", { name: "Đang chuẩn bị chat…" }) as HTMLButtonElement).disabled).toBe(true);
     fireEvent.click(screen.getByRole("button", { name: "Tổng quan", exact: true }));
     await act(async () => finish({ path: "/qa/quick-chats/late", name: "Chat riêng", kind: "scratch" }));

@@ -162,12 +162,12 @@ export function NekoOverview({
           <div className="nk-home-actions mt-7 grid gap-3">
             <button type="button" className="nk-home-action" onClick={onQuickChat ?? onNewSession} disabled={quickChatPending} data-testid="overview-quick-chat">
               <span className="nk-home-action-icon">{quickChatPending ? <LoaderCircle aria-hidden="true" size={20} className="animate-spin motion-reduce:animate-none" /> : <MessageSquare aria-hidden="true" size={20} />}</span>
-              <span className="min-w-0 flex-1"><strong className="block text-[14px] font-medium">{quickChatPending ? "Đang mở chat…" : "Chat mới"}</strong><span className="mt-1 block text-[12px] text-[var(--nk-text-3)]">Bắt đầu với một ý tưởng</span></span>
+              <span className="min-w-0 flex-1 text-[14px] font-medium">{quickChatPending ? "Đang mở chat…" : "Chat mới"}</span>
               <ArrowUpRight aria-hidden="true" size={16} className="text-[var(--nk-text-3)]" />
             </button>
             <button type="button" className="nk-home-action" onClick={projectCount === 0 ? onCreateProject ?? onNewSession : onNewSession} data-testid={projectCount === 0 ? "overview-create-first-project" : "overview-new-session"}>
               <span className="nk-home-action-icon"><FolderPlus aria-hidden="true" size={20} /></span>
-              <span className="min-w-0 flex-1"><strong className="block text-[14px] font-medium">{projectCount === 0 ? "Tạo Project" : "Chat trong dự án"}</strong><span className="mt-1 block text-[12px] text-[var(--nk-text-3)]">Làm việc cùng mã nguồn của bạn</span></span>
+              <span className="min-w-0 flex-1 text-[14px] font-medium">{projectCount === 0 ? "Tạo Project" : "Chat trong dự án"}</span>
               <ArrowUpRight aria-hidden="true" size={16} className="text-[var(--nk-text-3)]" />
             </button>
           </div>

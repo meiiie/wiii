@@ -416,6 +416,7 @@ function NekoComposerComponent({
             readOnly={draftReadOnly}
             aria-busy={draftReadOnly}
             aria-label={`Tin nhắn cho ${session.agentName}`}
+            title="Enter gửi · Shift+Enter xuống dòng"
             aria-describedby={composerHint ? hintId : undefined}
             data-testid="neko-composer-input"
             onChange={(event) => {
@@ -539,10 +540,6 @@ function NekoComposerComponent({
             </p>
           ) : null}
         </div>
-        <p className="mx-3 mt-1.5 flex items-center gap-2 px-1 text-[10px] text-[var(--nk-ghost)]" aria-hidden="true">
-          {!composerDisabled && <span><kbd className="rounded border border-[var(--nk-border)] bg-[var(--nk-raised)] px-1 py-px text-[9.5px]">Enter</kbd> gửi</span>}
-          <span><kbd className="rounded border border-[var(--nk-border)] bg-[var(--nk-raised)] px-1 py-px text-[9.5px]">Shift+Enter</kbd> xuống dòng</span>
-        </p>
       </div>
     </div>
   );
