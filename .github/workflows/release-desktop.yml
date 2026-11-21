@@ -9,6 +9,7 @@ on:
       - 'docs/releases/**'
       - 'wiii-desktop/src-tauri/tauri.conf.json'
       - 'wiii-desktop/src-tauri/tauri.*.conf.json'
+      - 'wiii-desktop/src-tauri/windows/**'
       - 'wiii-desktop/src-tauri/neko-bundle.lock.json'
       - 'VERSION'
       - 'CHANGELOG.md'

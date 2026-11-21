@@ -19,12 +19,13 @@ stable installer. Candidate builds are for acceptance testing only.
    if ($actual -ne $expected) { throw 'Wiii checksum mismatch' }
    ```
 
-3. Run the installer for your Windows user. Setup may need internet access
-   if the Microsoft Edge WebView2 runtime is absent.
-4. Install/configure [Neko Core](https://neko.holilihu.online/) using its official
-   Windows instructions. Restart Wiii after installation or a PATH change.
-5. Open **Tổng quan → Quản lý harness** and check Neko Core readiness.
-   Choose a project folder, then send your first message.
+3. Open the installer and wait. It installs for your Windows user without
+   wizard pages or admin rights, adds Start menu and desktop shortcuts, and
+   opens Wiii when done. Setup needs internet access only if the Microsoft
+   Edge WebView2 runtime is absent.
+4. Neko Core is bundled; no separate CLI install is needed. Choose a project
+   folder, then send your first message. Configure the model provider in
+   Neko Core if Wiii reports it is not ready.
 
 A successful executable check does not prove model authentication is configured.
 Keep account setup and credentials in Neko Core's own supported setup flow.
