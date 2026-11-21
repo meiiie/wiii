@@ -16,7 +16,15 @@ on:
       - "maritime-ai-service/alembic/versions/056_create_wiii_connect_operation_approvals.py"
       - "maritime-ai-service/scripts/probe_live_wiii_connect_facebook_post_replay.py"
       - "maritime-ai-service/tests/unit/test_probe_live_wiii_connect_facebook_post_replay.py"
-      - "maritime-ai-service/tests/unit/api/test_wiii_connect_api.py"
+      - "maritime-ai-service/tests/unit/api/test_wiii_connect_api_status.py"
+      - "maritime-ai-service/tests/unit/api/test_wiii_connect_api_activation.py"
+      - "maritime-ai-service/tests/unit/api/test_wiii_connect_api_sessions.py"
+      - "maritime-ai-service/tests/unit/api/test_wiii_connect_api_connections.py"
+      - "maritime-ai-service/tests/unit/api/test_wiii_connect_api_actions.py"
+      - "maritime-ai-service/tests/unit/api/test_wiii_connect_api_execution.py"
+      - "maritime-ai-service/tests/unit/api/test_wiii_connect_api_facebook.py"
+      - "maritime-ai-service/tests/unit/api/test_wiii_connect_api_callbacks.py"
+      - "maritime-ai-service/tests/unit/api/wiii_connect_api_helpers.py"
       - "maritime-ai-service/tests/unit/test_wiii_connect_persistent_storage.py"
   push:
     branches: [main]
@@ -33,7 +41,15 @@ on:
       - "maritime-ai-service/alembic/versions/056_create_wiii_connect_operation_approvals.py"
       - "maritime-ai-service/scripts/probe_live_wiii_connect_facebook_post_replay.py"
       - "maritime-ai-service/tests/unit/test_probe_live_wiii_connect_facebook_post_replay.py"
-      - "maritime-ai-service/tests/unit/api/test_wiii_connect_api.py"
+      - "maritime-ai-service/tests/unit/api/test_wiii_connect_api_status.py"
+      - "maritime-ai-service/tests/unit/api/test_wiii_connect_api_activation.py"
+      - "maritime-ai-service/tests/unit/api/test_wiii_connect_api_sessions.py"
+      - "maritime-ai-service/tests/unit/api/test_wiii_connect_api_connections.py"
+      - "maritime-ai-service/tests/unit/api/test_wiii_connect_api_actions.py"
+      - "maritime-ai-service/tests/unit/api/test_wiii_connect_api_execution.py"
+      - "maritime-ai-service/tests/unit/api/test_wiii_connect_api_facebook.py"
+      - "maritime-ai-service/tests/unit/api/test_wiii_connect_api_callbacks.py"
+      - "maritime-ai-service/tests/unit/api/wiii_connect_api_helpers.py"
       - "maritime-ai-service/tests/unit/test_wiii_connect_persistent_storage.py"
   schedule:
     - cron: "35 5 * * *"
@@ -88,7 +104,7 @@ jobs:
 
       - name: Run Facebook post replay contract tests
         working-directory: maritime-ai-service
-        run: python -m pytest tests/unit/test_probe_live_wiii_connect_facebook_post_replay.py tests/unit/test_runtime_evidence_output.py tests/unit/api/test_wiii_connect_api.py tests/unit/test_wiii_connect_persistent_storage.py -q --tb=short
+        run: python -m pytest tests/unit/test_probe_live_wiii_connect_facebook_post_replay.py tests/unit/test_runtime_evidence_output.py tests/unit/api/test_wiii_connect_api_status.py tests/unit/api/test_wiii_connect_api_activation.py tests/unit/api/test_wiii_connect_api_sessions.py tests/unit/api/test_wiii_connect_api_connections.py tests/unit/api/test_wiii_connect_api_actions.py tests/unit/api/test_wiii_connect_api_execution.py tests/unit/api/test_wiii_connect_api_facebook.py tests/unit/api/test_wiii_connect_api_callbacks.py tests/unit/test_wiii_connect_persistent_storage.py -q --tb=short
 
   live-wiii-connect-facebook-post-replay-evidence:
     name: Live Wiii Connect Facebook Post Replay Evidence

@@ -59,7 +59,7 @@ and Facebook connection-only OAuth.
 - Provider registry and API:
   `maritime-ai-service/app/engine/wiii_connect/provider_registry.py`,
   `maritime-ai-service/app/api/v1/wiii_connect.py`,
-  `tests/unit/api/test_wiii_connect_api.py`.
+  `tests/unit/api/test_wiii_connect_api_status.py`.
 - OAuth/session/callback boundary:
   `maritime-ai-service/app/engine/wiii_connect/connection_sessions.py`,
   `callback_state.py`, `callback_boundary.py`, and

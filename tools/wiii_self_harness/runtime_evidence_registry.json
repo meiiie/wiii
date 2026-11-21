@@ -4171,7 +4171,14 @@
       "probe": "maritime-ai-service/scripts/probe_live_wiii_connect_facebook_post_replay.py",
       "contract_tests": [
         "maritime-ai-service/tests/unit/test_probe_live_wiii_connect_facebook_post_replay.py",
-        "maritime-ai-service/tests/unit/api/test_wiii_connect_api.py",
+        "maritime-ai-service/tests/unit/api/test_wiii_connect_api_status.py",
+        "maritime-ai-service/tests/unit/api/test_wiii_connect_api_activation.py",
+        "maritime-ai-service/tests/unit/api/test_wiii_connect_api_sessions.py",
+        "maritime-ai-service/tests/unit/api/test_wiii_connect_api_connections.py",
+        "maritime-ai-service/tests/unit/api/test_wiii_connect_api_actions.py",
+        "maritime-ai-service/tests/unit/api/test_wiii_connect_api_execution.py",
+        "maritime-ai-service/tests/unit/api/test_wiii_connect_api_facebook.py",
+        "maritime-ai-service/tests/unit/api/test_wiii_connect_api_callbacks.py",
         "maritime-ai-service/tests/unit/test_wiii_connect_persistent_storage.py"
       ],
       "live_env_flags": [
