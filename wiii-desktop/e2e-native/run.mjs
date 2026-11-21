@@ -332,7 +332,7 @@ async function main() {
     if (driver) await driver.quit().catch(() => {});
     tauriDriver.kill("SIGTERM");
     await model.close();
-    if (!args.keep) rmSync(root, { recursive: true, force: true });
+    if (!args.keep) rmSync(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
   }
 }
 

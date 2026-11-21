@@ -1,46 +1,6 @@
 name: Autonomy Runtime Evidence
 
 on:
-  pull_request:
-    branches: [main]
-    paths:
-      - ".github/workflows/autonomy-runtime-evidence.yml"
-      - "docs/operations/WIII_SYSTEM_CONTROL_PLANE.md"
-      - "tools/wiii_self_harness/**"
-      - "maritime-ai-service/scripts/runtime_evidence_output.py"
-      - "maritime-ai-service/tests/unit/test_runtime_evidence_output.py"
-      - "maritime-ai-service/app/engine/living_agent/**"
-      - "maritime-ai-service/app/services/scheduled_task_executor.py"
-      - "maritime-ai-service/app/services/notification_dispatcher.py"
-      - "maritime-ai-service/app/services/notifications/**"
-      - "maritime-ai-service/app/repositories/scheduler_repository.py"
-      - "maritime-ai-service/scripts/probe_live_heartbeat_cycle.py"
-      - "maritime-ai-service/scripts/probe_live_scheduled_task_replay.py"
-      - "maritime-ai-service/scripts/probe_live_proactive_channel.py"
-      - "maritime-ai-service/tests/unit/test_probe_live_heartbeat_cycle.py"
-      - "maritime-ai-service/tests/unit/test_probe_live_scheduled_task_replay.py"
-      - "maritime-ai-service/tests/unit/test_probe_live_proactive_channel.py"
-  push:
-    branches: [main]
-    paths:
-      - ".github/workflows/autonomy-runtime-evidence.yml"
-      - "docs/operations/WIII_SYSTEM_CONTROL_PLANE.md"
-      - "tools/wiii_self_harness/**"
-      - "maritime-ai-service/scripts/runtime_evidence_output.py"
-      - "maritime-ai-service/tests/unit/test_runtime_evidence_output.py"
-      - "maritime-ai-service/app/engine/living_agent/**"
-      - "maritime-ai-service/app/services/scheduled_task_executor.py"
-      - "maritime-ai-service/app/services/notification_dispatcher.py"
-      - "maritime-ai-service/app/services/notifications/**"
-      - "maritime-ai-service/app/repositories/scheduler_repository.py"
-      - "maritime-ai-service/scripts/probe_live_heartbeat_cycle.py"
-      - "maritime-ai-service/scripts/probe_live_scheduled_task_replay.py"
-      - "maritime-ai-service/scripts/probe_live_proactive_channel.py"
-      - "maritime-ai-service/tests/unit/test_probe_live_heartbeat_cycle.py"
-      - "maritime-ai-service/tests/unit/test_probe_live_scheduled_task_replay.py"
-      - "maritime-ai-service/tests/unit/test_probe_live_proactive_channel.py"
-  schedule:
-    - cron: "10 4 * * *"
   workflow_dispatch:
     inputs:
       run_scheduler_replay:

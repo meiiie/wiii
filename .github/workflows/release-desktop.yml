@@ -141,7 +141,7 @@ jobs:
 
       - name: Test desktop
         working-directory: wiii-desktop
-        run: npm test -- --run
+        run: npm run test:desktop
 
       - name: Build web surfaces
         working-directory: wiii-desktop

@@ -1,40 +1,6 @@
 name: Wiii Connect — LMS Adapter Evidence
 
 on:
-  pull_request:
-    branches: [main]
-    paths:
-      - ".github/workflows/wiii-connect-lms-adapter-evidence.yml"
-      - "maritime-ai-service/docs/integration/WIII_CONNECT_LMS_ADAPTER.md"
-      - "docs/operations/WIII_SYSTEM_CONTROL_PLANE.md"
-      - "tools/wiii_self_harness/**"
-      - "maritime-ai-service/scripts/runtime_evidence_output.py"
-      - "maritime-ai-service/tests/unit/test_runtime_evidence_output.py"
-      - "maritime-ai-service/app/api/v1/host_actions.py"
-      - "maritime-ai-service/app/api/v1/chat_stream.py"
-      - "maritime-ai-service/app/services/chat_stream_coordinator.py"
-      - "maritime-ai-service/app/engine/context/**"
-      - "maritime-ai-service/app/engine/multi_agent/**"
-      - "maritime-ai-service/scripts/probe_live_lms_test_course_replay.py"
-      - "maritime-ai-service/tests/unit/test_probe_live_lms_test_course_replay.py"
-  push:
-    branches: [main]
-    paths:
-      - ".github/workflows/wiii-connect-lms-adapter-evidence.yml"
-      - "maritime-ai-service/docs/integration/WIII_CONNECT_LMS_ADAPTER.md"
-      - "docs/operations/WIII_SYSTEM_CONTROL_PLANE.md"
-      - "tools/wiii_self_harness/**"
-      - "maritime-ai-service/scripts/runtime_evidence_output.py"
-      - "maritime-ai-service/tests/unit/test_runtime_evidence_output.py"
-      - "maritime-ai-service/app/api/v1/host_actions.py"
-      - "maritime-ai-service/app/api/v1/chat_stream.py"
-      - "maritime-ai-service/app/services/chat_stream_coordinator.py"
-      - "maritime-ai-service/app/engine/context/**"
-      - "maritime-ai-service/app/engine/multi_agent/**"
-      - "maritime-ai-service/scripts/probe_live_lms_test_course_replay.py"
-      - "maritime-ai-service/tests/unit/test_probe_live_lms_test_course_replay.py"
-  schedule:
-    - cron: "35 4 * * *"
   workflow_dispatch:
     inputs:
       run_lms_replay:

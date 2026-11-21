@@ -1,44 +1,6 @@
 name: Runtime Ledger Browser Replay Evidence
 
 on:
-  pull_request:
-    branches: [main]
-    paths:
-      - ".github/workflows/runtime-ledger-browser-replay-evidence.yml"
-      - "docs/operations/WIII_SYSTEM_CONTROL_PLANE.md"
-      - "tools/wiii_self_harness/**"
-      - "tools/wiii_self_harness/test_validate_runtime_evidence_artifact.py"
-      - "maritime-ai-service/scripts/wiii_runtime_flow_acceptance.py"
-      - "maritime-ai-service/tests/unit/test_wiii_runtime_flow_acceptance.py"
-      - "wiii-desktop/scripts/run-runtime-ledger-browser-replay.mjs"
-      - "wiii-desktop/scripts/run-runtime-ledger-browser-replay-local.mjs"
-      - "wiii-desktop/scripts/probe-runtime-ledger-browser-replay-evidence.mjs"
-      - "wiii-desktop/scripts/runtime-evidence-output.mjs"
-      - "wiii-desktop/scripts/test-runtime-evidence-output.mjs"
-      - "wiii-desktop/playwright.runtime-ledger.config.ts"
-      - "wiii-desktop/playwright/runtime-ledger-panel.spec.ts"
-      - "wiii-desktop/src/lib/runtime-flow-trace.ts"
-      - "wiii-desktop/src/__tests__/runtime-flow-trace.test.ts"
-  push:
-    branches: [main]
-    paths:
-      - ".github/workflows/runtime-ledger-browser-replay-evidence.yml"
-      - "docs/operations/WIII_SYSTEM_CONTROL_PLANE.md"
-      - "tools/wiii_self_harness/**"
-      - "tools/wiii_self_harness/test_validate_runtime_evidence_artifact.py"
-      - "maritime-ai-service/scripts/wiii_runtime_flow_acceptance.py"
-      - "maritime-ai-service/tests/unit/test_wiii_runtime_flow_acceptance.py"
-      - "wiii-desktop/scripts/run-runtime-ledger-browser-replay.mjs"
-      - "wiii-desktop/scripts/run-runtime-ledger-browser-replay-local.mjs"
-      - "wiii-desktop/scripts/probe-runtime-ledger-browser-replay-evidence.mjs"
-      - "wiii-desktop/scripts/runtime-evidence-output.mjs"
-      - "wiii-desktop/scripts/test-runtime-evidence-output.mjs"
-      - "wiii-desktop/playwright.runtime-ledger.config.ts"
-      - "wiii-desktop/playwright/runtime-ledger-panel.spec.ts"
-      - "wiii-desktop/src/lib/runtime-flow-trace.ts"
-      - "wiii-desktop/src/__tests__/runtime-flow-trace.test.ts"
-  schedule:
-    - cron: "55 4 * * *"
   workflow_dispatch:
     inputs:
       run_browser_replay:
