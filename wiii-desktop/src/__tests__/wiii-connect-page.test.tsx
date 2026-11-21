@@ -704,7 +704,7 @@ describe("WiiiConnectPage", () => {
 
     render(<WiiiConnectPage />);
 
-    expect(screen.getAllByText("Chưa có snapshot").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Chưa xác định").length).toBeGreaterThan(0);
     expect(screen.getByText("Ứng dụng và tài khoản")).toBeTruthy();
     expect(screen.getByText("Chế độ ngoại tuyến")).toBeTruthy();
     expect(screen.getAllByText("Máy chủ Wiii").length).toBeGreaterThan(0);
@@ -1097,6 +1097,12 @@ describe("WiiiConnectPage", () => {
     fireEvent.click(screen.getByRole("button", { name: /Composio/i }));
     fireEvent.click(screen.getByRole("button", { name: /Facebook/i }));
     expect(screen.getAllByText("Facebook provider from backend registry.").length).toBeGreaterThan(0);
+    const description = screen.getByText("Facebook provider from backend registry.");
+    const diagnostics = description.closest("details");
+    expect(diagnostics?.open).toBe(false);
+    expect(within(diagnostics!).getByText("Effective actions")).toBeTruthy();
+    expect(screen.getAllByText("Bài viết và trang Facebook.").length).toBe(2);
+    expect(screen.getByRole("button", { name: "Kết nối qua Wiii" }).closest("details")).toBeNull();
     expect(screen.getByText("execution_gateway")).toBeTruthy();
     expect(screen.getByText("audit_ledger")).toBeTruthy();
     expect(screen.getByText("Backend registry")).toBeTruthy();
@@ -1683,7 +1689,7 @@ describe("WiiiConnectPage", () => {
       ),
     ).toBeTruthy();
     expect(screen.getAllByText("allowed").length).toBeGreaterThan(0);
-    expect(container.textContent?.replace(/\s+/g, "")).toContain("NekodùngđượcCó");
+    expect(screen.getByRole("button", { name: /Gmail.*Neko · Sẵn sàng/ })).toBeTruthy();
     expect(container.textContent).not.toContain("wcn_live_gmail_1");
     expect(container.textContent).not.toContain("secret-refresh-token");
     expect(container.textContent).not.toContain("secret-action-key");

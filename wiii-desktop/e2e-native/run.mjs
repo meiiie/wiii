@@ -105,7 +105,9 @@ async function clickEnabled(driver, id, timeoutMs = 30_000) {
 }
 
 async function typeInto(driver, css, text) {
-  const id = await element(driver, css);
+  // A completion notice can briefly cover the composer's center after a
+  // turn. Wait for a real pointer target rather than forcing focus through it.
+  const id = await clickableWithText(driver, css, "", `${css} to be unobstructed`);
   await driver.click(id);
   await driver.type(id, text);
   return id;

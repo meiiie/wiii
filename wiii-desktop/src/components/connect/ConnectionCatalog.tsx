@@ -567,28 +567,18 @@ export function ConnectionCatalog({
                     <div className="min-w-0">
                       <h3 className="truncate text-sm font-semibold text-text">{card.label}</h3>
                       <p className="mt-0.5 truncate text-xs text-text-tertiary">
-                        {card.providerLabel} · {card.categoryLabel}
+                        {card.categoryLabel}
                       </p>
                     </div>
                   </div>
                   <StatusPill tone={card.tone}>{card.status}</StatusPill>
                 </div>
-                <p className="mt-3 line-clamp-2 text-sm text-text-secondary">
+                {card.description && <p className="mt-3 line-clamp-2 text-sm text-text-secondary">
                   {card.description}
-                </p>
-                <div className="mt-4 grid grid-cols-2 gap-2 text-xs">
-                  <div className="min-w-0 rounded-md bg-surface-secondary px-2 py-2">
-                    <div className="text-text-tertiary">Neko dùng được</div>
-                    <div className="mt-0.5 truncate font-medium text-text">
-                      {card.agentReady ? "Có" : "Chưa"}
-                    </div>
-                  </div>
-                  <div className="min-w-0 rounded-md bg-surface-secondary px-2 py-2">
-                    <div className="text-text-tertiary">Trạng thái</div>
-                    <div className="mt-0.5 truncate font-medium text-text">
-                      {externalControlLabel(card)}
-                    </div>
-                  </div>
+                </p>}
+                <div className="mt-4 flex items-center gap-2 text-xs text-text-secondary">
+                  <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${card.agentReady ? "bg-emerald-500" : "bg-zinc-400"}`} aria-hidden="true" />
+                  Neko · {externalControlLabel(card)}
                 </div>
               </button>
             );

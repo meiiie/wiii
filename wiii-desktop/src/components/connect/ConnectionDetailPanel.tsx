@@ -32,6 +32,7 @@ import {
   sessionDecisionTone,
 } from "./provider-readiness";
 import { ProviderLifecyclePanel } from "./ProviderLifecyclePanel";
+import { providerConnectionFlow } from "./provider-lifecycle";
 
 export function ConnectionDetailPanel({
   card,
@@ -82,7 +83,7 @@ export function ConnectionDetailPanel({
   if (!card) {
     return (
       <aside className="rounded-lg border border-dashed border-[var(--border)] bg-surface-secondary p-4 text-sm text-text-secondary">
-        Chọn một tài khoản hoặc ứng dụng để xem trạng thái và quyền của Neko.
+        Chọn một ứng dụng.
       </aside>
     );
   }
@@ -116,6 +117,19 @@ export function ConnectionDetailPanel({
     Boolean(providerConnectionRef(providerConnection)) &&
     providerConnection?.state !== "disabled" &&
     Boolean(onDisconnectConnection);
+  const flow = providerConnectionFlow({
+    card, readiness, providerConnection, connectionList, authorizationDecision,
+    authorizationLoading, authorizationError, disconnectState,
+  });
+  const flowLabels = {
+    disconnected: "Chưa kết nối",
+    authorizing: "Đang xác thực",
+    waiting: "Đang chờ xác nhận",
+    connected: "Đã kết nối",
+    expired: "Kết nối hết hạn",
+    error: "Không thể kết nối",
+    disconnecting: "Đang ngắt kết nối",
+  };
 
   return (
     <aside className="rounded-lg border border-[var(--border)] bg-surface p-4">
@@ -129,8 +143,14 @@ export function ConnectionDetailPanel({
             <p className="mt-1 text-sm text-text-secondary">{card.description}</p>
           </div>
         </div>
-        <StatusPill tone={card.tone}>{card.status}</StatusPill>
+        <StatusPill tone={card.provider === "wiii_native" ? card.tone : flow.tone}>
+          {card.provider === "wiii_native" ? card.status : flowLabels[flow.status]}
+        </StatusPill>
       </div>
+
+      {providerConnection && (
+        <p className="mt-3 text-sm text-text-secondary">{providerConnectionSummary(providerConnection)}</p>
+      )}
 
       <div className="mt-4 flex flex-wrap gap-2">
         <button
@@ -158,16 +178,39 @@ export function ConnectionDetailPanel({
                 : "Kết nối qua Wiii"
               : "Chưa thể kết nối"}
         </button>
-        <span className="self-center text-xs text-text-tertiary">
-          {card.disabledReason ?? card.statusDetail}
-        </span>
+        {canRefreshConnections && (
+          <button type="button" aria-label="Làm mới trạng thái"
+            disabled={connectionList?.loading}
+            onClick={() => void onRefreshConnections?.(card)}
+            className="inline-flex h-10 items-center justify-center rounded-md border border-[var(--border)] px-3 text-text-secondary disabled:opacity-50">
+            <RefreshCw size={15} className={connectionList?.loading ? "animate-spin" : ""} aria-hidden="true" />
+          </button>
+        )}
+        {providerConnection && (
+          <button type="button" data-testid="wiii-connect-disconnect-button"
+            disabled={!canDisconnectConnection || disconnectState?.loading}
+            onClick={() => { if (canDisconnectConnection) void onDisconnectConnection?.(card, providerConnection); }}
+            className="inline-flex h-10 items-center justify-center gap-2 rounded-md border border-[var(--border)] px-3 text-sm text-text-secondary disabled:opacity-50">
+            <Unplug size={14} aria-hidden="true" />
+            {disconnectState?.loading ? "Đang ngắt..." : providerConnection.state === "disabled" ? "Đã ngắt" : "Ngắt kết nối"}
+          </button>
+        )}
       </div>
+
+      {(authorizationError || sessionError || connectionList?.error || disconnectState?.error) && (
+        <p role="status" className="mt-3 text-sm text-text-secondary">Chưa hoàn tất. Thử lại.</p>
+      )}
+      {disconnectState?.response?.local_disabled && (
+        <p role="status" className="mt-3 text-sm text-text-secondary">Đã ngắt kết nối.</p>
+      )}
 
       <details className="mt-4 rounded-md border border-[var(--border)] bg-surface-secondary px-3 py-2">
         <summary className="cursor-pointer text-sm font-medium text-text-secondary">
-          Chi tiết kỹ thuật
+          Chi tiết kết nối
         </summary>
         <dl className="mt-3 grid gap-2 text-xs">
+          <div><dt className="text-text-tertiary">Ghi chú hệ thống</dt>
+            <dd className="mt-0.5 text-text">{card.disabledReason ?? card.statusDetail}</dd></div>
           {card.detailRows.map(([label, value]) => (
             <div key={`${card.id}-${label}`} className="min-w-0 rounded-md bg-surface px-3 py-2">
               <dt className="text-text-tertiary">{label}</dt>
@@ -175,7 +218,6 @@ export function ConnectionDetailPanel({
             </div>
           ))}
         </dl>
-      </details>
 
       <ProviderLifecyclePanel
         card={card}
@@ -415,13 +457,6 @@ export function ConnectionDetailPanel({
         </div>
       )}
 
-      <FacebookPostComposer
-        card={card}
-        providerConnection={providerConnection}
-        readiness={readiness}
-        onRefreshConnections={onRefreshConnections}
-      />
-
       {sessionError && (
         <div className="mt-4 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
           {sessionError}
@@ -523,53 +558,6 @@ export function ConnectionDetailPanel({
 
         <button
           type="button"
-          disabled={!canRefreshConnections || connectionList?.loading}
-          onClick={() => {
-            if (canRefreshConnections) void onRefreshConnections?.(card);
-          }}
-          className={`inline-flex h-9 items-center justify-center gap-2 rounded-md border px-3 text-sm font-medium ${
-            canRefreshConnections
-              ? "border-[var(--border)] bg-surface-secondary text-text-secondary hover:text-text"
-              : "border-[var(--border)] bg-surface-secondary text-text-tertiary"
-          }`}
-        >
-          <RefreshCw
-            size={14}
-            className={connectionList?.loading ? "animate-spin" : ""}
-            aria-hidden="true"
-          />
-          Làm mới trạng thái
-        </button>
-
-        <button
-          type="button"
-          data-testid="wiii-connect-disconnect-button"
-          disabled={!canDisconnectConnection || disconnectState?.loading}
-          onClick={() => {
-            if (canDisconnectConnection && providerConnection) {
-              void onDisconnectConnection?.(card, providerConnection);
-            }
-          }}
-          className={`inline-flex h-9 items-center justify-center gap-2 rounded-md border px-3 text-sm font-medium ${
-            canDisconnectConnection
-              ? "border-rose-200 bg-rose-50 text-rose-700 hover:bg-rose-100"
-              : "border-[var(--border)] bg-surface-secondary text-text-tertiary"
-          }`}
-        >
-          {disconnectState?.loading ? (
-            <Loader2 size={14} className="animate-spin" aria-hidden="true" />
-          ) : (
-            <Unplug size={14} aria-hidden="true" />
-          )}
-          {disconnectState?.loading
-            ? "Đang ngắt..."
-            : providerConnection?.state === "disabled"
-              ? "Đã ngắt"
-              : "Ngắt kết nối"}
-        </button>
-
-        <button
-          type="button"
           disabled={!canRequestSession || sessionLoading}
           onClick={() => {
             if (canRequestSession) void onRequestSession?.(card);
@@ -604,6 +592,14 @@ export function ConnectionDetailPanel({
         </button>
       </div>
       )}
+      </details>
+
+      <FacebookPostComposer
+        card={card}
+        providerConnection={providerConnection}
+        readiness={readiness}
+        onRefreshConnections={onRefreshConnections}
+      />
     </aside>
   );
 }
