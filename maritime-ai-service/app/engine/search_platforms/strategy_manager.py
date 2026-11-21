@@ -135,7 +135,7 @@ class ScrapingStrategyManager:
         if url and not domain:
             try:
                 parsed = urlparse(url)
-                domain = parsed.netloc.lower().lstrip("www.")
+                domain = parsed.netloc.lower().removeprefix("www.")
             except Exception:
                 domain = ""
 

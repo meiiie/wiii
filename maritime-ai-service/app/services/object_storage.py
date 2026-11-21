@@ -11,6 +11,7 @@ local/dev and any S3-compatible backend in production.
 **Validates: Requirements 2.2, 2.3, 4.3**
 """
 import asyncio
+import functools
 import io
 import logging
 from datetime import timedelta
@@ -204,7 +205,8 @@ class ObjectStorageClient:
                 await asyncio.wait_for(
                     asyncio.get_event_loop().run_in_executor(
                         None,
-                        lambda: self.client.put_object(
+                        functools.partial(
+                            self.client.put_object,
                             self.bucket,
                             path,
                             data_stream,

@@ -288,11 +288,11 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
-          pip install ruff
+          pip install "ruff==0.17.6"
 
-      - name: Lint backend syntax-risk rules
+      - name: Lint backend (ruff.toml rule set)
         working-directory: maritime-ai-service
-        run: ruff check app/ --select=E9,F63,F7 --output-format=github
+        run: ruff check app/ --output-format=github
 
       - name: Run backend unit tests
         working-directory: maritime-ai-service

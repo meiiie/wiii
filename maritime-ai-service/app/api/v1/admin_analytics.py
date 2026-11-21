@@ -466,7 +466,7 @@ async def analytics_users(
         try:
             if effective_org_id:
                 role_rows = await conn.fetch(
-                    f"""
+                    """
                     SELECT u.role, COUNT(DISTINCT u.id) AS count
                     FROM users u
                     JOIN user_organizations uo ON uo.user_id = u.id
@@ -488,7 +488,7 @@ async def analytics_users(
         try:
             if effective_org_id:
                 platform_rows = await conn.fetch(
-                    f"""
+                    """
                     SELECT
                         COALESCE(
                             u.platform_role,

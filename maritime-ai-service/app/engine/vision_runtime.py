@@ -721,7 +721,6 @@ def _probe_ollama_vision_status(
 
     payload = None
     installed: set[str] = set()
-    last_error: str | None = None
     resolved_base_url: str | None = None
     for candidate_base_url in _build_ollama_base_url_candidates(base_url):
         url = f"{candidate_base_url}/api/tags"
@@ -733,10 +732,9 @@ def _probe_ollama_vision_status(
                 payload = json.load(response)
             resolved_base_url = candidate_base_url
             break
-        except (URLError, TimeoutError, OSError) as exc:
-            last_error = _sanitize_error_for_log(exc)
+        except (URLError, TimeoutError, OSError):
             continue
-        except ValueError as exc:
+        except ValueError:
             status = _vision_provider_status(
                 provider="ollama",
                 capability=capability or VisionCapability.VISUAL_DESCRIBE,

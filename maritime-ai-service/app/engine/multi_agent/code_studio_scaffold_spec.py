@@ -521,7 +521,7 @@ def _extract_visual_title(query: str, max_len: int = 60) -> str:
                 best_strip = len(prefix)
         if not best_strip:
             break
-        title = title[best_strip:].lstrip(" :,.-—-")
+        title = title[best_strip:].lstrip(" :,.-—")  # noqa: B005 -- strips a set of separator characters
         if not title:
             break
     if len(title) > max_len:
