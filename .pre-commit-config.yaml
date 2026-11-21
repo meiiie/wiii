@@ -1,10 +1,10 @@
 repos:
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.11.13
+    rev: v0.17.6
     hooks:
       - id: ruff
         files: ^maritime-ai-service/app/.*\.py$
-        args: [--config, maritime-ai-service/ruff.toml, '--select=E9,F63,F7']
+        args: [--config, maritime-ai-service/ruff.toml]
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v5.0.0
     hooks:

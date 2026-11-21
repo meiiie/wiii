@@ -1583,10 +1583,6 @@ class TutorAgentNode:
         public_rag_thinking = await _align_public_tutor_thinking(rag_thinking)
         public_llm_thinking = await _align_public_tutor_thinking(llm_thinking)
 
-        last_tool_name = ""
-        if tools_used:
-            last_tool_name = str((tools_used[-1] or {}).get("name", "") or "")
-
         # Public thinking authority for sync metadata:
         # 1) native thought fragments already surfaced during the real tutor loop
         # 2) sanitized raw RAG/LLM native thinking as fallback only

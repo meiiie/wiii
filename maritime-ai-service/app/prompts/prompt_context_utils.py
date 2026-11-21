@@ -147,7 +147,7 @@ _EN_EXPLICIT_REQUEST_MARKERS = (
 _VI_SOFT_MARKERS = {
     "minh", "toi", "ban", "nha", "nhe", "nhi", "ha", "hong", "khong", "duoc",
     "giup", "voi", "roi", "oke", "okela", "hehe", "hihi", "uh", "ua", "ne",
-    "nhe", "nha", "di", "thoi", "gi", "sao", "la", "co", "xem", "chu", "tao",
+    "di", "thoi", "gi", "sao", "la", "co", "xem", "chu", "tao",
     "them", "ve",
 }
 _EN_SOFT_MARKERS = {
