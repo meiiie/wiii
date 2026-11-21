@@ -9,7 +9,7 @@ import type {
 } from "./chat";
 import type { ContentBlock, PreviewItemData } from "./content-blocks";
 import type { ArtifactData } from "./artifacts";
-import type { UserRole } from "./identity";
+import type { UserRole } from "./organizations";
 
 export interface Conversation {
   id: string;

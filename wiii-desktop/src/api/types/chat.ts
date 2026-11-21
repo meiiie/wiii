@@ -1,4 +1,4 @@
-import type { UserRole } from "./identity";
+import type { UserRole } from "./organizations";
 import type { WiiiConnectRuntimeSnapshot } from "./runtime-diagnostics";
 import type { DisplayRole, StepState, PresentationMode } from "./artifacts";
 

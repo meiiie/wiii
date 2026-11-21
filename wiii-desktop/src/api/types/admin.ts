@@ -1,5 +1,5 @@
 import type { OrgSettings } from "./organizations";
-import type { PlatformRole, OrganizationRole } from "./identity";
+import type { PlatformRole, OrganizationRole } from "./organizations";
 
 /** Sprint 179b: Organization summary in dashboard */
 export interface AdminOrgSummary {
