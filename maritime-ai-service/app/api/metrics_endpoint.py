@@ -88,6 +88,14 @@ def _emit_gauge(name: str, buckets: dict[tuple, float]) -> Iterable[str]:
         yield f"{pname}{_format_labels(label_tuple)} {value}"
 
 
+def _quantile(sorted_samples: list[float], q: float) -> float:
+    count = len(sorted_samples)
+    if count == 1:
+        return sorted_samples[0]
+    idx = int(round(q * (count - 1)))
+    return sorted_samples[max(0, min(count - 1, idx))]
+
+
 def _emit_histogram(name: str, buckets: dict[tuple, list[float]]) -> Iterable[str]:
     """Emit a synthetic Prometheus summary for a histogram bucket.
 
@@ -108,17 +116,11 @@ def _emit_histogram(name: str, buckets: dict[tuple, list[float]]) -> Iterable[st
         total = math.fsum(samples)
         sorted_samples = sorted(samples)
 
-        def _quantile(q: float) -> float:
-            if count == 1:
-                return sorted_samples[0]
-            idx = int(round(q * (count - 1)))
-            return sorted_samples[max(0, min(count - 1, idx))]
-
         # Per Prometheus summary spec: each quantile is a separate line
         # carrying the same labels plus a {quantile="..."} suffix.
         for q in (0.5, 0.95, 0.99):
             q_label_tuple = label_tuple + (("quantile", str(q)),)
-            yield f"{pname}{_format_labels(q_label_tuple)} {_quantile(q)}"
+            yield f"{pname}{_format_labels(q_label_tuple)} {_quantile(sorted_samples, q)}"
         yield f"{pname}_count{labels_str} {count}"
         yield f"{pname}_sum{labels_str} {total}"
 

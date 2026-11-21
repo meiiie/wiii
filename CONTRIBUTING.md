@@ -5,7 +5,7 @@ application, local ACP agents, memory, tools, artifacts, and governed external
 adapters. Contributions should preserve those boundaries and keep failures
 inspectable.
 
-Wiii uses a dual-licensing model. Before a contribution to the core can be
+Wiii's core uses the MIT License. Before a contribution to the core can be
 merged, its licensing authority must satisfy
 [CONTRIBUTOR-LICENSE-POLICY.md](CONTRIBUTOR-LICENSE-POLICY.md). Apache SDK
 contributions are accepted only inside the explicit `sdk/` boundary.
@@ -58,6 +58,10 @@ npm run tauri -- dev
 Use the equivalent activation/copy commands on macOS or Linux. Configure only
 your own credentials and never commit `.env`, certificates, tokens, session
 stores, or local database files.
+
+From the repository root, run `pip install pre-commit` and `pre-commit install`.
+Run `pre-commit run --all-files` to check backend Ruff rules and repository hygiene.
+Whitespace/EOF fixers are omitted to avoid bulk changes to the existing tree.
 
 ## Engineering rules
 

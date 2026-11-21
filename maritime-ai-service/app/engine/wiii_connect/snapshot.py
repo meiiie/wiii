@@ -632,7 +632,6 @@ def _provider_doctor_record(
 def _provider_doctor_stages(
     connection: WiiiConnectionRecord,
 ) -> tuple[WiiiProviderDoctorStageRecord, ...]:
-    registry_ready = True
     adapter_ready = bool(connection.details.get("adapter_authorization_ready"))
     adapter_reason = _safe_str(connection.details.get("adapter_reason")) or (
         "ready" if adapter_ready else "provider_adapter_not_bound"

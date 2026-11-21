@@ -352,7 +352,6 @@ async def websocket_chat(
         return
 
     ws_user_id = ws_identity["user_id"]
-    ws_user_role = ws_identity["role"]
     auth_context_msg = {
         **auth_msg,
         "organization_id": ws_identity.get("organization_id", ""),
