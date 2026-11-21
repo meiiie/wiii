@@ -119,7 +119,7 @@ export function WorkbenchGate({ host = detectWorkbenchHost() }: { host?: Workben
         </ErrorBoundary>
       )}
       renderManaged={() => (
-        <main className="grid min-h-screen place-items-center bg-surface px-6 py-12 text-text">
+        <main className="grid h-screen place-items-center overflow-y-auto bg-surface px-6 py-12 text-text">
           <section className="w-full max-w-lg rounded-2xl border border-border bg-surface-secondary p-8 text-center">
             <div className="flex justify-center"><WiiiMark size={48} alt="Wiii" /></div>
             <h1 className="mt-6 text-2xl font-semibold">Wiii chạy trên ứng dụng desktop</h1>
