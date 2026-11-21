@@ -23,7 +23,7 @@ interface MarkdownRendererProps {
 function PendingWidgetSegment() {
   return (
     <div
-      className="rounded-[24px] border border-[color-mix(in_srgb,var(--border)_78%,white)] bg-[linear-gradient(180deg,rgba(255,255,255,0.84),rgba(248,244,236,0.76))] px-5 py-5 text-sm text-text-secondary shadow-[var(--shadow-sm)]"
+      className="rounded-[24px] border border-[color-mix(in_srgb,var(--border)_78%,white)] bg-[linear-gradient(180deg,rgba(255,255,255,0.84),rgba(248,244,236,0.76))] px-5 py-5 text-sm text-text-secondary shadow-[color:var(--shadow-sm)]"
       data-testid="pending-inline-widget"
     >
       <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-text-tertiary">
@@ -95,7 +95,7 @@ function PlainTextSegment({ content }: { content: string }) {
   if (paragraphs.length === 0) return null;
 
   return (
-    <div className="markdown-plain space-y-4">
+    <div className="markdown-plain v3-space-y-4">
       {paragraphs.map((paragraph, index) => (
         <p
           key={`${index}-${paragraph.slice(0, 24)}`}

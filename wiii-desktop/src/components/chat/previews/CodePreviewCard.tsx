@@ -41,7 +41,7 @@ export function CodePreviewCard({ item, onClick }: Props) {
       className="rounded-lg border border-[var(--border,#e5e5e0)] overflow-hidden
         bg-[var(--surface,#ffffff)] hover:bg-[var(--surface-hover,#fafaf5)]
         transition-colors text-left w-full group
-        focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]"
+        focus-visible:v3-outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]"
       aria-label={`Code: ${item.title}`}
     >
       {/* Header bar */}
@@ -52,7 +52,7 @@ export function CodePreviewCard({ item, onClick }: Props) {
             {item.title}
           </h4>
           {language && (
-            <span className="text-[10px] px-1.5 py-0.5 rounded bg-[var(--accent,#c2662d)]/10 text-[var(--accent,#c2662d)] font-medium uppercase tracking-wide flex-shrink-0">
+            <span className="text-[10px] px-1.5 py-0.5 rounded bg-[var(--accent,#c2662d)]/10 text-[var(--accent,#c2662d)] font-medium uppercase tracking-wide shrink-0">
               {language}
             </span>
           )}
@@ -61,7 +61,7 @@ export function CodePreviewCard({ item, onClick }: Props) {
         <button
           type="button"
           onClick={handleCopy}
-          className="p-1 rounded hover:bg-[var(--surface-hover,#fafaf5)] transition-colors flex-shrink-0"
+          className="p-1 rounded hover:bg-[var(--surface-hover,#fafaf5)] transition-colors shrink-0"
           aria-label={copied ? "Copied" : "Copy code"}
         >
           {copied ? (

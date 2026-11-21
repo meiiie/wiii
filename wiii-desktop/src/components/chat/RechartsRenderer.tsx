@@ -282,7 +282,7 @@ export function RechartsRenderer({ spec }: { spec: Record<string, unknown> }) {
   }
 
   return (
-    <div className="recharts-renderer space-y-3">
+    <div className="recharts-renderer v3-space-y-3">
       {title && (
         <p className="text-sm font-semibold text-text">{title}</p>
       )}

@@ -30,7 +30,7 @@ export function ExecutionReceiptCard({ session }: { session: NekoSession }) {
           : reported ? "Thông tin agent báo cáo cho phiên đang chạy."
             : "Chưa có thông tin thực thi đã đối chiếu cho phiên này."}
       </p>
-      <dl className="space-y-2 text-[11px] leading-4">
+      <dl className="v3-space-y-2 text-[11px] leading-4">
         <div><dt className="text-[var(--nk-ghost)]">Vị trí Bash</dt>
           <dd className="text-[var(--nk-text-2)]">{reported
             ? `${reported.bashTarget === "host" ? "Host" : "Sandbox được yêu cầu"} · ${reported.bashExecutor === "local-process" ? "tiến trình cục bộ" : "backend native"}`

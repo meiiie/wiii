@@ -42,7 +42,7 @@ export function ReasoningTrace({ trace }: ReasoningTraceProps) {
 
       {/* Expanded steps */}
       {expanded && (
-        <div className="border-t border-[var(--border)] px-3 py-2 space-y-1">
+        <div className="border-t border-[var(--border)] px-3 py-2 v3-space-y-1">
           {trace.steps.map((step, i) => (
             <StepRow key={i} step={step} />
           ))}

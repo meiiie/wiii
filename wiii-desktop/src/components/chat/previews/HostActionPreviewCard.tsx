@@ -54,7 +54,7 @@ export function HostActionPreviewCard({ item, onClick }: Props) {
       className="flex flex-col gap-3 rounded-lg border border-[var(--border,#e5e5e0)]
         bg-[var(--surface,#ffffff)] p-3 text-left transition-colors w-full
         hover:bg-[var(--surface-hover,#fafaf5)]
-        focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]"
+        focus-visible:v3-outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]"
       aria-label={`Preview thao tác host: ${item.title}`}
     >
       <div className="flex items-start justify-between gap-3">

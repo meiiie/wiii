@@ -25,12 +25,12 @@ export function BootFailure({
         <h1 className="mt-4 text-base font-semibold text-text">
           Wiii chưa khởi động xong
         </h1>
-        <p className="mt-2 break-words text-sm leading-6 text-text-tertiary">
+        <p className="mt-2 wrap-break-word text-sm leading-6 text-text-tertiary">
           {error}
         </p>
         <button
           type="button"
-          className="mt-5 h-9 rounded-lg bg-text px-4 text-sm font-medium text-surface transition-opacity hover:opacity-85 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]/30"
+          className="mt-5 h-9 rounded-lg bg-text px-4 text-sm font-medium text-surface transition-opacity hover:opacity-85 focus-visible:v3-outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]/30"
           onClick={onRetry}
         >
           Thử khởi động lại

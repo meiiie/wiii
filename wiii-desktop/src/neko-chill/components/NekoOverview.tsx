@@ -210,7 +210,7 @@ export function NekoOverview({
                     <span className="block truncate text-[10.5px] text-[var(--nk-text-3)]">{harnessDetail(harness)}</span>
                     {harness.id !== "neko" && harness.detail && <details className="mt-1 text-[11px] text-[var(--nk-text-3)]">
                       <summary className="cursor-pointer">Chi tiết kiểm tra {harness.name}</summary>
-                      <p className="mt-1 break-words">{harness.detail}</p>
+                      <p className="mt-1 wrap-break-word">{harness.detail}</p>
                     </details>}
                   </span>
                   {harness.availability !== "host_unsupported" && (harness.id !== "neko" || harness.found) && <button type="button" disabled={agentLoading}
@@ -231,7 +231,7 @@ export function NekoOverview({
           <div className="mx-3 mt-2 border-t border-[var(--nk-border)] py-3 text-[10.5px] leading-4 text-[var(--nk-text-3)]">
             <details>
               <summary className="cursor-pointer text-[var(--nk-text-2)]">Cài đặt, cập nhật và gỡ Neko Core</summary>
-              <div className="mt-2 max-w-[720px] space-y-2 text-[11.5px] leading-5">
+              <div className="mt-2 max-w-[720px] v3-space-y-2 text-[11.5px] leading-5">
                 {agents.some((agent) => agent.id === "neko" && agent.found && agent.bundled) ? (
                   <p>Neko Core đi kèm bộ cài Wiii. Cập nhật hoặc cài lại Wiii để cập nhật hay sửa runtime này; không dùng lệnh tự cập nhật Neko cho bản đi kèm.</p>
                 ) : (

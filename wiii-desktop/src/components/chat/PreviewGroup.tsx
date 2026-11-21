@@ -236,7 +236,7 @@ export function PreviewGroup({ block, onPreviewClick }: PreviewGroupProps) {
               role="group"
               aria-roledescription="slide"
               aria-label={`Sản phẩm ${idx + 1} trên ${block.items.length}`}
-              className="snap-start flex-shrink-0 w-[220px]"
+              className="snap-start shrink-0 w-[220px]"
             >
               <PreviewCard
                 item={item}

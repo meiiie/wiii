@@ -398,7 +398,7 @@ export const NekoPromptRail = memo(function NekoPromptRail({
               }
             }}
             type="button"
-            className="group pointer-events-auto absolute left-0 z-10 h-5 w-11 -translate-y-1/2 cursor-pointer outline-none"
+            className="group pointer-events-auto absolute left-0 z-10 h-5 w-11 -translate-y-1/2 cursor-pointer v3-outline-none"
             style={{ top: `${landmark.position * 100}%` }}
             aria-label={`Đi tới lời nhắn: ${landmark.title}`}
             aria-current={active ? "location" : undefined}

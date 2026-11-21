@@ -84,7 +84,7 @@ function PreviewPanelContent({
           <div className="text-xs text-text-tertiary px-2 py-1 mb-1">
             Tất cả xem trước
           </div>
-          <div className="space-y-1">
+          <div className="v3-space-y-1">
             {previews.map((p) => (
               <PreviewListItem
                 key={p.preview_id}
@@ -330,7 +330,7 @@ function ExpandedPreview({ item }: { item: PreviewItemData }) {
   };
 
   return (
-    <div className="flex-1 overflow-y-auto p-4 space-y-4">
+    <div className="flex-1 overflow-y-auto p-4 v3-space-y-4">
       {/* Large image */}
       {item.image_url && (
         <div className="rounded-lg overflow-hidden bg-surface-secondary">
@@ -377,7 +377,7 @@ function ExpandedPreview({ item }: { item: PreviewItemData }) {
       )}
 
       {isHostAction && (
-        <div className="space-y-3 rounded-xl border border-border bg-surface-secondary/50 p-3">
+        <div className="v3-space-y-3 rounded-xl border border-border bg-surface-secondary/50 p-3">
           {metadataEntries.length > 0 && (
             <div className="grid grid-cols-1 gap-2 text-sm sm:grid-cols-2">
               {metadataEntries.map((entry) => (
@@ -412,7 +412,7 @@ function ExpandedPreview({ item }: { item: PreviewItemData }) {
           {applyConfig && (
             <div className="rounded-lg border border-border bg-surface px-3 py-3">
               <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                <div className="space-y-1">
+                <div className="v3-space-y-1">
                   <div className="text-sm font-medium text-text">
                     Xác nhận của giáo viên
                   </div>
@@ -429,7 +429,7 @@ function ExpandedPreview({ item }: { item: PreviewItemData }) {
                     operatorState.status === "running" ||
                     operatorState.status === "success"
                   }
-                  className={`min-h-[44px] rounded-lg px-4 py-2 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)] focus-visible:ring-offset-2 ${
+                  className={`min-h-[44px] rounded-lg px-4 py-2 text-sm font-medium transition-colors focus-visible:v3-outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)] focus-visible:ring-offset-2 ${
                     canExecuteApply && operatorState.status !== "success"
                       ? "bg-[var(--accent)] text-white hover:bg-[var(--accent)]/90"
                       : "cursor-not-allowed bg-surface-secondary text-text-tertiary"
@@ -515,7 +515,7 @@ function ExpandedPreview({ item }: { item: PreviewItemData }) {
 
       {/* Non-product metadata (original generic display) */}
       {!isProduct && item.metadata && Object.keys(item.metadata).length > 0 && (
-        <div className="space-y-1.5">
+        <div className="v3-space-y-1.5">
           {item.metadata.price != null && (
             <div className="text-sm">
               <span className="text-text-tertiary">Giá: </span>
@@ -619,7 +619,7 @@ function renderHostActionPreviewDetails(item: PreviewItemData) {
 
   if (lessonBefore && lessonAfter) {
     return (
-      <div className="space-y-3">
+      <div className="v3-space-y-3">
         <div className="text-[11px] uppercase tracking-wider text-text-tertiary">
           Trước / sau
         </div>
@@ -638,7 +638,7 @@ function renderHostActionPreviewDetails(item: PreviewItemData) {
 
   if (quizPlan) {
     return (
-      <div className="space-y-2 rounded-lg bg-surface px-3 py-3">
+      <div className="v3-space-y-2 rounded-lg bg-surface px-3 py-3">
         <div className="text-[11px] uppercase tracking-wider text-text-tertiary">
           Kế hoạch quiz
         </div>
@@ -680,7 +680,7 @@ function renderHostActionPreviewDetails(item: PreviewItemData) {
 
   if (publishPlan) {
     return (
-      <div className="space-y-2 rounded-lg bg-surface px-3 py-3">
+      <div className="v3-space-y-2 rounded-lg bg-surface px-3 py-3">
         <div className="text-[11px] uppercase tracking-wider text-text-tertiary">
           Kế hoạch publish
         </div>
@@ -708,7 +708,7 @@ function renderHostActionPreviewDetails(item: PreviewItemData) {
 
   if (item.metadata?.preview_kind === "facebook_post") {
     return (
-      <div className="space-y-3 rounded-lg bg-surface px-3 py-3">
+      <div className="v3-space-y-3 rounded-lg bg-surface px-3 py-3">
         <div className="text-[11px] uppercase tracking-wider text-text-tertiary">
           Facebook post
         </div>
@@ -752,7 +752,7 @@ function HostActionSourceReferences({
           {references.length}
         </span>
       </div>
-      <div className="space-y-2">
+      <div className="v3-space-y-2">
         {references.map((ref, index) => (
           <div
             key={`${ref.kind || "source"}-${ref.chapter_index ?? "x"}-${ref.lesson_index ?? "x"}-${index}`}
@@ -811,7 +811,7 @@ function HostActionBlockDiffCard({
         </span>
       </div>
       {items.length > 0 ? (
-        <div className="space-y-2">
+        <div className="v3-space-y-2">
           {items.map((item, index) => (
             <HostActionBlockDiffRow
               key={`${String(item.status || "diff")}-${index}`}
@@ -902,7 +902,7 @@ function HostActionSnapshotCard({
       <div className="mb-2 text-[11px] uppercase tracking-wider text-text-tertiary">
         {title}
       </div>
-      <div className="space-y-2">
+      <div className="v3-space-y-2">
         {typeof snapshot.title === "string" &&
           snapshot.title.trim().length > 0 && (
             <div>

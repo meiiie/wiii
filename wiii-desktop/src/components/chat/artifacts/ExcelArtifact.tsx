@@ -122,7 +122,7 @@ export default function ExcelArtifact({ artifact, mode }: Props) {
   }
 
   return (
-    <div className="space-y-2">
+    <div className="v3-space-y-2">
       <div
         className={`flex items-center justify-between ${mode === "panel" ? "px-4 pt-2" : "px-4 pt-4"}`}
       >

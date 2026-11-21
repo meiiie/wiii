@@ -631,7 +631,7 @@ function NekoComputerSurfaceComponent({
             <input
               value={resetConfirmation}
               onChange={(event) => setResetConfirmation(event.target.value)}
-              className="h-7 w-52 rounded-md border border-[var(--nk-border)] bg-[var(--nk-composer)] px-2 text-[10px] outline-none focus:ring-2 focus:ring-[var(--nk-focus-soft)]"
+              className="h-7 w-52 rounded-md border border-[var(--nk-border)] bg-[var(--nk-composer)] px-2 text-[10px] v3-outline-none focus:ring-2 focus:ring-[var(--nk-focus-soft)]"
               aria-label="Xác nhận reset Local Computer"
             />
             <button
@@ -658,7 +658,7 @@ function NekoComputerSurfaceComponent({
             <input
               value={removeConfirmation}
               onChange={(event) => setRemoveConfirmation(event.target.value)}
-              className="h-7 w-52 rounded-md border border-[var(--nk-border)] bg-[var(--nk-composer)] px-2 text-[10px] outline-none focus:ring-2 focus:ring-[var(--nk-focus-soft)]"
+              className="h-7 w-52 rounded-md border border-[var(--nk-border)] bg-[var(--nk-composer)] px-2 text-[10px] v3-outline-none focus:ring-2 focus:ring-[var(--nk-focus-soft)]"
               aria-label="Xác nhận gỡ Computer của Project"
             />
             <button
@@ -703,7 +703,7 @@ function NekoComputerSurfaceComponent({
             value={url}
             onChange={(event) => setUrl(event.target.value)}
             aria-label="Địa chỉ Browser của Local Computer"
-            className="min-w-0 flex-1 bg-transparent text-[10.5px] text-[var(--nk-text)] outline-none placeholder:text-[var(--nk-ghost)]"
+            className="min-w-0 flex-1 bg-transparent text-[10.5px] text-[var(--nk-text)] v3-outline-none placeholder:text-[var(--nk-ghost)]"
             placeholder="https://…"
           />
           <button type="submit" disabled={browserBusy || environment.state !== "ready"} className="grid h-7 w-7 place-items-center rounded-md text-[var(--nk-text-2)] hover:bg-[var(--nk-overlay)] disabled:opacity-40" aria-label="Mở trong Browser">
@@ -717,12 +717,12 @@ function NekoComputerSurfaceComponent({
           <form className="flex shrink-0 items-center gap-2 border-b border-white/10 px-3 py-2" onSubmit={onTerminal}>
             <TerminalSquare aria-hidden="true" className="h-3.5 w-3.5 text-[#9d9a92]" />
             <span className="text-[9px] text-[#77746d]">/workspace/project</span>
-            <input value={command} onChange={(event) => setCommand(event.target.value)} aria-label="Lệnh trong Local Computer" className="min-w-0 flex-1 bg-transparent font-mono text-[10.5px] outline-none" />
+            <input value={command} onChange={(event) => setCommand(event.target.value)} aria-label="Lệnh trong Local Computer" className="min-w-0 flex-1 bg-transparent font-mono text-[10.5px] v3-outline-none" />
             <button type="submit" disabled={terminalBusy || environment.state !== "ready"} className="rounded-md bg-white/10 px-2.5 py-1 text-[9.5px] hover:bg-white/15 disabled:opacity-40">
               {terminalBusy ? "Đang chạy…" : "Chạy"}
             </button>
           </form>
-          <pre className="min-h-0 flex-1 overflow-auto whitespace-pre-wrap break-words p-4 font-mono text-[10.5px] leading-5 text-[#d8d6cf]">
+          <pre className="min-h-0 flex-1 overflow-auto whitespace-pre-wrap wrap-break-word p-4 font-mono text-[10.5px] leading-5 text-[#d8d6cf]">
             {terminalResult
               ? `$ ${command}\n${terminalResult.stdout}${terminalResult.stderr ? `\n${terminalResult.stderr}` : ""}\n\n[exit ${terminalResult.exitCode ?? "unknown"}${terminalResult.truncated ? ", output truncated" : ""}]`
               : "Terminal này chạy bên trong Local Computer — không phải PowerShell/cmd của máy bạn."}
@@ -762,7 +762,7 @@ function NekoComputerSurfaceComponent({
             <ComputerViewerStatus state={viewerState} onReconnect={reconnectDisplay} />
           ) : null}
           {canObserve && viewerState === "visible" ? (
-            <div className="pointer-events-none absolute bottom-3 left-1/2 z-20 -translate-x-1/2 rounded-full border border-white/10 bg-black/65 px-3 py-1.5 text-[9px] font-medium text-white/90 shadow-lg backdrop-blur">
+            <div className="pointer-events-none absolute bottom-3 left-1/2 z-20 -translate-x-1/2 rounded-full border border-white/10 bg-black/65 px-3 py-1.5 text-[9px] font-medium text-white/90 shadow-lg backdrop-blur-sm">
               {viewerOwnershipLabel}
             </div>
           ) : null}

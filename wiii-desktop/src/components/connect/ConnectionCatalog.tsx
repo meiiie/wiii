@@ -463,7 +463,7 @@ export function ConnectionCatalog({
   };
 
   return (
-    <section className="space-y-4">
+    <section className="v3-space-y-4">
       <div className="rounded-lg border border-[var(--border)] bg-surface p-4">
         <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
           <div>
@@ -521,7 +521,7 @@ export function ConnectionCatalog({
             <input
               value={query}
               onChange={(event) => setQuery(event.target.value)}
-              className="h-10 w-full rounded-md border border-[var(--border)] bg-surface-secondary pl-9 pr-3 text-sm text-text outline-none focus:border-primary"
+              className="h-10 w-full rounded-md border border-[var(--border)] bg-surface-secondary pl-9 pr-3 text-sm text-text v3-outline-none focus:border-primary"
               placeholder="Tìm kết nối..."
             />
           </label>

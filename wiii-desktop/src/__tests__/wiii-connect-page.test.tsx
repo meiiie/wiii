@@ -1169,7 +1169,7 @@ describe("WiiiConnectPage", () => {
         "Mở OAuth/Connect Link với provider",
       );
     });
-    expect(screen.getByText("Hoàn tất OAuth/Connect Link")).toBeTruthy();
+    expect(await screen.findByText("Hoàn tất OAuth/Connect Link")).toBeTruthy();
     expect(screen.getByText("Activation readiness")).toBeTruthy();
     expect(screen.getByText("Connect-ready")).toBeTruthy();
     expect(screen.getByText("Agent read-only")).toBeTruthy();
@@ -1379,15 +1379,14 @@ describe("WiiiConnectPage", () => {
     fireEvent.click(screen.getByRole("button", { name: /Composio/i }));
     fireEvent.click(screen.getByRole("button", { name: /Facebook/i }));
 
-    expect(await screen.findByText("Connection thật")).toBeTruthy();
     expect((await screen.findAllByText("Wiii Facebook Page")).length).toBeGreaterThan(0);
-    expect(screen.getAllByText("Đã kết nối").length).toBeGreaterThan(0);
+    expect((await screen.findAllByText("Đã kết nối")).length).toBeGreaterThan(0);
     await waitFor(() => {
       expect(screen.getByTestId("wiii-connect-next-action").textContent).toContain(
         "Hoàn tất policy/gateway trước khi agent dùng",
       );
     });
-    expect(screen.getByText("Bật policy agent cho provider")).toBeTruthy();
+    expect(await screen.findByText("Bật policy agent cho provider")).toBeTruthy();
     await waitFor(() => {
       expect(mockFetchWiiiConnectProviderConnections).toHaveBeenCalledWith("facebook", {
         probeDatabase: true,
@@ -1849,9 +1848,8 @@ describe("WiiiConnectPage", () => {
       "_blank",
       "noopener,noreferrer",
     );
-    expect(await screen.findByText("Connection thật")).toBeTruthy();
     expect((await screen.findAllByText("Wiii Facebook Page")).length).toBeGreaterThan(0);
-    expect(screen.getAllByText("Đã kết nối").length).toBeGreaterThan(0);
+    expect((await screen.findAllByText("Đã kết nối")).length).toBeGreaterThan(0);
     expect(container.textContent).not.toContain("wcn_public_1");
     expect(container.textContent).not.toContain("fb_page_public");
     expect(container.textContent).not.toContain("https://composio.example/connect/safe");

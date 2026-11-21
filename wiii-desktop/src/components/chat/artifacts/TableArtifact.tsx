@@ -94,7 +94,7 @@ export default function TableArtifact({ artifact, mode }: Props) {
   }
 
   return (
-    <div className="space-y-2">
+    <div className="v3-space-y-2">
       {mode === "panel" && fileUrl && (
         <div className="flex justify-end px-4 pt-2">
           <a

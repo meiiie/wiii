@@ -263,16 +263,16 @@ export function ProviderSessionCatalogPanel({
       <div className="flex flex-wrap items-center gap-2 border-y border-[var(--nk-border)] bg-[var(--nk-raised)]/40 px-4 py-2.5">
         <label className="relative min-w-[220px] flex-1">
           <Search aria-hidden="true" className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-[var(--nk-ghost)]" />
-          <input type="search" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Tìm mọi phiên…" aria-label="Tìm mọi phiên" aria-busy={query !== deferredQuery} className="h-9 w-full rounded-lg border border-[var(--nk-border)] bg-[var(--nk-composer)] pl-9 pr-3 text-[12px] text-[var(--nk-text)] outline-none placeholder:text-[var(--nk-ghost)] focus:border-[var(--nk-border-strong)]" />
+          <input type="search" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Tìm mọi phiên…" aria-label="Tìm mọi phiên" aria-busy={query !== deferredQuery} className="h-9 w-full rounded-lg border border-[var(--nk-border)] bg-[var(--nk-composer)] pl-9 pr-3 text-[12px] text-[var(--nk-text)] v3-outline-none placeholder:text-[var(--nk-ghost)] focus:border-[var(--nk-border-strong)]" />
         </label>
-        <select value={state} onChange={(event) => setState(event.target.value as "" | UnifiedSessionState)} aria-label="Lọc theo trạng thái" className="h-9 min-w-[135px] rounded-lg border border-[var(--nk-border)] bg-[var(--nk-composer)] px-2.5 text-[11.5px] text-[var(--nk-text-2)] outline-none focus:border-[var(--nk-border-strong)]">
+        <select value={state} onChange={(event) => setState(event.target.value as "" | UnifiedSessionState)} aria-label="Lọc theo trạng thái" className="h-9 min-w-[135px] rounded-lg border border-[var(--nk-border)] bg-[var(--nk-composer)] px-2.5 text-[11.5px] text-[var(--nk-text-2)] v3-outline-none focus:border-[var(--nk-border-strong)]">
           <option value="">Mọi trạng thái</option><option value="needs-attention">Cần bạn</option><option value="working">Đang chạy</option><option value="ready">Sẵn sàng</option><option value="stopped">Đã lưu / dừng</option>
         </select>
         <div className="flex h-9 items-center rounded-lg border border-[var(--nk-border)] bg-[var(--nk-composer)] p-0.5" aria-label="Cách xem phiên">
           {(["projects", "recent", "harnesses"] as const).map((value) => {
             const label = value === "projects" ? "Dự án" : value === "recent" ? "Gần đây" : "Harness";
             const Icon = value === "projects" ? Folder : value === "recent" ? History : Layers3;
-            return <button key={value} type="button" aria-pressed={view === value} onClick={() => setView(value)} className={`inline-flex h-7 items-center gap-1.5 rounded-md px-2.5 text-[11px] transition-colors ${view === value ? "bg-[var(--nk-overlay)] text-[var(--nk-text)] shadow-sm" : "text-[var(--nk-text-3)] hover:text-[var(--nk-text-2)]"}`}><Icon aria-hidden="true" className="h-3 w-3" />{label}</button>;
+            return <button key={value} type="button" aria-pressed={view === value} onClick={() => setView(value)} className={`inline-flex h-7 items-center gap-1.5 rounded-md px-2.5 text-[11px] transition-colors ${view === value ? "bg-[var(--nk-overlay)] text-[var(--nk-text)] shadow-xs" : "text-[var(--nk-text-3)] hover:text-[var(--nk-text-2)]"}`}><Icon aria-hidden="true" className="h-3 w-3" />{label}</button>;
           })}
         </div>
       </div>
@@ -299,7 +299,7 @@ export function ProviderSessionCatalogPanel({
       <div className="flex items-center justify-between border-t border-[var(--nk-border)] px-5 py-2.5 text-[10px] text-[var(--nk-ghost)]">
         <span>{items.length} phiên · {managedSessions.length} do Wiii quản lý</span>
         {providerCatalogs.some((catalog) => catalog.detail) ? (
-          <details className="max-w-[70%] text-right"><summary className="cursor-pointer select-none hover:text-[var(--nk-text-3)]">Nguồn & giới hạn</summary><div className="mt-2 space-y-1 text-left leading-4">{providerCatalogs.flatMap((catalog) => catalog.detail ? [<p key={catalog.providerId}><strong>{providerNames.get(catalog.providerId) ?? catalog.providerId}:</strong> {catalog.detail}</p>] : [])}</div></details>
+          <details className="max-w-[70%] text-right"><summary className="cursor-pointer select-none hover:text-[var(--nk-text-3)]">Nguồn & giới hạn</summary><div className="mt-2 v3-space-y-1 text-left leading-4">{providerCatalogs.flatMap((catalog) => catalog.detail ? [<p key={catalog.providerId}><strong>{providerNames.get(catalog.providerId) ?? catalog.providerId}:</strong> {catalog.detail}</p>] : [])}</div></details>
         ) : null}
       </div>
     </section>

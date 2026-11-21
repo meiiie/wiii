@@ -48,7 +48,7 @@ function BlockErrorFallback({
         <button
           type="button"
           onClick={onRetry}
-          className="shrink-0 text-[11px] font-medium text-[var(--accent)] hover:underline focus:outline-none focus:ring-2 focus:ring-[var(--accent)] focus:ring-offset-1 rounded"
+          className="shrink-0 text-[11px] font-medium text-[var(--accent)] hover:underline focus:v3-outline-none focus:ring-2 focus:ring-[var(--accent)] focus:ring-offset-1 rounded"
         >
           Thử lại
         </button>
@@ -771,7 +771,7 @@ function AnswerSurface({
     >
       <MarkdownRenderer content={content} />
       {showCursor && (
-        <span className="inline-block w-[2px] h-[1em] bg-[var(--accent-orange)] ml-0.5 align-middle animate-pulse rounded-sm" />
+        <span className="inline-block w-[2px] h-[1em] bg-[var(--accent-orange)] ml-0.5 align-middle animate-pulse rounded-xs" />
       )}
     </div>
   );

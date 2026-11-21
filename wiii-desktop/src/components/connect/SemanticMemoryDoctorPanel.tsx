@@ -100,7 +100,7 @@ export function SemanticMemoryDoctorPanel({
       <div className="mt-3 grid gap-3 lg:grid-cols-4">
         <div className="rounded-lg border border-[var(--border)] p-3">
           <div className="mb-2 text-xs font-medium uppercase text-text-tertiary">Write kinds</div>
-          <ul className="space-y-1 text-sm text-text-secondary">
+          <ul className="v3-space-y-1 text-sm text-text-secondary">
             {writeKindEntries.length > 0 ? writeKindEntries.map(([label, count], index) => (
               <li key={`${label}-${index}`} className="flex min-w-0 justify-between gap-3">
                 <span className="truncate">{label}</span>
@@ -112,7 +112,7 @@ export function SemanticMemoryDoctorPanel({
 
         <div className="rounded-lg border border-[var(--border)] p-3">
           <div className="mb-2 text-xs font-medium uppercase text-text-tertiary">Statuses</div>
-          <ul className="space-y-1 text-sm text-text-secondary">
+          <ul className="v3-space-y-1 text-sm text-text-secondary">
             {statusEntries.length > 0 ? statusEntries.map(([label, count], index) => (
               <li key={`${label}-${index}`} className="flex min-w-0 justify-between gap-3">
                 <span className="truncate">{label}</span>
@@ -124,7 +124,7 @@ export function SemanticMemoryDoctorPanel({
 
         <div className="rounded-lg border border-[var(--border)] p-3">
           <div className="mb-2 text-xs font-medium uppercase text-text-tertiary">Org context</div>
-          <ul className="space-y-1 text-sm text-text-secondary">
+          <ul className="v3-space-y-1 text-sm text-text-secondary">
             {orgContextEntries.length > 0 ? orgContextEntries.map(([label, count], index) => (
               <li key={`${label}-${index}`} className="flex min-w-0 justify-between gap-3">
                 <span className="truncate">{label}</span>
@@ -136,7 +136,7 @@ export function SemanticMemoryDoctorPanel({
 
         <div className="rounded-lg border border-[var(--border)] p-3">
           <div className="mb-2 text-xs font-medium uppercase text-text-tertiary">Warnings</div>
-          <ul className="space-y-1 text-sm text-text-secondary">
+          <ul className="v3-space-y-1 text-sm text-text-secondary">
             {warningEntries.length > 0 ? warningEntries.map(([label, count], index) => (
               <li key={`${label}-${index}`} className="flex min-w-0 justify-between gap-3">
                 <span className="truncate">{label}</span>

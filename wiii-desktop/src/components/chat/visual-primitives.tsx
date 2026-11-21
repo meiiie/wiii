@@ -50,7 +50,7 @@ export function DiagramSectionPill({
   return (
     <div
       className={cx(
-        "inline-flex items-center gap-3 rounded-full border px-4 py-2 text-xs font-medium shadow-[var(--shadow-sm)]",
+        "inline-flex items-center gap-3 rounded-full border px-4 py-2 text-xs font-medium shadow-[color:var(--shadow-sm)]",
         tone === "accent"
           ? "border-[rgba(174,86,48,0.16)] bg-[rgba(255,255,255,0.84)] text-text-tertiary"
           : "border-[color-mix(in_srgb,var(--border)_72%,white)] bg-white/84 text-text-secondary",
@@ -78,7 +78,7 @@ export function DiagramStatusPill({
   return (
     <div
       className={cx(
-        "inline-flex min-h-[34px] items-center gap-2 rounded-full border px-3 py-1.5 text-[11px] shadow-[var(--shadow-sm)]",
+        "inline-flex min-h-[34px] items-center gap-2 rounded-full border px-3 py-1.5 text-[11px] shadow-[color:var(--shadow-sm)]",
         className,
       )}
       style={{
@@ -108,7 +108,7 @@ export function DiagramFlowBridge({
   return (
     <>
       <div className="flex items-center justify-center xl:hidden" aria-hidden="true">
-        <div className="flex w-full max-w-sm items-center gap-3 rounded-full border border-[var(--border)] bg-white/82 px-4 py-3 shadow-[var(--shadow-sm)]">
+        <div className="flex w-full max-w-sm items-center gap-3 rounded-full border border-[var(--border)] bg-white/82 px-4 py-3 shadow-[color:var(--shadow-sm)]">
           <div className="h-px flex-1 bg-[linear-gradient(90deg,rgba(174,86,48,0.18),rgba(174,86,48,0.72))]" />
           <span className="rounded-full border border-[rgba(174,86,48,0.18)] bg-[rgba(174,86,48,0.08)] px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.16em] text-[var(--accent-orange)]">
             {label}
@@ -119,7 +119,7 @@ export function DiagramFlowBridge({
 
       <div className="relative hidden items-center justify-center xl:flex" aria-hidden="true">
         <div className={cx("flex h-full flex-col items-center justify-center", compact ? "gap-3" : "gap-4")}>
-          <div className="grid h-14 w-14 place-items-center rounded-full border border-[rgba(174,86,48,0.16)] bg-white/88 text-[var(--accent-orange)] shadow-[var(--shadow-md)]">
+          <div className="grid h-14 w-14 place-items-center rounded-full border border-[rgba(174,86,48,0.16)] bg-white/88 text-[var(--accent-orange)] shadow-[color:var(--shadow-md)]">
             <svg viewBox="0 0 24 24" className="h-6 w-6" fill="none" aria-hidden="true">
               <path d="M5 12h12" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
               <path d="m13 7 4 5-4 5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
@@ -165,7 +165,7 @@ export function DiagramConnectorArrow({
         }}
       />
       <div
-        className="grid h-9 w-9 place-items-center rounded-full border bg-white/90 shadow-[var(--shadow-sm)]"
+        className="grid h-9 w-9 place-items-center rounded-full border bg-white/90 shadow-[color:var(--shadow-sm)]"
         style={{ borderColor: palette.line, color: palette.accent }}
       >
         <svg
@@ -248,7 +248,7 @@ export function DiagramStepBadge({
 }) {
   return (
     <div
-      className="grid h-10 w-10 shrink-0 place-items-center rounded-[16px] text-sm font-bold text-white shadow-[var(--shadow-sm)] md:h-11 md:w-11"
+      className="grid h-10 w-10 shrink-0 place-items-center rounded-[16px] text-sm font-bold text-white shadow-[color:var(--shadow-sm)] md:h-11 md:w-11"
       style={{ background: palette.accent }}
     >
       {label}
@@ -278,7 +278,7 @@ export function DiagramNodeCard({
   return (
     <article
       className={cx(
-        "relative overflow-clip rounded-[28px] border px-5 py-5 shadow-[var(--shadow-md)] transition-[opacity,transform] duration-300",
+        "relative overflow-clip rounded-[28px] border px-5 py-5 shadow-[color:var(--shadow-md)] transition-[opacity,transform] duration-300",
         className,
       )}
       style={{
@@ -303,7 +303,7 @@ export function DiagramNodeCard({
         </div>
         {badge ? (
           <div
-            className="rounded-full border bg-white/80 px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.14em] shadow-[var(--shadow-sm)]"
+            className="rounded-full border bg-white/80 px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.14em] shadow-[color:var(--shadow-sm)]"
             style={{ borderColor: palette.line, color: palette.ink }}
           >
             {badge}
@@ -313,7 +313,7 @@ export function DiagramNodeCard({
 
       {emphasis ? (
         <div
-          className="mt-5 rounded-[22px] border bg-white/74 px-4 py-4 shadow-[var(--shadow-sm)]"
+          className="mt-5 rounded-[22px] border bg-white/74 px-4 py-4 shadow-[color:var(--shadow-sm)]"
           style={{ borderColor: "color-mix(in srgb, var(--border) 76%, white)" }}
         >
           {emphasis}
@@ -342,14 +342,14 @@ export function DiagramCalloutPanel({
 }) {
   return (
     <div
-      className={cx("rounded-[26px] border px-5 py-5 shadow-[var(--shadow-md)]", className)}
+      className={cx("rounded-[26px] border px-5 py-5 shadow-[color:var(--shadow-md)]", className)}
       style={{
         borderColor: palette.line,
         background: `linear-gradient(135deg, ${palette.soft}, rgba(255,255,255,0.96))`,
       }}
     >
       <div className="grid gap-4 lg:grid-cols-[auto_1fr] lg:items-start">
-        <div className="inline-flex items-center gap-3 rounded-full border border-white/70 bg-white/70 px-3 py-2 text-sm font-semibold text-text shadow-[var(--shadow-sm)]">
+        <div className="inline-flex items-center gap-3 rounded-full border border-white/70 bg-white/70 px-3 py-2 text-sm font-semibold text-text shadow-[color:var(--shadow-sm)]">
           <span className="grid h-8 w-8 place-items-center rounded-full text-white" style={{ background: palette.accent }}>
             {accentLabel || "!"}
           </span>
@@ -387,7 +387,7 @@ export function DiagramAnnotationChip({
       aria-controls={controls}
       className={cx(
         "inline-flex min-h-[40px] items-center gap-2 rounded-full border px-3.5 py-1.5 text-xs font-semibold transition-[transform,box-shadow,border-color,background] duration-200",
-        selected ? "shadow-[var(--shadow-sm)]" : "hover:-translate-y-[1px]",
+        selected ? "shadow-[color:var(--shadow-sm)]" : "hover:-translate-y-[1px]",
       )}
       style={{
         borderColor: selected ? palette.line : "color-mix(in srgb, var(--border) 82%, white)",
@@ -425,7 +425,7 @@ export function DiagramInsightPanel({
   const palette = tonePalette(tone);
   return (
     <div
-      className={cx("relative overflow-hidden rounded-[22px] border px-4 py-4 shadow-[var(--shadow-sm)]", className)}
+      className={cx("relative overflow-hidden rounded-[22px] border px-4 py-4 shadow-[color:var(--shadow-sm)]", className)}
       style={{
         borderColor: palette.line,
         background: `linear-gradient(180deg, ${palette.soft}, rgba(255,255,255,0.94))`,
@@ -459,7 +459,7 @@ export function DiagramStageFrame({
   return (
     <div
       className={cx(
-        "overflow-hidden rounded-[28px] border border-[color-mix(in_srgb,var(--border)_78%,white)] bg-[linear-gradient(180deg,rgba(255,255,255,0.98),rgba(247,243,235,0.94))] shadow-[var(--shadow-md)]",
+        "overflow-hidden rounded-[28px] border border-[color-mix(in_srgb,var(--border)_78%,white)] bg-[linear-gradient(180deg,rgba(255,255,255,0.98),rgba(247,243,235,0.94))] shadow-[color:var(--shadow-md)]",
         className,
       )}
     >
@@ -499,7 +499,7 @@ export function DiagramGroupBand({
   return (
     <section
       className={cx(
-        "relative overflow-hidden rounded-[24px] border px-4 py-4 shadow-[var(--shadow-sm)] md:px-5 md:py-5",
+        "relative overflow-hidden rounded-[24px] border px-4 py-4 shadow-[color:var(--shadow-sm)] md:px-5 md:py-5",
         className,
       )}
       style={{
@@ -517,7 +517,7 @@ export function DiagramGroupBand({
       />
       <div className="mb-4 flex flex-wrap items-center gap-3">
         <div
-          className="inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.16em] shadow-[var(--shadow-sm)]"
+          className="inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.16em] shadow-[color:var(--shadow-sm)]"
           style={{
             borderColor: palette.line,
             background: "rgba(255,255,255,0.88)",
@@ -533,7 +533,7 @@ export function DiagramGroupBand({
           </p>
         ) : null}
       </div>
-      <div className="space-y-4">{children}</div>
+      <div className="v3-space-y-4">{children}</div>
     </section>
   );
 }
@@ -551,7 +551,7 @@ export function DiagramLegend({
       {items.map((item, index) => (
         <div
           key={`${String(item.label)}-${index}`}
-          className="inline-flex items-center gap-2 rounded-full border border-[color-mix(in_srgb,var(--border)_80%,white)] bg-white/88 px-3 py-1.5 text-xs text-text-secondary shadow-[var(--shadow-sm)]"
+          className="inline-flex items-center gap-2 rounded-full border border-[color-mix(in_srgb,var(--border)_80%,white)] bg-white/88 px-3 py-1.5 text-xs text-text-secondary shadow-[color:var(--shadow-sm)]"
         >
           <span className="h-2.5 w-2.5 rounded-full" style={{ background: item.color }} aria-hidden="true" />
           <span className="font-semibold">{item.label}</span>
@@ -574,7 +574,7 @@ export function DiagramMetricPill({
   const palette = tonePalette(tone);
   return (
     <div
-      className="rounded-[18px] border px-3 py-3 shadow-[var(--shadow-sm)]"
+      className="rounded-[18px] border px-3 py-3 shadow-[color:var(--shadow-sm)]"
       style={{
         borderColor: palette.line,
         background: `linear-gradient(180deg, ${palette.soft}, rgba(255,255,255,0.94))`,
@@ -600,7 +600,7 @@ export function DiagramCenterpiece({
   body?: ReactNode;
 }) {
   return (
-    <div className="relative overflow-hidden rounded-[30px] border px-6 py-7 text-center shadow-[var(--shadow-lg)]" style={{
+    <div className="relative overflow-hidden rounded-[30px] border px-6 py-7 text-center shadow-[color:var(--shadow-lg)]" style={{
       borderColor: "color-mix(in srgb, var(--border) 72%, white)",
       background: `radial-gradient(circle at top, color-mix(in srgb, ${palette.accent} 16%, transparent), transparent 42%), linear-gradient(180deg, rgba(255,255,255,0.98), rgba(248,244,236,0.96))`,
     }}>

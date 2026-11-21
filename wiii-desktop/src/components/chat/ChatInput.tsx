@@ -657,7 +657,7 @@ export function ChatInput({ onSend, onCancel, editingMessage, onClearEdit, cente
                 onFocus={() => setInputFocused(true)}
                 onBlur={() => setInputFocused(false)}
                 placeholder={welcomePlaceholder}
-                className="relative w-full resize-none bg-transparent pl-1.5 pt-1.5 text-[16px] leading-[1.6] text-text placeholder:text-text-tertiary placeholder:italic focus:outline-none min-h-[3rem] max-h-96"
+                className="relative w-full resize-none bg-transparent pl-1.5 pt-1.5 text-[16px] leading-[1.6] text-text placeholder:text-text-tertiary placeholder:italic focus:v3-outline-none min-h-[3rem] max-h-96"
                 rows={2}
                 maxLength={MAX_MESSAGE_LENGTH}
                 disabled={isStreaming}
@@ -797,7 +797,7 @@ export function ChatInput({ onSend, onCancel, editingMessage, onClearEdit, cente
                 onFocus={() => setInputFocused(true)}
                 onBlur={() => setInputFocused(false)}
                 placeholder="Hỏi Wiii bất cứ điều gì..."
-                className="relative w-full resize-none bg-transparent px-1.5 pt-1 text-[14px] text-text placeholder:text-text-tertiary focus:outline-none min-h-[2.5rem] max-h-48"
+                className="relative w-full resize-none bg-transparent px-1.5 pt-1 text-[14px] text-text placeholder:text-text-tertiary focus:v3-outline-none min-h-[2.5rem] max-h-48"
                 rows={1}
                 maxLength={MAX_MESSAGE_LENGTH}
                 disabled={isStreaming}

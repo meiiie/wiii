@@ -78,7 +78,7 @@ export const CodeStudioCard = memo(function CodeStudioCard({
             </div>
             <Loader2 size={16} className="animate-spin text-[var(--accent)]" />
           </div>
-          <div className="px-3 pb-3 space-y-2">
+          <div className="px-3 pb-3 v3-space-y-2">
             <div className="h-2 rounded bg-surface-tertiary/60 animate-pulse" style={{ width: "70%" }} />
             <div className="h-2 rounded bg-surface-tertiary/40 animate-pulse" style={{ width: "45%" }} />
           </div>
@@ -109,7 +109,7 @@ export const CodeStudioCard = memo(function CodeStudioCard({
             </div>
           )}
           <div className="max-h-[320px] overflow-auto bg-[#0f172a] text-[#e2e8f0] border-t border-border/30">
-            <pre className="p-3 text-[11px] leading-relaxed font-mono whitespace-pre-wrap break-words m-0">
+            <pre className="p-3 text-[11px] leading-relaxed font-mono whitespace-pre-wrap wrap-break-word m-0">
               <code>{session.code}</code>
               <span className="inline-block w-[2px] h-[14px] bg-[var(--accent)] animate-pulse ml-0.5 align-middle" />
               <div ref={codeEndRef} />

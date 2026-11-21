@@ -29,7 +29,7 @@ export function MentionMirror({ text, className }: MentionMirrorProps) {
     <div
       aria-hidden="true"
       data-wiii-id="mention-mirror"
-      className={`absolute inset-0 pointer-events-none whitespace-pre-wrap break-words overflow-hidden text-transparent ${className}`}
+      className={`absolute inset-0 pointer-events-none whitespace-pre-wrap wrap-break-word overflow-hidden text-transparent ${className}`}
     >
       {segments.map((seg, i) => {
         if (seg.type === "text") {

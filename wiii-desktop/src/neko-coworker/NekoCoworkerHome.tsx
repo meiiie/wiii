@@ -321,7 +321,7 @@ export function NekoCoworkerHome({ projects }: { projects: NekoProject[] }) {
               Read + Write
             </span>
           </div>
-          <div className="divide-y divide-[var(--nk-border)]">
+          <div className="v3-divide-y v3-divide-nk-border">
             {roots.length ? roots.map(({ projectId, projectName, root }) => {
               const projectRef = { projectId, projectName, projectPath: root.path };
               const actionKey = JSON.stringify([projectId, root.path]);
@@ -450,7 +450,7 @@ export function NekoCoworkerHome({ projects }: { projects: NekoProject[] }) {
                   value={confirmation}
                   onChange={(event) => setConfirmation(event.target.value)}
                   aria-label="Xác nhận gỡ máy của Neko"
-                  className="h-8 w-44 rounded-lg border border-[var(--nk-border)] bg-[var(--nk-canvas)] px-2.5 text-[10px] outline-none focus:ring-2 focus:ring-[var(--nk-focus-soft)]"
+                  className="h-8 w-44 rounded-lg border border-[var(--nk-border)] bg-[var(--nk-canvas)] px-2.5 text-[10px] v3-outline-none focus:ring-2 focus:ring-[var(--nk-focus-soft)]"
                 />
                 <button
                   type="button"
@@ -464,7 +464,7 @@ export function NekoCoworkerHome({ projects }: { projects: NekoProject[] }) {
             ) : null}
           </div>
 
-          <div className="grid border-t border-[var(--nk-border)] bg-[var(--nk-inset)]/45 md:grid-cols-3 md:divide-x md:divide-[var(--nk-border)]">
+          <div className="grid border-t border-[var(--nk-border)] bg-[var(--nk-inset)]/45 md:grid-cols-3 md:v3-divide-x md:v3-divide-nk-border">
             <StorageFact
               icon={HardDriveDownload}
               label="Ứng dụng & hệ thống"

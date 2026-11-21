@@ -365,7 +365,7 @@ export function FacebookPostComposer({
             setPageId(event.target.value);
             clearDecision();
           }}
-          className="mt-1 h-10 w-full rounded-md border border-[var(--border)] bg-surface px-3 text-sm text-text outline-none focus:border-primary"
+          className="mt-1 h-10 w-full rounded-md border border-[var(--border)] bg-surface px-3 text-sm text-text v3-outline-none focus:border-primary"
         >
           <option value="">Chọn Page</option>
           {state.pages?.pages?.map((page) => (
@@ -385,7 +385,7 @@ export function FacebookPostComposer({
             clearDecision();
           }}
           rows={4}
-          className="mt-1 w-full resize-none rounded-md border border-[var(--border)] bg-surface px-3 py-2 text-sm text-text outline-none focus:border-primary"
+          className="mt-1 w-full resize-none rounded-md border border-[var(--border)] bg-surface px-3 py-2 text-sm text-text v3-outline-none focus:border-primary"
         />
       </label>
 

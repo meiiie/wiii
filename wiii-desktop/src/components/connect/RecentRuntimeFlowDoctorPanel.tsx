@@ -326,7 +326,7 @@ export function RecentRuntimeFlowDoctorPanel({
         <div className="mt-3 grid gap-3 lg:grid-cols-5">
           <div className="rounded-md bg-surface p-3">
             <div className="mb-2 text-xs font-medium uppercase text-text-tertiary">Status</div>
-            <ul className="space-y-1 text-sm text-text-secondary">
+            <ul className="v3-space-y-1 text-sm text-text-secondary">
               {postTurnStatusEntries.length > 0 ? postTurnStatusEntries.map(([label, count], index) => (
                 <li key={`${label}-${index}`} className="flex min-w-0 justify-between gap-3">
                   <span className="truncate">{label}</span>
@@ -337,7 +337,7 @@ export function RecentRuntimeFlowDoctorPanel({
           </div>
           <div className="rounded-md bg-surface p-3">
             <div className="mb-2 text-xs font-medium uppercase text-text-tertiary">Reasons</div>
-            <ul className="space-y-1 text-sm text-text-secondary">
+            <ul className="v3-space-y-1 text-sm text-text-secondary">
               {postTurnReasonEntries.length > 0 ? postTurnReasonEntries.map(([label, count], index) => (
                 <li key={`${label}-${index}`} className="flex min-w-0 justify-between gap-3">
                   <span className="truncate">{label}</span>
@@ -348,7 +348,7 @@ export function RecentRuntimeFlowDoctorPanel({
           </div>
           <div className="rounded-md bg-surface p-3">
             <div className="mb-2 text-xs font-medium uppercase text-text-tertiary">Memory policy</div>
-            <ul className="space-y-1 text-sm text-text-secondary">
+            <ul className="v3-space-y-1 text-sm text-text-secondary">
               {postTurnPolicyEntries.length > 0 ? postTurnPolicyEntries.map(([label, count], index) => (
                 <li key={`${label}-${index}`} className="flex min-w-0 justify-between gap-3">
                   <span className="truncate">{label}</span>
@@ -359,7 +359,7 @@ export function RecentRuntimeFlowDoctorPanel({
           </div>
           <div className="rounded-md bg-surface p-3">
             <div className="mb-2 text-xs font-medium uppercase text-text-tertiary">Task groups</div>
-            <ul className="space-y-1 text-sm text-text-secondary">
+            <ul className="v3-space-y-1 text-sm text-text-secondary">
               {backgroundGroupEntries.length > 0 ? backgroundGroupEntries.map(([label, count], index) => (
                 <li key={`${label}-${index}`} className="flex min-w-0 justify-between gap-3">
                   <span className="truncate">{label}</span>
@@ -370,7 +370,7 @@ export function RecentRuntimeFlowDoctorPanel({
           </div>
           <div className="rounded-md bg-surface p-3">
             <div className="mb-2 text-xs font-medium uppercase text-text-tertiary">Task status</div>
-            <ul className="space-y-1 text-sm text-text-secondary">
+            <ul className="v3-space-y-1 text-sm text-text-secondary">
               {backgroundStatusEntries.length > 0 ? backgroundStatusEntries.map(([label, count], index) => (
                 <li key={`${label}-${index}`} className="flex min-w-0 justify-between gap-3">
                   <span className="truncate">{label}</span>
@@ -384,7 +384,7 @@ export function RecentRuntimeFlowDoctorPanel({
         <div className="mt-3 grid gap-3 lg:grid-cols-2">
           <div className="rounded-md bg-surface p-3">
             <div className="mb-2 text-xs font-medium uppercase text-text-tertiary">Durable task groups</div>
-            <ul className="space-y-1 text-sm text-text-secondary">
+            <ul className="v3-space-y-1 text-sm text-text-secondary">
               {ledgerBackgroundGroupEntries.length > 0 ? ledgerBackgroundGroupEntries.map(([label, count], index) => (
                 <li key={`${label}-${index}`} className="flex min-w-0 justify-between gap-3">
                   <span className="truncate">{label}</span>
@@ -395,7 +395,7 @@ export function RecentRuntimeFlowDoctorPanel({
           </div>
           <div className="rounded-md bg-surface p-3">
             <div className="mb-2 text-xs font-medium uppercase text-text-tertiary">Durable task status</div>
-            <ul className="space-y-1 text-sm text-text-secondary">
+            <ul className="v3-space-y-1 text-sm text-text-secondary">
               {ledgerBackgroundStatusEntries.length > 0 ? ledgerBackgroundStatusEntries.map(([label, count], index) => (
                 <li key={`${label}-${index}`} className="flex min-w-0 justify-between gap-3">
                   <span className="truncate">{label}</span>
@@ -425,7 +425,7 @@ export function RecentRuntimeFlowDoctorPanel({
       <div className="mt-3 grid gap-3 lg:grid-cols-4">
         <div className="rounded-lg border border-[var(--border)] p-3">
           <div className="mb-2 text-xs font-medium uppercase text-text-tertiary">Routes</div>
-          <ul className="space-y-1 text-sm text-text-secondary">
+          <ul className="v3-space-y-1 text-sm text-text-secondary">
             {routeEntries.length > 0 ? routeEntries.map(([label, count], index) => (
               <li key={`${label}-${index}`} className="flex min-w-0 justify-between gap-3">
                 <span className="truncate">{label}</span>
@@ -437,7 +437,7 @@ export function RecentRuntimeFlowDoctorPanel({
 
         <div className="rounded-lg border border-[var(--border)] p-3">
           <div className="mb-2 text-xs font-medium uppercase text-text-tertiary">Finalization</div>
-          <ul className="space-y-1 text-sm text-text-secondary">
+          <ul className="v3-space-y-1 text-sm text-text-secondary">
             {finalizationEntries.length > 0 ? finalizationEntries.map(([label, count], index) => (
               <li key={`${label}-${index}`} className="flex min-w-0 justify-between gap-3">
                 <span className="truncate">{label}</span>
@@ -449,7 +449,7 @@ export function RecentRuntimeFlowDoctorPanel({
 
         <div className="rounded-lg border border-[var(--border)] p-3">
           <div className="mb-2 text-xs font-medium uppercase text-text-tertiary">Context warnings</div>
-          <ul className="space-y-1 text-sm text-text-secondary">
+          <ul className="v3-space-y-1 text-sm text-text-secondary">
             {warningEntries.length > 0 ? warningEntries.map(([label, count], index) => (
               <li key={`${label}-${index}`} className="flex min-w-0 justify-between gap-3">
                 <span className="truncate">{label}</span>
@@ -461,7 +461,7 @@ export function RecentRuntimeFlowDoctorPanel({
 
         <div className="rounded-lg border border-[var(--border)] p-3">
           <div className="mb-2 text-xs font-medium uppercase text-text-tertiary">Subagent warnings</div>
-          <ul className="space-y-1 text-sm text-text-secondary">
+          <ul className="v3-space-y-1 text-sm text-text-secondary">
             {subagentWarningEntries.length > 0 ? subagentWarningEntries.map(([label, count], index) => (
               <li key={`${label}-${index}`} className="flex min-w-0 justify-between gap-3">
                 <span className="truncate">{label}</span>

@@ -1,0 +1,12 @@
+/* These source tokens emitted no CSS in v3. Keep them inert during the upgrade. */
+@source not inline("scrollbar-thin scrollbar-thumb-border scrollbar-track-transparent");
+@source not inline("border-[var(--accent)]/30 border-[var(--nk-warning)]/35 border-[var(--nk-warning)]/45");
+@source not inline("border-border/30 border-border/40 border-border/50 border-border/60 border-border/70 border-current/20");
+@source not inline("bg-[var(--accent)]/5 bg-[var(--accent)]/8 bg-[var(--accent)]/10 bg-[var(--accent,#c2662d)]/10 bg-[var(--green)]/10");
+@source not inline("bg-[var(--nk-danger-soft)]/35 bg-[var(--nk-danger-soft)]/40 bg-[var(--nk-inset)]/45 bg-[var(--nk-overlay)]/60 bg-[var(--nk-raised)]/40 bg-[var(--nk-warning)]/8");
+@source not inline("bg-border/30 bg-border/40 bg-surface-secondary/30 bg-surface-secondary/40 bg-surface-secondary/45 bg-surface-secondary/50 bg-surface-secondary/60 bg-surface-secondary/65 bg-surface-secondary/80");
+@source not inline("bg-surface-tertiary/40 bg-surface-tertiary/50 bg-surface-tertiary/60 bg-surface-tertiary/80 bg-surface/55 bg-surface/70 bg-surface/90 bg-text-tertiary/50");
+@source not inline("bg-white/74 bg-white/82 bg-white/84 bg-white/88 text-text-tertiary/40");
+@source not inline("hover:border-[var(--accent)]/40 hover:bg-[var(--accent)]/10 hover:bg-[var(--accent)]/20 hover:bg-[var(--accent)]/90 hover:bg-[var(--accent-light)]/80 hover:bg-border/50 hover:bg-surface-tertiary/40");
+@source not inline("focus:ring-[var(--accent)]/15 focus:ring-[var(--accent)]/30 focus-visible:ring-(--accent)/40 focus-visible:ring-[var(--accent)]/30 focus-visible:ring-[var(--accent)]/35 focus-visible:ring-[var(--accent)]/40 focus-visible:ring-[var(--accent)]/50");
+@source not inline("active:bg-surface-tertiary/70 aria-pressed:bg-border/50");

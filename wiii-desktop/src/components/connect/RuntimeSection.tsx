@@ -185,7 +185,7 @@ export function RuntimeSection({
           <Info size={16} className="text-text-secondary" aria-hidden="true" />
           <h3 className="text-sm font-semibold text-text">Kỷ luật hiển thị</h3>
         </div>
-        <ul className="space-y-2 text-sm text-text-secondary">
+        <ul className="v3-space-y-2 text-sm text-text-secondary">
           <li className="flex gap-2">
             <CheckCircle2 size={16} className="mt-0.5 shrink-0 text-emerald-600" aria-hidden="true" />
             Chỉ hiển thị snapshot đã sanitize từ runtime.
@@ -227,7 +227,7 @@ export function RuntimeSection({
                 <span>{row.label}</span>
                 {row.tone && <span className={`h-2 w-2 rounded-full ${statusDotClasses[row.tone]}`} />}
               </dt>
-              <dd className="mt-0.5 break-words text-sm font-medium text-text" title={row.value}>
+              <dd className="mt-0.5 wrap-break-word text-sm font-medium text-text" title={row.value}>
                 {row.value}
               </dd>
             </div>
@@ -240,7 +240,7 @@ export function RuntimeSection({
               <AlertTriangle size={15} aria-hidden="true" />
               Cần kiểm tra ledger
             </div>
-            <ul className="space-y-1 text-xs">
+            <ul className="v3-space-y-1 text-xs">
               {runtimeFlowLedger.warnings.map((warning) => (
                 <li key={warning}>{warning}</li>
               ))}
@@ -275,7 +275,7 @@ export function RuntimeSection({
                 <span>{row.label}</span>
                 {row.tone && <span className={`h-2 w-2 rounded-full ${statusDotClasses[row.tone]}`} />}
               </dt>
-              <dd className="mt-0.5 break-words text-sm font-medium text-text" title={row.value}>
+              <dd className="mt-0.5 wrap-break-word text-sm font-medium text-text" title={row.value}>
                 {row.value}
               </dd>
             </div>
@@ -288,7 +288,7 @@ export function RuntimeSection({
               <AlertTriangle size={15} aria-hidden="true" />
               Cần kiểm tra trace
             </div>
-            <ul className="space-y-1 text-xs">
+            <ul className="v3-space-y-1 text-xs">
               {runtimeFlowTrace.warnings.map((warning) => (
                 <li key={warning}>{warning}</li>
               ))}

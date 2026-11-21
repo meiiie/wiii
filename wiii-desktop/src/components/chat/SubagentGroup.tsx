@@ -105,7 +105,7 @@ export function SubagentGroup({
             transition={{ duration: 0.2, ease: "easeInOut" }}
             className="overflow-hidden"
           >
-            <div className="px-3 pb-2.5 space-y-1.5">
+            <div className="px-3 pb-2.5 v3-space-y-1.5">
               {/* Worker lanes — pre-computed map avoids O(n²) */}
               {group.workers.map((worker) => {
                 const workerBlocks = blocksByWorker.get(worker.agentName) ?? [];
@@ -137,7 +137,7 @@ export function SubagentGroup({
 
                     {/* Per-worker status messages */}
                     {worker.statusMessages.length > 0 && (
-                      <div className="ml-4 space-y-0.5 mb-1">
+                      <div className="ml-4 v3-space-y-0.5 mb-1">
                         {worker.statusMessages.map((msg, idx) => (
                           <div key={idx} className="flex items-center gap-1 text-[10px] text-text-tertiary">
                             <span className="w-1 h-1 rounded-full bg-text-tertiary/50 shrink-0" />

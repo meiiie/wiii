@@ -154,7 +154,7 @@ export function WiiiConnectPage({ onClose, backLabel }: { onClose?: () => void; 
       onClose={onClose ?? navigateToChat}
       backLabel={backLabel}
     >
-      <div className="space-y-6" data-testid="wiii-connect-page">
+      <div className="v3-space-y-6" data-testid="wiii-connect-page">
         <section>
           <div className="mb-4 flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
             <div>

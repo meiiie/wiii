@@ -823,7 +823,7 @@ function SearchResultWidget({ items }: { items: SearchResultItem[] }) {
                 alt=""
                 width={14}
                 height={14}
-                className="search-result-widget__favicon shrink-0 rounded-sm"
+                className="search-result-widget__favicon shrink-0 rounded-xs"
                 loading="lazy"
                 referrerPolicy="no-referrer"
                 onError={(e) => {

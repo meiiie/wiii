@@ -151,7 +151,7 @@ export function TitleBar({
               <button
                 type="button"
                 onClick={toggleSidebar}
-                className="grid h-8 w-8 place-items-center rounded-md text-text-tertiary transition-colors hover:bg-surface-tertiary hover:text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]/40"
+                className="grid h-8 w-8 place-items-center rounded-md text-text-tertiary transition-colors hover:bg-surface-tertiary hover:text-text focus-visible:v3-outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]/40"
                 title={sidebarOpen ? "Ẩn thanh bên" : "Hiện thanh bên"}
                 aria-label={sidebarOpen ? "Ẩn thanh bên" : "Hiện thanh bên"}
                 aria-pressed={!sidebarOpen}
@@ -179,7 +179,7 @@ export function TitleBar({
             title={`${resolvedCommandCenter.label} (Ctrl+K)`}
             aria-keyshortcuts="Control+K Meta+K"
             onClick={resolvedCommandCenter.onClick}
-            className="wiii-titlebar-search flex h-8 min-w-8 w-full items-center justify-center gap-2 rounded-md border border-border bg-surface-secondary px-2 text-[12px] text-text-secondary transition-colors duration-100 hover:border-[var(--border-secondary)] hover:bg-surface-tertiary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]/40 [-webkit-app-region:no-drag] sm:justify-start sm:px-2.5"
+            className="wiii-titlebar-search flex h-8 min-w-8 w-full items-center justify-center gap-2 rounded-md border border-border bg-surface-secondary px-2 text-[12px] text-text-secondary transition-colors duration-100 hover:border-[var(--border-secondary)] hover:bg-surface-tertiary focus-visible:v3-outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]/40 [-webkit-app-region:no-drag] sm:justify-start sm:px-2.5"
           >
             <Search aria-hidden="true" className="h-3.5 w-3.5 shrink-0" />
             <span className="hidden min-w-0 truncate sm:block">
@@ -203,7 +203,7 @@ export function TitleBar({
               "Không thể thu nhỏ cửa sổ",
               (currentWindow) => currentWindow.minimize(),
             )}
-            className="grid h-11 w-[46px] place-items-center text-text-secondary transition-colors hover:bg-surface-tertiary active:bg-surface-tertiary/70 focus-visible:z-10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[var(--accent)]/50"
+            className="grid h-11 w-[46px] place-items-center text-text-secondary transition-colors hover:bg-surface-tertiary active:bg-surface-tertiary/70 focus-visible:z-10 focus-visible:v3-outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[var(--accent)]/50"
             aria-label="Thu nhỏ cửa sổ"
             title="Thu nhỏ"
           >
@@ -216,7 +216,7 @@ export function TitleBar({
               (currentWindow) => currentWindow.toggleMaximize(),
               true,
             )}
-            className="grid h-11 w-[46px] place-items-center text-text-secondary transition-colors hover:bg-surface-tertiary active:bg-surface-tertiary/70 focus-visible:z-10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[var(--accent)]/50"
+            className="grid h-11 w-[46px] place-items-center text-text-secondary transition-colors hover:bg-surface-tertiary active:bg-surface-tertiary/70 focus-visible:z-10 focus-visible:v3-outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[var(--accent)]/50"
             aria-label={maximized ? "Khôi phục cửa sổ" : "Phóng to cửa sổ"}
             aria-pressed={maximized}
             title={maximized ? "Khôi phục" : "Phóng to"}
@@ -229,7 +229,7 @@ export function TitleBar({
               "Không thể đóng cửa sổ",
               (currentWindow) => currentWindow.close(),
             )}
-            className="grid h-11 w-[48px] place-items-center text-text-secondary transition-colors hover:bg-[#c42b1c] hover:text-white active:bg-[#a92318] active:text-white focus-visible:z-10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-white/80"
+            className="grid h-11 w-[48px] place-items-center text-text-secondary transition-colors hover:bg-[#c42b1c] hover:text-white active:bg-[#a92318] active:text-white focus-visible:z-10 focus-visible:v3-outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-white/80"
             aria-label="Đóng cửa sổ"
             title="Đóng"
           >

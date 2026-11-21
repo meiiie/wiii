@@ -328,7 +328,7 @@ export function ThinkingBlock({
               <div className="text-xs text-text-secondary leading-relaxed thinking-markdown">
                 <MarkdownRenderer content={contentForDisplay} />
                 {isStreaming && (!toolCalls || toolCalls.length === 0) && (
-                  <span className="inline-block w-1.5 h-3.5 bg-text-tertiary opacity-40 ml-0.5 animate-pulse rounded-sm" />
+                  <span className="inline-block w-1.5 h-3.5 bg-text-tertiary opacity-40 ml-0.5 animate-pulse rounded-xs" />
                 )}
               </div>
             )}
@@ -465,13 +465,13 @@ export function ThinkingBlock({
                   <div className="text-xs text-text-secondary leading-relaxed thinking-markdown">
                     <MarkdownRenderer content={contentForDisplay} />
                     {isStreaming && (!toolCalls || toolCalls.length === 0) && (
-                      <span className="inline-block w-1.5 h-3.5 bg-text-tertiary opacity-40 ml-0.5 animate-pulse rounded-sm" />
+                      <span className="inline-block w-1.5 h-3.5 bg-text-tertiary opacity-40 ml-0.5 animate-pulse rounded-xs" />
                     )}
                   </div>
                 )}
 
                 {toolCalls && toolCalls.length > 0 && (
-                  <div className="mt-2 space-y-1.5">
+                  <div className="mt-2 v3-space-y-1.5">
                     {toolCalls.map((tc, i) => (
                       <InlineToolCard
                         key={tc.id || i}

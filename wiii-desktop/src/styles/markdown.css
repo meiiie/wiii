@@ -1,3 +1,5 @@
+@reference "./globals.css";
+
 /* Markdown content styling */
 .markdown-content {
   font-family: var(--font-body);

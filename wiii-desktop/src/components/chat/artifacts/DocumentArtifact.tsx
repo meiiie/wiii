@@ -33,7 +33,7 @@ export default function DocumentArtifact({ artifact, mode }: Props) {
 
   if (mode === "card") {
     return (
-      <div className="p-4 space-y-3">
+      <div className="p-4 v3-space-y-3">
         <div className="flex items-start gap-3">
           <div className="w-10 h-10 rounded-xl bg-[var(--accent)]/10 text-[var(--accent)] flex items-center justify-center shrink-0">
             <FileText size={18} />
@@ -68,7 +68,7 @@ export default function DocumentArtifact({ artifact, mode }: Props) {
   }
 
   return (
-    <div className="p-5 space-y-4">
+    <div className="p-5 v3-space-y-4">
       <div className="rounded-2xl border border-border bg-surface-secondary p-4 flex items-start gap-3">
         <div className="w-10 h-10 rounded-xl bg-[var(--accent)]/10 text-[var(--accent)] flex items-center justify-center shrink-0">
           <FileText size={18} />

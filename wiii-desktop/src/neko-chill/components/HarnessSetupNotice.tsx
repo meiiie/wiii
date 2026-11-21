@@ -52,11 +52,11 @@ export function HarnessSetupNotice({ agents, loading, error, selectedAgent, onRe
       </div>
       {!loading && (error || failed) && <details className="mt-1">
         <summary className="cursor-pointer">Chi tiết kiểm tra</summary>
-        <p className="mt-1 break-words text-[var(--nk-text-3)]">{error ?? neko?.detail ?? "Không có thông tin lỗi bổ sung."}</p>
+        <p className="mt-1 wrap-break-word text-[var(--nk-text-3)]">{error ?? neko?.detail ?? "Không có thông tin lỗi bổ sung."}</p>
       </details>}
       {!loading && !error && missing && <details className="mt-2">
         <summary className="cursor-pointer font-medium text-[var(--nk-text)]">Cách cài Neko Core</summary>
-        <ol className="my-2 list-decimal space-y-1 pl-5">
+        <ol className="my-2 list-decimal v3-space-y-1 pl-5">
           <li>Tải và cài Neko Core từ trang chính thức.</li>
           <li>Mở Neko Core để chọn tài khoản hoặc model. Không cần tài khoản Wiii Service.</li>
           <li>Quay lại Wiii và nhấn “Kiểm tra lại”. Bản nháp không tự gửi.</li>
