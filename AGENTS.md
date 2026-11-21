@@ -17,7 +17,7 @@ Wiii is an open-source durable AI workbench for conversations, local and cloud a
 Primary areas:
 
 - `maritime-ai-service/`: FastAPI backend, auth, organization context, multi-agent orchestration, RAG, memory, integrations, deployment assets, tests.
-- `wiii-desktop/`: Tauri v2 desktop app, React 18, TypeScript, Neko Chill ACP workspace, Zustand stores, SSE V3 streaming UI, embed app, frontend tests.
+- `wiii-desktop/`: Tauri v2 desktop app, React 19, TypeScript, Neko Chill ACP workspace, Zustand stores, SSE V3 streaming UI, embed app, frontend tests.
 - `docs/`: repository-level architecture, operations, governance, plans, and assets.
 - `.github/`: issue templates, PR template, CODEOWNERS, GitHub Actions, Dependabot, and review automation.
 

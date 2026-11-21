@@ -5,7 +5,7 @@ import { useNekoSessionStore } from "../stores/neko-session-store";
 interface SessionDeleteDialogProps {
   target: { id: string; title: string };
   opener: HTMLElement | null;
-  fallbackFocusRef: RefObject<HTMLButtonElement>;
+  fallbackFocusRef: RefObject<HTMLButtonElement | null>;
   onCancel: () => void;
   onDeleted: () => void;
 }

@@ -1271,7 +1271,7 @@ describe("WiiiConnectPage", () => {
     fireEvent.click(screen.getByRole("button", { name: /Facebook/i }));
 
     const panel = await screen.findByTestId("wiii-connect-action-inventory-panel");
-    expect(panel.textContent).toContain("Create Facebook post");
+    expect(await within(panel).findByText("Create Facebook post")).toBeTruthy();
     expect(panel.textContent).toContain("Model args");
     expect(panel.textContent).toContain("message, link");
     expect(panel.textContent).toContain("3 backend-owned");
