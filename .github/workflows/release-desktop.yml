@@ -44,7 +44,7 @@ permissions:
   contents: read
 
 env:
-  WIII_WINDOWS_SIGNING: ${{ inputs.windows_signing || vars.WIII_WINDOWS_SIGNING || 'unsigned' }}
+  WIII_WINDOWS_SIGNING: ${{ github.event_name == 'pull_request' && 'unsigned' || inputs.windows_signing || vars.WIII_WINDOWS_SIGNING || 'unsigned' }}
 
 concurrency:
   group: desktop-release-${{ github.ref }}
@@ -153,13 +153,13 @@ jobs:
   build-desktop:
     name: Build ${{ matrix.release_target }}
     needs: validate
-    if: github.event_name != 'pull_request'
+    # Pull requests build the Windows candidate installer as an artifact only.
     strategy:
       fail-fast: false
       matrix: ${{ fromJSON(needs.validate.outputs.matrix) }}
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 60
-    environment: ${{ startsWith(github.ref, 'refs/tags/') && 'release' || 'candidate' }}
+    environment: ${{ startsWith(github.ref, 'refs/tags/') && 'release' || github.event_name != 'pull_request' && 'candidate' || '' }}
     permissions:
       contents: read
     steps:
