@@ -848,12 +848,53 @@ impl ResolvedProvider {
     /// A bundled runtime follows Wiii's release lifecycle. This overrides only
     /// the child environment; the user's standalone Neko settings stay intact.
     pub(crate) fn command(&self) -> Command {
-        let mut command = Command::new(&self.program);
-        if self.bundled {
-            command.env("NEKO_AUTO_UPDATE", "0");
+        let env_set = std::env::var_os("NEKO_DREAM_MODE").is_some_and(|value| !value.is_empty());
+        let config_set = || {
+            std::env::var_os("USERPROFILE")
+                .filter(|value| !value.is_empty())
+                .or_else(|| std::env::var_os("HOME"))
+                .is_some_and(|home| neko_config_sets_dream_mode(Path::new(&home)))
+        };
+        let user_set = env_set || config_set();
+        let mut command = self.command_with_inherited_dream_mode(user_set);
+        if self.bundled && user_set && !env_set {
+            // A blank inherited value would override the config file's mode.
+            command.env_remove("NEKO_DREAM_MODE");
         }
         command
     }
+
+    /// Automatic Dream adds a background model request per turn, so the bundled
+    /// runtime uses `manual` (saved notes still load; no automatic requests)
+    /// unless the user chose a mode via `NEKO_DREAM_MODE` or Neko's global config.
+    fn command_with_inherited_dream_mode(&self, user_set_dream_mode: bool) -> Command {
+        let mut command = Command::new(&self.program);
+        if self.bundled {
+            command.env("NEKO_AUTO_UPDATE", "0");
+            if !user_set_dream_mode {
+                command.env("NEKO_DREAM_MODE", "manual");
+            }
+        }
+        command
+    }
+}
+
+/// Whether the user's global Neko config files (the ones Neko reads from its
+/// home) set `dream_mode`; the env default must not override that choice.
+fn neko_config_sets_dream_mode(home: &Path) -> bool {
+    [home.join(".neko-core").join("config.json"), home.join("neko.json")]
+        .iter()
+        .filter_map(|path| std::fs::read(path).ok())
+        .filter_map(|bytes| {
+            let json = bytes.strip_prefix(b"\xEF\xBB\xBF").unwrap_or(&bytes);
+            serde_json::from_slice::<serde_json::Value>(json).ok()
+        })
+        .any(|config| {
+            matches!(
+                config.get("dream_mode").and_then(|mode| mode.as_str()),
+                Some("auto" | "manual" | "off")
+            )
+        })
 }
 
 /// Reject executable-name collisions such as the unrelated Linux `neko`
@@ -1183,13 +1224,32 @@ mod tests {
             version: Some("neko-core 1.5.1".into()),
             bundled: true,
         };
-        let command = resolved.command();
+        let command = resolved.command_with_inherited_dream_mode(false);
         let overrides: Vec<_> = command.get_envs().collect();
-        assert_eq!(overrides.len(), 1);
-        assert_eq!(overrides[0].0, "NEKO_AUTO_UPDATE");
-        assert_eq!(overrides[0].1.unwrap(), "0");
+        assert_eq!(overrides.len(), 2);
+        assert!(overrides.contains(&("NEKO_AUTO_UPDATE".as_ref(), Some("0".as_ref()))));
+        assert!(overrides.contains(&("NEKO_DREAM_MODE".as_ref(), Some("manual".as_ref()))));
         resolved.bundled = false;
-        assert_eq!(resolved.command().get_envs().count(), 0);
+        assert_eq!(
+            resolved
+                .command_with_inherited_dream_mode(false)
+                .get_envs()
+                .count(),
+            0
+        );
+    }
+
+    #[test]
+    fn bundled_dream_default_respects_user_opt_in() {
+        let resolved = ResolvedProvider {
+            definition: definition("neko").unwrap(),
+            program: PathBuf::from("neko"),
+            version: Some("neko-core 1.9.3".into()),
+            bundled: true,
+        };
+        let command = resolved.command_with_inherited_dream_mode(true);
+        let keys: Vec<_> = command.get_envs().map(|(key, _)| key).collect();
+        assert_eq!(keys, vec![std::ffi::OsStr::new("NEKO_AUTO_UPDATE")]);
     }
 
     #[test]
@@ -1663,6 +1723,49 @@ mod tests {
         };
         super::linux_containment::force_unavailable_for_test(false);
         assert_eq!(error.kind(), io::ErrorKind::Unsupported);
+    }
+
+    #[test]
+    fn neko_global_config_dream_mode_counts_as_user_choice() {
+        let home = std::env::temp_dir().join(format!("wiii-neko-dream-config-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&home);
+        std::fs::create_dir_all(home.join(".neko-core")).unwrap();
+        assert!(!neko_config_sets_dream_mode(&home));
+        std::fs::write(home.join(".neko-core").join("config.json"), r#"{"model":"m"}"#).unwrap();
+        assert!(!neko_config_sets_dream_mode(&home));
+        std::fs::write(home.join("neko.json"), r#"{"dream_mode":"sometimes"}"#).unwrap();
+        assert!(!neko_config_sets_dream_mode(&home));
+        std::fs::write(home.join("neko.json"), r#"{"dream_mode":"off"}"#).unwrap();
+        assert!(neko_config_sets_dream_mode(&home));
+        std::fs::write(home.join("neko.json"), b"\xEF\xBB\xBF{\"dream_mode\":\"off\"}").unwrap();
+        assert!(neko_config_sets_dream_mode(&home));
+        std::fs::remove_file(home.join("neko.json")).unwrap();
+        std::fs::write(home.join(".neko-core").join("config.json"), r#"{"dream_mode":"auto"}"#).unwrap();
+        assert!(neko_config_sets_dream_mode(&home));
+        let _ = std::fs::remove_dir_all(&home);
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn linux_bwrap_child_receives_command_environment() {
+        if !super::linux_containment::containment_available() {
+            return;
+        }
+        let resolved = ResolvedProvider {
+            definition: definition("neko").unwrap(),
+            program: PathBuf::from("/usr/bin/env"),
+            version: Some("neko-core 1.9.3".into()),
+            bundled: true,
+        };
+        let mut command = resolved.command_with_inherited_dream_mode(false);
+        command.stdout(std::process::Stdio::piped());
+        let mut child = spawn_owned(&mut command).expect("bwrap spawn");
+        let mut stdout = String::new();
+        io::Read::read_to_string(child.child.stdout.as_mut().unwrap(), &mut stdout).unwrap();
+        assert!(child.child.wait().unwrap().success());
+        let lines: Vec<&str> = stdout.lines().collect();
+        assert!(lines.contains(&"NEKO_DREAM_MODE=manual"), "{stdout}");
+        assert!(lines.contains(&"NEKO_AUTO_UPDATE=0"), "{stdout}");
     }
 
     #[cfg(target_os = "linux")]
