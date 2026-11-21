@@ -57,4 +57,13 @@ describe("desktop home actions", () => {
     fireEvent.click(screen.getByRole("button", { name: "Quét lại" }));
     expect(props.onRefreshDiscovery).toHaveBeenCalledOnce();
   });
+
+  it("does not advertise cached readiness after detection failed", () => {
+    useNekoAgentStore.setState({ error: "probe failed" });
+    render(<NekoOverview {...props} agents={[{ id: "neko", name: "Neko Core", found: true, availability: "available", version: "test", supportsProfiles: true }]} />);
+    expect(screen.getByText("Kiểm tra thất bại")).toBeTruthy();
+    expect(screen.queryByText("Neko Core · Sẵn sàng")).toBeNull();
+    fireEvent.click(screen.getByText("Agent & cấu hình"));
+    expect(screen.getByRole("alert").textContent).toContain("Chưa kiểm tra được agent");
+  });
 });

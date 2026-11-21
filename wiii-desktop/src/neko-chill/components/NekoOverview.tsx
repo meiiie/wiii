@@ -198,7 +198,7 @@ export function NekoOverview({
         />
 
         <details ref={harnessDetails} className="nk-agent-details mt-7 border-t border-[var(--nk-border)]" data-testid="overview-agent-details">
-          <summary className="flex cursor-pointer list-none items-center gap-2 py-4 text-[12px] text-[var(--nk-text-3)]"><Settings2 size={15} aria-hidden="true" /><span className="flex-1">Agent & cấu hình</span><span className="text-[11px]">{agentLoading ? "Đang kiểm tra…" : availableAgent ? `${availableAgent.name} · Sẵn sàng` : "Cần thiết lập"}</span><ChevronDown size={14} aria-hidden="true" className="nk-details-chevron" /></summary>
+          <summary className="flex cursor-pointer list-none items-center gap-2 py-4 text-[12px] text-[var(--nk-text-3)]"><Settings2 size={15} aria-hidden="true" /><span className="flex-1">Agent & cấu hình</span><span className="text-[11px]">{agentLoading ? "Đang kiểm tra…" : agentError ? "Kiểm tra thất bại" : availableAgent ? `${availableAgent.name} · Sẵn sàng` : "Cần thiết lập"}</span><ChevronDown size={14} aria-hidden="true" className="nk-details-chevron" /></summary>
           <section className="rounded-xl border border-[var(--nk-border)] bg-[var(--nk-composer)] p-2">
           <div className="flex flex-wrap items-end justify-between gap-3 px-3 pb-2 pt-1.5">
             <div>
