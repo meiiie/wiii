@@ -113,7 +113,7 @@ describe("Neko Chill shell UI", () => {
     render(<NekoChillApp />);
     await act(async () => fireEvent.click(screen.getByRole("button", { name: "Chat mới", exact: true })));
     expect(createQuickChatWorkspace).toHaveBeenCalledOnce();
-    expect(await screen.findByRole("heading", { name: "Bạn muốn trao đổi điều gì?" })).toBeTruthy();
+    expect(await screen.findByRole("heading", { name: "Bạn đang nghĩ gì?" })).toBeTruthy();
     expect(await screen.findByText("Thư mục riêng")).toBeTruthy();
     expect(create).not.toHaveBeenCalled();
     expect(useNekoProjectStore.getState().projects[0]?.roots[0]?.kind).toBe("scratch");
@@ -125,9 +125,9 @@ describe("Neko Chill shell UI", () => {
     render(<NekoChillApp />);
     await act(async () => fireEvent.click(screen.getByRole("button", { name: "Chat mới", exact: true })));
     expect(screen.getByRole("alert").textContent).toContain("Disk full");
-    expect(screen.queryByRole("heading", { name: "Bạn muốn trao đổi điều gì?" })).toBeNull();
+    expect(screen.queryByRole("heading", { name: "Bạn đang nghĩ gì?" })).toBeNull();
     await act(async () => fireEvent.click(screen.getByRole("button", { name: "Chat mới", exact: true })));
-    expect(await screen.findByRole("heading", { name: "Bạn muốn trao đổi điều gì?" })).toBeTruthy();
+    expect(await screen.findByRole("heading", { name: "Bạn đang nghĩ gì?" })).toBeTruthy();
   });
 
   it("does not steal newer navigation when quick-chat preparation finishes late", async () => {
@@ -138,7 +138,7 @@ describe("Neko Chill shell UI", () => {
     expect((screen.getByRole("button", { name: "Đang chuẩn bị chat…" }) as HTMLButtonElement).disabled).toBe(true);
     fireEvent.click(screen.getByRole("button", { name: "Tổng quan", exact: true }));
     await act(async () => finish({ path: "/qa/quick-chats/late", name: "Chat riêng", kind: "scratch" }));
-    expect(screen.queryByRole("heading", { name: "Bạn muốn trao đổi điều gì?" })).toBeNull();
+    expect(screen.queryByRole("heading", { name: "Bạn đang nghĩ gì?" })).toBeNull();
     expect(useNekoSessionStore.getState().activeSessionId).toBeNull();
   });
 

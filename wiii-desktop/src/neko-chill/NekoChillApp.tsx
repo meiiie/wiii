@@ -981,7 +981,7 @@ function NekoChillScreen({
       onNewSession={handleNewSession}
       onQuickChat={() => void startQuickChat()}
       quickChatPending={quickChatPending}
-      quickChatError={quickChatError}
+      quickChatError={!session && !projectHome && !coworkerHomeOpen ? null : quickChatError}
       onCreateProject={openProjectDialogFromSidebar}
       onSelectProject={selectProject}
       onEditProject={editProjectFromSidebar}
