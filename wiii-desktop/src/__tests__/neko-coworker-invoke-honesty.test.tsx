@@ -109,6 +109,8 @@ describe("Neko coworker browser computer-invoke honesty", () => {
     await waitFor(() => expect(mocks.doctorComputer).toHaveBeenCalledOnce());
     expect(mocks.refresh).toHaveBeenCalledOnce();
     expect(screen.queryByTestId("browser-computer-honesty")).toBeNull();
-    expect((screen.getByRole("button", { name: "Kiểm tra" }) as HTMLButtonElement).disabled).toBe(false);
+    await waitFor(() =>
+      expect((screen.getByRole("button", { name: "Kiểm tra" }) as HTMLButtonElement).disabled).toBe(false),
+    );
   });
 });

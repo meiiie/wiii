@@ -16,7 +16,7 @@ if str(SCRIPT_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPT_DIR))
 
 from safe_report_output import safe_write_report_text  # noqa: E402
-from validate_runtime_evidence_registry import (  # noqa: E402
+from runtime_evidence_registry import (  # noqa: E402
     DEFAULT_REGISTRY,
     REPO_ROOT,
     load_registry,

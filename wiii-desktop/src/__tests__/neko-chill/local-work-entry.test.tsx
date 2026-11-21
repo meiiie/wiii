@@ -103,7 +103,7 @@ describe("normal local Work entry preserves Workbench boundaries", () => {
     fireEvent.click(screen.getByRole("button", { name: "Mở bản thử nghiệm Công việc" }));
     await screen.findByTestId("work-home");
     expect(screen.getByTestId("wiii-ade-app")).toBeTruthy();
-    expect(fixture.hydrateWork).toHaveBeenCalledOnce();
+    await waitFor(() => expect(fixture.hydrateWork).toHaveBeenCalledOnce());
     expect(fixture.createTaskRun).not.toHaveBeenCalled();
     expect(fixture.disposeRuntimes).not.toHaveBeenCalled();
     expect(fixture.createSession).not.toHaveBeenCalled();
