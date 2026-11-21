@@ -137,14 +137,39 @@ describe("normal local Work entry preserves Workbench boundaries", () => {
     await screen.findByTestId("native-connect");
     expect(useUIStore.getState().wiiiConnectFocusProvider).toBe("gmail");
     fireEvent.click(screen.getByRole("button", { name: "Quay lại Neko" }));
+    await screen.findByTestId("local-neko");
+    expect(screen.queryByTestId("work-home")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Mở bản thử nghiệm Công việc" }));
     await screen.findByTestId("work-home");
-    expect(screen.getByTestId("wiii-ade-app")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: /Wiii Service/ }));
     await screen.findByTestId("native-service");
     fireEvent.click(screen.getByRole("button", { name: "Tài khoản & ứng dụng" }));
     await screen.findByTestId("native-connect");
     fireEvent.click(screen.getByRole("button", { name: "Quay lại Neko" }));
     await screen.findByTestId("work-home");
+  });
+
+  it.each(["Managed", "Connections"])("preserves the open Work transcript across a %s detour", async (button) => {
+    await nativeLocal();
+    fireEvent.click(screen.getByRole("button", { name: "Mở bản thử nghiệm Công việc" }));
+    await screen.findByTestId("work-home");
+    fireEvent.click(screen.getByTestId("open-neko"));
+    const transcript = await screen.findByTestId("local-neko");
+    fireEvent.click(screen.getByRole("button", { name: button }));
+    await screen.findByTestId(button === "Managed" ? "native-service" : "native-connect");
+    expect(screen.queryByRole("button", { name: "Mở bản thử nghiệm Công việc" })).toBeNull();
+    if (button === "Managed") {
+      fireEvent.click(screen.getByRole("button", { name: "Tài khoản & ứng dụng" }));
+      await screen.findByTestId("native-connect");
+    }
+    fireEvent.click(screen.getByRole("button", { name: "Quay lại Neko" }));
+    await waitFor(() => expect(screen.queryByTestId("native-connect")).toBeNull());
+    expect(screen.getByTestId("local-neko")).toBe(transcript);
+    expect(screen.queryByTestId("work-home")).toBeNull();
+    expect(fixture.hydrateWork).toHaveBeenCalledOnce();
+    expect(fixture.disposeRuntimes).not.toHaveBeenCalled();
+    expect(fixture.createSession).not.toHaveBeenCalled();
+    expect(fixture.spawnProvider).not.toHaveBeenCalled();
   });
 
   it.each(["Managed", "Connections"])("blocks %s while a native turn is streaming", async (button) => {
