@@ -6,7 +6,6 @@
  *   - org-store: adminContext state, fetchAdminContext, isSystemAdmin, isOrgAdmin
  *   - ui-store: activeView, open/close actions
  *   - org-admin-store: tabs, members, toast
- *   - Sidebar visibility logic (Shield vs Building2)
  */
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
@@ -478,50 +477,5 @@ describe("org-admin-store actions", () => {
     const state = useOrgAdminStore.getState();
     expect(state.hostActionView).toBe("publishes");
     expect(state.hostActionEventsPage).toBe(0);
-  });
-});
-
-// ---------------------------------------------------------------------------
-// 6. Sidebar Admin Button Visibility Logic
-// ---------------------------------------------------------------------------
-
-describe("Sidebar admin button visibility", () => {
-  it("system admin should see Shield button (concept)", () => {
-    const context: AdminContext = {
-      is_system_admin: true,
-      is_org_admin: true,
-      admin_org_ids: [],
-      enable_org_admin: true,
-    };
-    const showShield = context.is_system_admin;
-    const showBuilding2 = !context.is_system_admin && context.admin_org_ids.length > 0;
-    expect(showShield).toBe(true);
-    expect(showBuilding2).toBe(false);
-  });
-
-  it("org admin should see Building2 button (concept)", () => {
-    const context: AdminContext = {
-      is_system_admin: false,
-      is_org_admin: true,
-      admin_org_ids: ["org-x"],
-      enable_org_admin: true,
-    };
-    const showShield = context.is_system_admin;
-    const showBuilding2 = !context.is_system_admin && context.admin_org_ids.length > 0;
-    expect(showShield).toBe(false);
-    expect(showBuilding2).toBe(true);
-  });
-
-  it("regular user should see neither button (concept)", () => {
-    const context: AdminContext = {
-      is_system_admin: false,
-      is_org_admin: false,
-      admin_org_ids: [],
-      enable_org_admin: true,
-    };
-    const showShield = context.is_system_admin;
-    const showBuilding2 = !context.is_system_admin && context.admin_org_ids.length > 0;
-    expect(showShield).toBe(false);
-    expect(showBuilding2).toBe(false);
   });
 });

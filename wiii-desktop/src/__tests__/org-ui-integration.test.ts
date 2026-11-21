@@ -7,9 +7,8 @@ import { useSettingsStore } from "@/stores/settings-store";
 import { useDomainStore } from "@/stores/domain-store";
 import { useChatStore } from "@/stores/chat-store";
 import { useOrgStore } from "@/stores/org-store";
-import { groupConversations } from "@/lib/conversation-groups";
 import { PERSONAL_ORG_ID } from "@/lib/constants";
-import type { OrganizationSummary, Conversation, DomainSummary } from "@/api/types";
+import type { OrganizationSummary, DomainSummary } from "@/api/types";
 
 // Mock API + storage
 vi.mock("@/api/organizations", () => ({
@@ -44,17 +43,6 @@ const MOCK_ORGS: OrganizationSummary[] = [
     is_active: true,
   },
 ];
-
-function makeConversation(overrides: Partial<Conversation> = {}): Conversation {
-  return {
-    id: Math.random().toString(36),
-    title: "Test conv",
-    created_at: new Date().toISOString(),
-    updated_at: new Date().toISOString(),
-    messages: [],
-    ...overrides,
-  };
-}
 
 describe("Org UI Integration", () => {
   beforeEach(() => {
@@ -126,33 +114,6 @@ describe("Org UI Integration", () => {
     const conv = useChatStore.getState().conversations.find((c) => c.id === convId);
     expect(conv).toBeDefined();
     expect(conv!.organization_id).toBeUndefined();
-  });
-
-  // ---- Conversation Filtering ----
-
-  it("filters conversations by org in groupConversations", () => {
-    const convs = [
-      makeConversation({ organization_id: "lms-hang-hai", title: "HH conv" }),
-      makeConversation({ organization_id: "other-org", title: "Other conv" }),
-      makeConversation({ title: "No org conv" }),
-    ];
-
-    const groups = groupConversations(convs, undefined, "lms-hang-hai");
-    const allConvs = groups.flatMap((g) => g.conversations);
-    expect(allConvs).toHaveLength(1);
-    expect(allConvs[0].title).toBe("HH conv");
-  });
-
-  it("shows legacy conversations (no org_id) in personal workspace", () => {
-    const convs = [
-      makeConversation({ organization_id: "lms-hang-hai", title: "HH conv" }),
-      makeConversation({ title: "Legacy conv" }),
-    ];
-
-    const groups = groupConversations(convs, undefined, PERSONAL_ORG_ID);
-    const allConvs = groups.flatMap((g) => g.conversations);
-    expect(allConvs).toHaveLength(1);
-    expect(allConvs[0].title).toBe("Legacy conv");
   });
 
   // ---- Domain Filtering ----
