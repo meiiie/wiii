@@ -62,7 +62,7 @@ jobs:
           }
 
           {
-            echo "backend=$(match '^maritime-ai-service/')"
+            echo "backend=$(match '^maritime-ai-service/|^\.github/workflows/merge-gate\.yml$')"
             echo "desktop=$(match '^wiii-desktop/|^tools/release/prepare_neko_bundle\.py$|^\.github/workflows/merge-gate\.yml$')"
             echo "docker=$(match '(^|/)(Dockerfile|Dockerfile\..*)$|^maritime-ai-service/(Dockerfile|nginx/|docker-compose|compose)|^\.dockerignore$')"
             echo "github=$(match '^\.github/|^\.coderabbit\.yaml$')"
@@ -247,7 +247,7 @@ jobs:
           RUBY
 
   backend-unit-gate:
-    name: Backend Unit Gate
+    name: Desktop Service Gate
     runs-on: ubuntu-latest
     needs: detect-changes
     if: needs.detect-changes.outputs.backend == 'true'
@@ -294,9 +294,9 @@ jobs:
         working-directory: maritime-ai-service
         run: ruff check app/ --output-format=github
 
-      - name: Run backend unit tests
+      - name: Test Wiii Service and Kết nối
         working-directory: maritime-ai-service
-        run: pytest tests/unit/ -x -p no:capture --tb=short -q
+        run: bash scripts/test-desktop-service.sh
 
   desktop-gate:
     name: Desktop Gate
@@ -319,7 +319,7 @@ jobs:
 
       - name: Run desktop tests
         working-directory: wiii-desktop
-        run: npx vitest run
+        run: npm run test:desktop
 
       - name: Type check desktop
         working-directory: wiii-desktop
@@ -484,12 +484,9 @@ jobs:
           cache: 'npm'
           cache-dependency-path: wiii-desktop/package-lock.json
 
-      # Cargo 1.100 moved build-script OUT_DIR to target/<profile>/build/<pkg>/<hash>/out, so
-      # tauri-build 2.6 copies bundle resources one level too deep and the dev binary cannot
-      # find the bundled Neko. Pin the last toolchain with the old layout until tauri-build follows.
-      - name: Select Rust 1.99.1
+      - name: Select stable Rust
         shell: bash
-        run: rustup default 1.99.1
+        run: rustup default stable
 
       - name: Restore Cargo cache
         uses: actions/cache@v5

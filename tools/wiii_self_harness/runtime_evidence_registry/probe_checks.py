@@ -222,6 +222,7 @@ class ProbeChecks(ValidationChecks):
         self,
         workflow_text: str,
         *,
+        manual_only: bool,
         probe_path: Path | None,
         context: str,
     ) -> None:
@@ -232,7 +233,7 @@ class ProbeChecks(ValidationChecks):
         if helper_paths is None:
             return
         helper_path, helper_test_path = helper_paths
-        for event_name in ("pull_request", "push"):
+        for event_name in (() if manual_only else ("pull_request", "push")):
             paths = _workflow_event_paths(workflow_text, event_name)
             for required_path in (helper_path, helper_test_path):
                 if required_path in paths:

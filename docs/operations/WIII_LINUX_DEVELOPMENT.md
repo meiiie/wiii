@@ -7,7 +7,7 @@ The governed release baseline remains Ubuntu 22.04 x64. See
 ## Prerequisites (Debian/Ubuntu)
 
 Use a normal graphical desktop session, Node.js 22.12+ (Node 22 in release CI),
-Rust stable >= 1.89, and the [Tauri Linux prerequisites](https://v2.tauri.app/start/prerequisites/#linux).
+Rust stable >= 1.90, and the [Tauri Linux prerequisites](https://v2.tauri.app/start/prerequisites/#linux).
 Install only from your distribution's supported repositories:
 
 ```sh

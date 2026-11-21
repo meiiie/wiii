@@ -88,18 +88,23 @@ gate before requesting review.
 python tools/wiii_self_harness/run_wiii_self_harness.py --profile pr
 python tools/release/wiii_release.py check
 
-# Backend
+# Desktop-facing backend (Wiii Service and Kết nối)
 cd maritime-ai-service
-pytest tests/unit/ -p no:capture --tb=short -q
+bash scripts/test-desktop-service.sh
 ruff check app/ --select=E9,F63,F7
 
 # Desktop
 cd ../wiii-desktop
-npm test -- --run
+npm run test:desktop
 npx tsc --noEmit
 npm run build:embed
 cargo check --manifest-path src-tauri/Cargo.toml
 ```
+
+Legacy managed-chat and LMS embed tests are opt-in: run
+`pytest tests/unit/` from the backend or `npm test -- --run` from the desktop
+package to include them. The legacy replay and LMS evidence workflows run only
+on manual dispatch. CI still builds the embed and runs repository and security checks.
 
 Add focused security/adversarial tests for auth, tenancy, memory, external
 actions, migrations, and filesystem behavior. UI changes require a screenshot
