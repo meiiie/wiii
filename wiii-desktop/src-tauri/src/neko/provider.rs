@@ -848,14 +848,19 @@ impl ResolvedProvider {
     /// A bundled runtime follows Wiii's release lifecycle. This overrides only
     /// the child environment; the user's standalone Neko settings stay intact.
     pub(crate) fn command(&self) -> Command {
-        self.command_with_inherited_dream_mode(
-            std::env::var_os("NEKO_DREAM_MODE").is_some_and(|value| !value.is_empty()),
-        )
+        let env_set = std::env::var_os("NEKO_DREAM_MODE").is_some_and(|value| !value.is_empty());
+        let config_set = || {
+            std::env::var_os("USERPROFILE")
+                .filter(|value| !value.is_empty())
+                .or_else(|| std::env::var_os("HOME"))
+                .is_some_and(|home| neko_config_sets_dream_mode(Path::new(&home)))
+        };
+        self.command_with_inherited_dream_mode(env_set || config_set())
     }
 
     /// Automatic Dream adds a background model request per turn, so the bundled
     /// runtime uses `manual` (saved notes still load; no automatic requests)
-    /// unless the user opts in with `NEKO_DREAM_MODE`.
+    /// unless the user chose a mode via `NEKO_DREAM_MODE` or Neko's global config.
     fn command_with_inherited_dream_mode(&self, user_set_dream_mode: bool) -> Command {
         let mut command = Command::new(&self.program);
         if self.bundled {
@@ -866,6 +871,16 @@ impl ResolvedProvider {
         }
         command
     }
+}
+
+/// Whether the user's global Neko config files (the ones Neko reads from its
+/// home) set `dream_mode`; the env default must not override that choice.
+fn neko_config_sets_dream_mode(home: &Path) -> bool {
+    [home.join(".neko-core").join("config.json"), home.join("neko.json")]
+        .iter()
+        .filter_map(|path| std::fs::read(path).ok())
+        .filter_map(|bytes| serde_json::from_slice::<serde_json::Value>(&bytes).ok())
+        .any(|config| config.get("dream_mode").is_some_and(|mode| !mode.is_null()))
 }
 
 /// Reject executable-name collisions such as the unrelated Linux `neko`
@@ -1694,6 +1709,22 @@ mod tests {
         };
         super::linux_containment::force_unavailable_for_test(false);
         assert_eq!(error.kind(), io::ErrorKind::Unsupported);
+    }
+
+    #[test]
+    fn neko_global_config_dream_mode_counts_as_user_choice() {
+        let home = std::env::temp_dir().join(format!("wiii-neko-dream-config-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&home);
+        std::fs::create_dir_all(home.join(".neko-core")).unwrap();
+        assert!(!neko_config_sets_dream_mode(&home));
+        std::fs::write(home.join(".neko-core").join("config.json"), r#"{"model":"m"}"#).unwrap();
+        assert!(!neko_config_sets_dream_mode(&home));
+        std::fs::write(home.join("neko.json"), r#"{"dream_mode":"off"}"#).unwrap();
+        assert!(neko_config_sets_dream_mode(&home));
+        std::fs::remove_file(home.join("neko.json")).unwrap();
+        std::fs::write(home.join(".neko-core").join("config.json"), r#"{"dream_mode":"auto"}"#).unwrap();
+        assert!(neko_config_sets_dream_mode(&home));
+        let _ = std::fs::remove_dir_all(&home);
     }
 
     #[cfg(target_os = "linux")]
