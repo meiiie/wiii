@@ -158,38 +158,75 @@ pub(crate) fn attach_bwrap_supervisor(command: &mut Command) -> io::Result<()> {
         })
         .collect::<Result<Vec<_>, _>>()?;
 
-    let envp_c = child_environment(command)?;
+    let image = ExecImage::new(argv_c, child_environment(command)?);
 
-    // Capture owned CStrings only (Send+Sync). Rebuild the pointer vector inside
-    // pre_exec so the closure does not store raw pointers across the fork boundary
-    // type-check. execve replaces the image on success. std applies
-    // `Command::env` only after pre_exec, so the environment is passed explicitly.
-    // SAFETY: pre_exec runs between fork and exec in the child. We only rebuild
-    // argv/envp pointers from owned CStrings and call execve; no parent invariants
-    // are touched. Allocation here is the pragmatic tradeoff required for a
-    // Send+Sync closure in a multithreaded Wiii process.
+    // std applies `Command::env` only after pre_exec, so the environment is
+    // passed explicitly. Everything is built before fork; the child only calls
+    // execve and reads errno, both async-signal-safe.
+    // SAFETY: pre_exec runs between fork and exec in the child. The closure only
+    // reads pointers into `image`'s owned, null-terminated buffers.
     unsafe {
-        command.pre_exec(move || {
-            let mut argv_ptrs: Vec<*const libc::c_char> =
-                argv_c.iter().map(|c| c.as_ptr()).collect();
-            argv_ptrs.push(std::ptr::null());
-            let mut envp_ptrs: Vec<*const libc::c_char> =
-                envp_c.iter().map(|c| c.as_ptr()).collect();
-            envp_ptrs.push(std::ptr::null());
-            libc::execve(argv_ptrs[0], argv_ptrs.as_ptr(), envp_ptrs.as_ptr());
-            Err(io::Error::last_os_error())
-        });
+        command.pre_exec(move || Err(image.exec()));
     }
     Ok(())
 }
 
+/// argv/envp for execve, built before fork: null-terminated pointer arrays into
+/// the owned strings, whose heap buffers stay put when the struct moves.
+struct ExecImage {
+    _strings: (Vec<CString>, Vec<CString>),
+    argv: Vec<*const libc::c_char>,
+    envp: Vec<*const libc::c_char>,
+}
+
+// SAFETY: the pointers only reference `_strings`, which the struct owns and
+// never mutates.
+unsafe impl Send for ExecImage {}
+unsafe impl Sync for ExecImage {}
+
+impl ExecImage {
+    fn new(argv: Vec<CString>, envp: Vec<CString>) -> Self {
+        fn pointers(strings: &[CString]) -> Vec<*const libc::c_char> {
+            strings
+                .iter()
+                .map(|s| s.as_ptr())
+                .chain(std::iter::once(std::ptr::null()))
+                .collect()
+        }
+        Self {
+            argv: pointers(&argv),
+            envp: pointers(&envp),
+            _strings: (argv, envp),
+        }
+    }
+
+    /// Returns only if execve fails.
+    fn exec(&self) -> io::Error {
+        // SAFETY: both arrays are null-terminated and point into `_strings`.
+        unsafe { libc::execve(self.argv[0], self.argv.as_ptr(), self.envp.as_ptr()) };
+        io::Error::last_os_error()
+    }
+}
+
+/// `Command` has no getter for `env_clear()`; its alternate Debug output is the
+/// only place std exposes it (as a `clear: true,` line inside `CommandEnv`).
+fn env_cleared(command: &Command) -> bool {
+    format!("{command:#?}")
+        .lines()
+        .any(|line| line.trim() == "clear: true,")
+}
+
 /// The environment `command` would give its child: the inherited environment
-/// with the command's own overrides and removals applied.
+/// (none after `env_clear()`) with the command's own overrides and removals.
 fn child_environment(command: &Command) -> io::Result<Vec<CString>> {
     use std::collections::BTreeMap;
     use std::os::unix::ffi::OsStrExt;
 
-    let mut env: BTreeMap<OsString, OsString> = std::env::vars_os().collect();
+    let mut env: BTreeMap<OsString, OsString> = if env_cleared(command) {
+        BTreeMap::new()
+    } else {
+        std::env::vars_os().collect()
+    };
     for (key, value) in command.get_envs() {
         match value {
             Some(value) => env.insert(key.to_os_string(), value.to_os_string()),
@@ -241,6 +278,41 @@ mod tests {
         let env = child_environment(&command).unwrap();
         assert!(env.iter().any(|e| e.as_bytes() == b"WIII_CONTAINMENT_ENV_TEST=set"));
         assert!(!env.iter().any(|e| e.as_bytes().starts_with(b"PATH=")));
+    }
+
+    #[test]
+    fn child_environment_honors_env_clear() {
+        let mut command = Command::new("true");
+        command.env_clear().env("WIII_CONTAINMENT_ENV_TEST", "only");
+        assert!(env_cleared(&command));
+        let env = child_environment(&command).unwrap();
+        assert_eq!(
+            env,
+            vec![CString::new("WIII_CONTAINMENT_ENV_TEST=only").unwrap()]
+        );
+
+        let mut inherited = Command::new("true");
+        inherited.env("WIII_CONTAINMENT_ENV_TEST", "clear: true,");
+        assert!(!env_cleared(&inherited));
+    }
+
+    #[test]
+    fn exec_image_is_prebuilt_and_null_terminated() {
+        let argv = vec![
+            CString::new("/bin/bwrap").unwrap(),
+            CString::new("--").unwrap(),
+        ];
+        let envp = vec![CString::new("K=V").unwrap()];
+        let image = ExecImage::new(argv, envp);
+        let moved = image;
+        assert_eq!(moved.argv.len(), 3);
+        assert!(moved.argv[2].is_null());
+        assert_eq!(moved.envp.len(), 2);
+        assert!(moved.envp[1].is_null());
+        let first = unsafe { std::ffi::CStr::from_ptr(moved.argv[0]) };
+        assert_eq!(first.to_bytes(), b"/bin/bwrap");
+        let env = unsafe { std::ffi::CStr::from_ptr(moved.envp[0]) };
+        assert_eq!(env.to_bytes(), b"K=V");
     }
 
     #[test]
