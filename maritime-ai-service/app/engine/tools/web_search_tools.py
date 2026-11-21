@@ -84,7 +84,7 @@ _VI_EN_STOPWORDS = frozenset({
     "hay", "hoặc", "nhưng", "này", "kia", "đó", "ai", "gì", "sao", "nào",
     "mới", "cũ", "lại", "đã", "chỉ", "cũng", "thêm", "nữa", "ra", "vào",
     "về", "trên", "dưới", "trước", "sau", "giữa", "bên", "lúc", "khi",
-    "tại", "bởi", "do", "nên", "vì", "nếu", "thì",
+    "tại", "bởi", "do", "nên", "vì", "nếu",
     # English
     "the", "a", "an", "is", "are", "was", "were", "be", "been", "being",
     "what", "when", "where", "who", "how", "why", "i", "you", "we", "they",
@@ -961,9 +961,9 @@ _ENTITY_STOPWORDS: frozenset[str] = frozenset({
     "nifty", "sensex", "gift", "dow", "nasdaq", "ftse", "dax", "nikkei",
     "sgx", "kospi", "hsi", "asx", "ibex",
     # Common qualifiers
-    "high", "low", "level", "amid", "ahead", "after", "near", "over",
+    "high", "low", "level", "amid", "ahead", "near", "over",
     "rises", "falls", "drops", "jumps", "soars", "plunges", "tumbles",
-    "rises", "rallies", "extends",
+    "rallies", "extends",
     # News outlet names — they're SOURCES, not events
     "cnbc", "bloomberg", "wsj", "bbc", "ft", "ap", "afp", "vnexpress",
     "tuoitre", "thanhnien", "vov", "vietnamnet",
