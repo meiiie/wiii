@@ -1,5 +1,6 @@
 // Adapted from Neko Core, Copyright (c) 2026 Meiiie and Neko Core contributors.
 // SPDX-License-Identifier: AGPL-3.0-only
+// License text: LICENSES/AGPL-3.0-only.txt (repository root).
 // Neko Bubble v6 source and attribution: docs/research/neko-completion-sound.md.
 
 export function buildNekoCompletionWav(): Uint8Array {

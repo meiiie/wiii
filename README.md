@@ -8,7 +8,7 @@
   <a href="https://github.com/meiiie/wiii/releases">Downloads</a> ·
   <a href="docs/releases/WIII_WINDOWS_QUICK_START.md">Windows guide</a> ·
   <a href="https://github.com/meiiie/wiii/issues">Feedback</a> ·
-  <a href="LICENSE">AGPL-3.0-only</a>
+  <a href="LICENSE">MIT</a>
 </p>
 
 Wiii is a local-first desktop workspace for working with Neko, your AI
@@ -19,12 +19,12 @@ Built by **The Wiii Lab**. Vietnamese is the primary interface language.
 
 <p>
   <a href="https://github.com/meiiie/wiii/actions/workflows/test-desktop.yml"><img src="https://github.com/meiiie/wiii/actions/workflows/test-desktop.yml/badge.svg" alt="Desktop tests" /></a>
-  <a href="LICENSE"><img src="https://img.shields.io/github/license/meiiie/wiii" alt="AGPL-3.0-only license" /></a>
+  <a href="LICENSE"><img src="https://img.shields.io/github/license/meiiie/wiii" alt="MIT license" /></a>
 </p>
 
 ## Start with a project
 
-1. Install Wiii and [Neko Core](https://neko.holilihu.online/).
+1. Install Wiii (the release installer bundles Neko Core).
 2. Open Wiii, choose a project folder and configure your model through Neko Core.
 3. Start a conversation. Open **Công cụ** to inspect files, changes and available
    tools alongside the conversation.
@@ -35,9 +35,10 @@ and separate from local desktop work.
 
 ## Downloads and support
 
-**1.2.0 is being prepared and is not published yet.** The Windows candidate
-has been built, but installed-desktop acceptance and the stable publication
-gates are still pending. The filename below describes the planned release,
+**1.3.0 is in release preparation.** Installed-desktop acceptance and the
+stable publication gates remain incomplete in the
+[release checklist](docs/releases/WIII_1_3_0_ACCEPTANCE.md).
+The filename below describes the planned release,
 not an installer currently available from GitHub Releases.
 
 Official stable installers are published only on
@@ -45,18 +46,18 @@ Official stable installers are published only on
 contains an installer, its SHA-256 sidecar and a release manifest; a source
 version or a CI build alone is not a published release.
 
-The **1.2.0 release scope is Windows x64**. Linux and macOS local harness
+The **1.3.0 release scope is Windows x64**. Linux and macOS local harness
 execution are not supported by this release.
 
 | Component | What to expect |
 | --- | --- |
 | Wiii | Per-user Windows installer |
-| Neko Core | Default harness; install and configure separately for this release |
+| Neko Core | Default harness; bundled version 1.7.0, configure your provider separately |
 | Computer | Optional Linux desktop through Docker Desktop; not required for normal local conversations |
-| Updates | Install a newer Wiii version manually; Neko Core has its own update mechanism |
+| Updates | Install a newer Wiii version manually; the bundled Neko runtime follows Wiii releases |
 | Publisher signature | This Windows release is explicitly **unsigned** |
 
-The installer name is `Wiii-1.2.0-windows-x64-unsigned-setup.exe`.
+The installer name is `Wiii-1.3.0-windows-x64-unsigned-setup.exe`.
 Unsigned software may be blocked by Windows or an organization's policy.
 Checksums verify downloaded bytes, **not** publisher identity or safety.
 Do not disable Windows protection globally.
@@ -64,6 +65,10 @@ Do not disable Windows protection globally.
 Read the [Windows installation and recovery guide](docs/releases/WIII_WINDOWS_QUICK_START.md)
 before installing. Candidate builds include `candidate` and a source commit
 in their filenames; they are evaluation builds, not stable releases.
+
+Bundled Neko Core 1.7.0 does not support the opt-in task-v1 protocol.
+Work flows requiring task-v1 are unsupported with this bundled runtime;
+see the [known limitation and acceptance gates](docs/releases/WIII_1_3_0_ACCEPTANCE.md).
 
 ## A calm workspace with visible control
 
@@ -158,8 +163,8 @@ runtime or permission boundaries. Small, reproducible fixes are welcome.
 
 ## License
 
-Wiii's core product is **AGPL-3.0-only**, with a separate commercial license
-available. Independently implemented code under `sdk/` is **Apache-2.0**.
+Wiii's core product is **MIT** licensed. No separate commercial license is
+required. Independently implemented code under `sdk/` is **Apache-2.0**.
 The code licenses do not grant rights to the Wiii name or branding.
 
 See [LICENSING.md](LICENSING.md), [COMMERCIAL-LICENSE.md](COMMERCIAL-LICENSE.md)

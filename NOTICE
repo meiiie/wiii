@@ -5,9 +5,14 @@ The original project material is licensed as described in LICENSING.md.
 Third-party, research-reference, generated, and vendored material retains its
 own copyright and license notices.
 
-Versions validly published before the 2026-08-15 licensing transition were
-available under the MIT License. Those earlier grants remain valid; the
-historical text is retained in LICENSES/MIT.txt.
+Original Wiii project material outside the Apache-2.0 SDK boundary is
+available under the MIT License. The text is retained in LICENSE and
+LICENSES/MIT.txt. Earlier valid license grants remain valid.
+
+wiii-desktop/src/neko-chill/completion-sound.ts is adapted from Neko Core,
+Copyright (c) 2026 Meiiie and Neko Core contributors, under AGPL-3.0-only.
+Its license text is included in LICENSES/AGPL-3.0-only.txt. Neko Core material
+retains its own license; the MIT grant does not replace it.
 
 "Wiii", its logo, and official branding are marks claimed by Meiiie,
 operating the project under The Wiii Lab brand. See TRADEMARKS.md.
