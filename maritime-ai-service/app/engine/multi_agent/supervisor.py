@@ -813,8 +813,6 @@ class SupervisorAgent:
         Returns:
             Updated state with routing decision, skill context, and routing metadata
         """
-        event_queue = _get_supervisor_stream_queue(state)
-
         # Skill Activation: match query against domain skills (progressive disclosure)
         domain_id = state.get("domain_id", "")
         query = state.get("query", "")

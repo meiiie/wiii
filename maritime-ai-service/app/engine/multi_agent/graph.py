@@ -98,11 +98,9 @@ from app.engine.multi_agent.graph_runtime_bindings import (
     _should_enable_real_code_streaming,
     _supports_native_answer_streaming,
     _flatten_langchain_content,
-    _langchain_message_to_openai_payload,
     _create_openai_compatible_stream_client,
     _resolve_openai_stream_model_name,
     _extract_openai_delta_text,
-    _stream_openai_compatible_answer_with_route,
     _get_effective_provider,
     _get_explicit_user_provider,
     _render_reasoning,
@@ -157,11 +155,7 @@ from app.engine.multi_agent.graph_runtime_bindings import (
     _infer_artifact_fast_path_title,
     _build_code_studio_terminal_failure_response,
     _infer_code_studio_reasoning_cue,
-    _collect_direct_tools,
-    _collect_code_studio_tools,
     _needs_browser_snapshot,
-    _direct_required_tool_names,
-    _code_studio_required_tool_names,
     _build_visual_tool_runtime_metadata,
     _tool_name,
     _resolve_tool_choice,
@@ -205,9 +199,7 @@ from app.engine.multi_agent.graph_runtime_bindings import (
     _build_direct_synthesis_summary,
     _build_code_studio_reasoning_summary,
     _build_code_studio_tool_reflection,
-    _execute_code_studio_tool_rounds,
     _execute_code_studio_fast_path,
-    _get_phase_fallback,
 )
 
 

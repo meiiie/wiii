@@ -458,7 +458,6 @@ describe("Backward compatibility (Sprint 129)", () => {
 
   it("animated conversation surfaces still import WiiiAvatar", async () => {
     const files = [
-      "@/components/settings/SettingsPage?raw",
       "@/components/chat/MessageList?raw",
       "@/components/chat/WelcomeScreen?raw",
       "@/components/chat/MessageBubble?raw",

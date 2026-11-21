@@ -172,20 +172,20 @@ def _build_matrix_html(spec: dict, title: str) -> str:
     color = spec.get("color", "#ef4444")
     show_values = spec.get("show_values", False)
 
-    css = f"""
-.matrix-container {{ display: flex; align-items: center; gap: 8px; justify-content: center; }}
-.matrix-row-label {{ writing-mode: vertical-rl; transform: rotate(180deg); font-size: 13px; font-weight: 600; color: var(--text2); }}
-.matrix-col-label {{ text-align: center; font-size: 13px; font-weight: 600; color: var(--text2); margin-bottom: 4px; }}
-.matrix-grid {{ display: inline-block; }}
-.matrix-grid table {{ border-collapse: separate; border-spacing: 3px; }}
-.matrix-grid th {{ font-size: 11px; font-weight: 600; color: var(--text2); padding: 4px 8px; text-align: center; }}
-.matrix-grid td {{
+    css = """
+.matrix-container { display: flex; align-items: center; gap: 8px; justify-content: center; }
+.matrix-row-label { writing-mode: vertical-rl; transform: rotate(180deg); font-size: 13px; font-weight: 600; color: var(--text2); }
+.matrix-col-label { text-align: center; font-size: 13px; font-weight: 600; color: var(--text2); margin-bottom: 4px; }
+.matrix-grid { display: inline-block; }
+.matrix-grid table { border-collapse: separate; border-spacing: 3px; }
+.matrix-grid th { font-size: 11px; font-weight: 600; color: var(--text2); padding: 4px 8px; text-align: center; }
+.matrix-grid td {
   width: 40px; height: 36px; border-radius: 6px; text-align: center;
   font-size: 11px; font-weight: 500; transition: transform 0.15s;
   cursor: default;
-}}
-.matrix-grid td:hover {{ transform: scale(1.15); z-index: 1; }}
-.matrix-caption {{ text-align: center; font-size: 12px; color: var(--text3); margin-top: 8px; }}
+}
+.matrix-grid td:hover { transform: scale(1.15); z-index: 1; }
+.matrix-caption { text-align: center; font-size: 12px; color: var(--text3); margin-top: 8px; }
 """
 
     col_header = "".join(f"<th>{_esc(c)}</th>" for c in cols)
