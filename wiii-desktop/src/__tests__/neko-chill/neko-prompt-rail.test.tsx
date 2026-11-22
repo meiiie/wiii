@@ -1,5 +1,5 @@
 import { act, fireEvent, render, screen } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { NekoTranscript } from "@/neko-chill/components/NekoTranscript";
 import {
   activePromptIdAtScroll,
@@ -7,6 +7,21 @@ import {
   NekoPromptRail,
 } from "@/neko-chill/components/NekoPromptRail";
 import type { NekoSession } from "@/neko-chill/stores/neko-session-store";
+
+const virtual = vi.hoisted(() => ({
+  rows: [] as Array<{ index: number; start: number }>,
+  scrollToIndex: vi.fn(),
+  getTotalSize: () => 10000,
+  getVirtualItems: () => virtual.rows,
+  getOffsetForIndex: (index: number) => [index * 180],
+  measureElement: vi.fn(),
+}));
+vi.mock("@tanstack/react-virtual", () => ({ useVirtualizer: () => virtual }));
+
+beforeEach(() => {
+  virtual.rows = [];
+  virtual.scrollToIndex.mockClear();
+});
 
 function makeSession(): NekoSession {
   return {
@@ -76,7 +91,7 @@ describe("Neko question navigation", () => {
     return { ...render(<div style={{ height: 400 }}><NekoTranscript {...props} /></div>), props, scrollIntoView };
   }
 
-  it("shows a named index on demand, then closes it and focuses the exact destination viewport", () => {
+  it("closes the index and anchors keyboard navigation at the selected message, not the transcript start", () => {
     const { scrollIntoView, props } = mount();
     const trigger = screen.getByRole("button", { name: "Câu hỏi 2" });
     expect(trigger.getAttribute("aria-expanded")).toBe("false");
@@ -88,7 +103,9 @@ describe("Neko question navigation", () => {
     expect(scrollIntoView.mock.contexts.at(-1)).toBe(document.querySelector('[data-neko-message-index="2"]'));
     expect(trigger.getAttribute("aria-expanded")).toBe("false");
     expect(screen.queryByRole("tooltip")).toBeNull();
-    expect(document.activeElement).toBe(screen.getByTestId("neko-transcript"));
+    const anchor = document.querySelector<HTMLDivElement>('[data-neko-message-index="2"]');
+    expect(document.activeElement).toBe(anchor);
+    expect(anchor?.tabIndex).toBe(-1);
     expect(props.onResolvePermission).not.toHaveBeenCalled();
     expect(props.onInsertPrompt).not.toHaveBeenCalled();
   });
@@ -140,7 +157,7 @@ describe("Neko question navigation", () => {
     const next = makeSession();
     next.id = "different-session";
     next.messages = next.messages.map(message => ({ ...message, id: "next-" + message.id }));
-    view.rerender(<NekoTranscript {...view.props} session={next} />);
+    view.rerender(<div style={{ height: 400 }}><NekoTranscript {...view.props} session={next} /></div>);
     expect(screen.getByRole("button", { name: "Câu hỏi 2" }).getAttribute("aria-expanded")).toBe("false");
     expect(view.scrollIntoView).not.toHaveBeenCalled();
   });
@@ -148,5 +165,41 @@ describe("Neko question navigation", () => {
   it("does not add navigation chrome for a one-turn chat", () => {
     mount({ ...makeSession(), messages: makeSession().messages.slice(0, 2) });
     expect(screen.queryByRole("navigation", { name: "Điều hướng các lời nhắn của bạn" })).toBeNull();
+  });
+
+  it("focuses an offscreen virtual destination when it mounts", () => {
+    const session = makeSession();
+    session.messages = Array.from({ length: 60 }, (_, index) => ({
+      id: `long-${index}`, role: "user", text: `Câu hỏi dài ${index + 1}`,
+    }));
+    virtual.rows = [{ index: 0, start: 0 }];
+    const view = mount(session);
+    fireEvent.click(screen.getByRole("button", { name: "Câu hỏi 60" }));
+    fireEvent.click(screen.getByRole("button", { name: "Đi tới lời nhắn 58: Câu hỏi dài 58" }));
+    expect(virtual.scrollToIndex).toHaveBeenCalledWith(57, { align: "start", behavior: "smooth" });
+    expect(document.querySelector('[data-neko-message-index="57"]')).toBeNull();
+
+    virtual.rows = [{ index: 57, start: 10260 }];
+    view.rerender(<div style={{ height: 400 }}><NekoTranscript {...view.props} /></div>);
+    expect(document.activeElement).toBe(document.querySelector('[data-neko-message-index="57"]'));
+    expect(view.scrollIntoView).not.toHaveBeenCalled();
+  });
+
+  it("does not carry a pending virtual focus into another conversation", () => {
+    const session = makeSession();
+    session.messages = Array.from({ length: 60 }, (_, index) => ({
+      id: `shared-${index}`, role: "user", text: `Câu hỏi dài ${index + 1}`,
+    }));
+    virtual.rows = [{ index: 0, start: 0 }];
+    const view = mount(session);
+    fireEvent.click(screen.getByRole("button", { name: "Câu hỏi 60" }));
+    fireEvent.click(screen.getByRole("button", { name: "Đi tới lời nhắn 58: Câu hỏi dài 58" }));
+    const outside = document.createElement("button");
+    document.body.append(outside);
+    act(() => outside.focus());
+    virtual.rows = [{ index: 57, start: 10260 }];
+    view.rerender(<div style={{ height: 400 }}><NekoTranscript {...view.props} session={{ ...session, id: "other-conversation" }} /></div>);
+    expect(document.activeElement).toBe(outside);
+    outside.remove();
   });
 });

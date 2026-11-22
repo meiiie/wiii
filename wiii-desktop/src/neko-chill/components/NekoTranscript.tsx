@@ -275,17 +275,21 @@ const MessageRow = memo(function MessageRow({
   message,
   messageIndex,
   streaming = false,
+  onReady,
 }: {
   message: NekoSession["messages"][number];
   messageIndex: number;
   streaming?: boolean;
+  onReady?: (node: HTMLDivElement | null) => void;
 }) {
   const blocks = message.blocks ?? [];
   const lastBlock = blocks[blocks.length - 1];
   const groups = groupTranscriptBlocks(blocks);
   return message.role === "user" ? (
     <div
-      className="my-3 flex scroll-mt-6 justify-end"
+      ref={onReady}
+      tabIndex={-1}
+      className="my-3 flex scroll-mt-6 justify-end rounded-2xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--nk-focus-soft)]"
       data-neko-message-id={message.id}
       data-neko-message-index={messageIndex}
     >
@@ -378,6 +382,7 @@ export function NekoTranscript({
   const bottomRef = useRef<HTMLDivElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
   const followFrameRef = useRef<number | null>(null);
+  const pendingPromptFocusRef = useRef<{ sessionId: string; messageId: string } | null>(null);
   const messagesRef = useRef(session.messages);
   messagesRef.current = session.messages;
   const [followingTail, setFollowingTail] = useState(true);
@@ -418,6 +423,7 @@ export function NekoTranscript({
 
   const scrollToLatest = useCallback(
     (behavior: ScrollBehavior = "auto") => {
+      pendingPromptFocusRef.current = null;
       if (useVirtual && messageCount > 0) {
         virtualizer.scrollToIndex(messageCount - 1, { align: "end", behavior });
       } else if (typeof bottomRef.current?.scrollIntoView === "function") {
@@ -427,22 +433,35 @@ export function NekoTranscript({
     [messageCount, useVirtual, virtualizer],
   );
 
+  const focusPromptTarget = useCallback((node: HTMLDivElement | null) => {
+    const pending = pendingPromptFocusRef.current;
+    if (!node || pending?.sessionId !== session.id || pending.messageId !== node.dataset.nekoMessageId) return;
+    pendingPromptFocusRef.current = null;
+    node.focus({ preventScroll: true });
+  }, [session.id]);
+
   const jumpToPrompt = useCallback(
     (landmark: NekoPromptLandmark) => {
       const reducedMotion = typeof window.matchMedia === "function"
         && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
       const behavior: ScrollBehavior = reducedMotion ? "auto" : "smooth";
       updateFollowingTail(false);
+      pendingPromptFocusRef.current = { sessionId: session.id, messageId: landmark.id };
       if (useVirtual) {
         virtualizer.scrollToIndex(landmark.messageIndex, { align: "start", behavior });
-        return;
       }
-      const target = scrollRef.current?.querySelector<HTMLElement>(
+      const target = scrollRef.current?.querySelector<HTMLDivElement>(
         `[data-neko-message-index="${landmark.messageIndex}"]`,
       );
-      target?.scrollIntoView({ block: "start", behavior });
+      if (!useVirtual) target?.scrollIntoView({ block: "start", behavior });
+      // Offscreen virtual rows receive focus from onReady when they mount.
+      if (target) focusPromptTarget(target);
+      else if (!useVirtual) {
+        pendingPromptFocusRef.current = null;
+        scrollRef.current?.focus({ preventScroll: true });
+      }
     },
-    [updateFollowingTail, useVirtual, virtualizer],
+    [focusPromptTarget, session.id, updateFollowingTail, useVirtual, virtualizer],
   );
 
   const resolveMessageOffset = useCallback((messageIndex: number): number | null => {
@@ -461,6 +480,7 @@ export function NekoTranscript({
   }, [useVirtual, virtualizer]);
 
   useEffect(() => {
+    pendingPromptFocusRef.current = null;
     updateFollowingTail(true);
   }, [session.id, updateFollowingTail]);
 
@@ -592,6 +612,7 @@ export function NekoTranscript({
                   <MessageRow
                     message={message}
                     messageIndex={row.index}
+                    onReady={focusPromptTarget}
                     streaming={session.status === "streaming" && message.id === lastMessage?.id}
                   />
                 </div>
@@ -604,6 +625,7 @@ export function NekoTranscript({
               key={message.id}
               message={message}
               messageIndex={messageIndex}
+              onReady={focusPromptTarget}
               streaming={session.status === "streaming" && message.id === lastMessage?.id}
             />
           ))

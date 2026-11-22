@@ -157,7 +157,6 @@ export const NekoPromptRail = memo(function NekoPromptRail({
                   onClick={() => {
                     setOpen(false);
                     onJump(landmark);
-                    scrollRef.current?.focus({ preventScroll: true });
                   }}>
                   <span aria-hidden="true" className="min-w-5 shrink-0 text-right tabular-nums text-[var(--nk-ghost)]">{index + 1}</span>
                   <span className="min-w-0 break-words">{landmark.title}</span>
