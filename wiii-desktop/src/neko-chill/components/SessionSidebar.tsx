@@ -1,4 +1,4 @@
-import { memo, useDeferredValue, useMemo, useRef, useState, type ReactNode } from "react";
+import { memo, useDeferredValue, useMemo, useRef, useState, type Dispatch, type ReactNode, type SetStateAction } from "react";
 import {
   ChevronDown,
   ChevronRight,
@@ -27,6 +27,12 @@ interface ProjectProjection {
   sessions: NekoSession[];
 }
 
+/** Workspace-lifetime view state, not persisted conversation/project data. */
+export interface SessionSidebarViewState {
+  query: string;
+  collapsed: ReadonlySet<string>;
+}
+
 function normalize(value: string): string {
   return value
     .normalize("NFD")
@@ -36,6 +42,8 @@ function normalize(value: string): string {
 }
 
 export const SessionSidebar = memo(function SessionSidebar({
+  viewState,
+  onViewStateChange,
   header,
   overviewActive,
   coworkerActive,
@@ -53,6 +61,8 @@ export const SessionSidebar = memo(function SessionSidebar({
   onEditProject,
   onOpenSession,
 }: {
+  viewState: SessionSidebarViewState;
+  onViewStateChange: Dispatch<SetStateAction<SessionSidebarViewState>>;
   header?: ReactNode;
   overviewActive: boolean;
   coworkerActive: boolean;
@@ -76,9 +86,9 @@ export const SessionSidebar = memo(function SessionSidebar({
   const deleteOpenerRef = useRef<HTMLButtonElement | null>(null);
   const newSessionRef = useRef<HTMLButtonElement>(null);
   const searchRef = useRef<HTMLInputElement>(null);
-  const [query, setQuery] = useState("");
+  const { query, collapsed } = viewState;
+  const setQuery = (query: string) => onViewStateChange(current => ({ ...current, query }));
   const deferredQuery = useDeferredValue(query);
-  const [collapsed, setCollapsed] = useState<Set<string>>(() => new Set());
 
   const { projectRows, legacySessions } = useMemo(() => {
     const term = normalize(deferredQuery);
@@ -290,11 +300,11 @@ export const SessionSidebar = memo(function SessionSidebar({
                       className="grid h-8 w-6 shrink-0 place-items-center text-[var(--nk-text-3)]"
                       aria-label={`${isCollapsed ? "Mở" : "Thu gọn"} dự án ${project.name}`}
                       aria-expanded={!isCollapsed}
-                      onClick={() => setCollapsed((current) => {
-                        const next = new Set(current);
+                      onClick={() => onViewStateChange((current) => {
+                        const next = new Set(current.collapsed);
                         if (next.has(project.id)) next.delete(project.id);
                         else next.add(project.id);
-                        return next;
+                        return { ...current, collapsed: next };
                       })}
                     >
                       {isCollapsed ? <ChevronRight aria-hidden="true" className="h-3 w-3" /> : <ChevronDown aria-hidden="true" className="h-3 w-3" />}

@@ -49,7 +49,7 @@ import { NekoOverview } from "./components/NekoOverview";
 import { ProjectHome } from "./components/ProjectHome";
 import { ProjectDialog } from "./components/ProjectDialog";
 import { SessionInspector } from "./components/SessionInspector";
-import { SessionSidebar } from "./components/SessionSidebar";
+import { SessionSidebar, type SessionSidebarViewState } from "./components/SessionSidebar";
 import { NekoCommandCenter } from "./components/NekoCommandCenter";
 import { NekoMenuBar } from "./components/NekoMenuBar";
 import { CompletionNotices } from "./components/CompletionNotices";
@@ -474,6 +474,7 @@ function NekoChillScreen({
   const setConfigOption = useNekoSessionStore((state) => state.setConfigOption);
   const queuedCount = useNekoOutboxStore(state => state.snapshot.queues.find(q => q.sessionId === activeSessionId)?.items.length ?? 0);
   const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [sidebarViewState, setSidebarViewState] = useState<SessionSidebarViewState>(() => ({ query: "", collapsed: new Set() }));
   const [inspectorOpen, setInspectorOpen] = useState(false);
   const [commandCenterOpen, setCommandCenterOpen] = useState(false);
   const workspaceToggleRef = useRef<HTMLButtonElement>(null);
@@ -928,6 +929,8 @@ function NekoChillScreen({
 
   const sidebarSurface = (
     <SessionSidebar
+      viewState={sidebarViewState}
+      onViewStateChange={setSidebarViewState}
       header={<>
         <WiiiNavigation onOpenManaged={onOpenManaged} onOpenConnections={openConnections} />
         <button type="button" className="nk-chrome-button grid h-8 w-8 place-items-center rounded-md text-[var(--nk-text-2)]"

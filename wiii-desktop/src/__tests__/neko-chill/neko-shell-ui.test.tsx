@@ -768,6 +768,25 @@ describe("Neko Chill shell UI", () => {
     expect(screen.getByTestId("session-sidebar")).toBeTruthy();
   });
 
+  it("keeps the sidebar filter and collapsed projects across hide and reopen", () => {
+    useNekoProjectStore.setState({ projects: [{ id: "alpha", name: "Alpha", roots: [{ name: "Alpha", path: "/alpha" }], createdAt: 1, updatedAt: 1 }] });
+    render(<NekoChillApp />);
+    fireEvent.click(screen.getByRole("button", { name: "Thu gọn dự án Alpha" }));
+    const search = () => screen.getByRole("searchbox", { name: "Tìm phiên Neko Chill" }) as HTMLInputElement;
+    fireEvent.change(search(), { target: { value: "Alpha" } });
+    fireEvent.keyDown(window, { key: "b", ctrlKey: true });
+    expect(screen.queryByTestId("session-sidebar")).toBeNull();
+    fireEvent.keyDown(window, { key: "b", ctrlKey: true });
+    expect(search().value).toBe("Alpha");
+    expect(screen.getByRole("button", { name: "Thu gọn dự án Alpha" }).getAttribute("aria-expanded")).toBe("true");
+    fireEvent.keyDown(search(), { key: "Escape" });
+    expect(search().value).toBe("");
+    expect(screen.getByRole("button", { name: "Mở dự án Alpha" }).getAttribute("aria-expanded")).toBe("false");
+    fireEvent.click(screen.getByRole("button", { name: "Ẩn cây dự án và phiên" }));
+    fireEvent.click(screen.getByRole("button", { name: "Hiện cây dự án và phiên" }));
+    expect(screen.getByRole("button", { name: "Mở dự án Alpha" })).toBeTruthy();
+  });
+
   it("opens, switches, closes, and dismisses the session workspace with Escape", async () => {
     useNekoSessionStore.setState({
       sessions: {
