@@ -92,6 +92,13 @@ export interface PermissionRequest {
   title: string;
   /** The activity this request belongs to, when the agent links one. */
   activityId?: string;
+  /** Bounded display snapshot from this exact request, never cached tool history. */
+  toolPreview?: {
+    toolName?: string;
+    locations: DriverFileLocation[];
+    changes: Array<{ path?: string; before?: string; after: string }>;
+    truncated: boolean;
+  };
   options: PermissionOption[];
 }
 

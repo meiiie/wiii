@@ -8,6 +8,8 @@ import { ShieldCheck } from "lucide-react";
 import type { PermissionRequest } from "../drivers/types";
 import {
   buildPermissionPreview,
+  permissionCodeText,
+  permissionOptionLabel,
   permissionOptionScope,
   permissionPreviewIsTruncated,
   permissionPreviewText,
@@ -36,6 +38,7 @@ export function PermissionCard({
   const allows = request.options.filter((o) => o.kind.startsWith("allow"));
   const rejects = request.options.filter((o) => !o.kind.startsWith("allow"));
   const busy = resolving || blockedByCancel;
+  const fileAction = ({ write_file: "Ghi tệp", edit: "Sửa tệp", multi_edit: "Sửa tệp" } as Record<string, string>)[preview.toolName ?? ""];
   const busyLabel = resolving
     ? "Đang lưu quyết định…"
     : blockedByCancel
@@ -50,13 +53,26 @@ export function PermissionCard({
     >
       <p className="flex items-center gap-2 text-[12px] font-medium text-[var(--nk-text-2)]">
         <ShieldCheck aria-hidden="true" className="h-4 w-4 text-[var(--nk-warning)]" />
-        Cần bạn duyệt
+        {fileAction ? `${fileAction} · cần duyệt` : "Cần bạn duyệt"}
       </p>
-      <p className="mb-3 mt-1 text-[13px] text-[var(--nk-text)]">
+      {!fileAction && <p className="mb-3 mt-1 text-[13px] text-[var(--nk-text)]">
         {permissionPreviewText(request.title) ?? "Yêu cầu quyền chưa có mô tả."}
-      </p>
-      <div className="mb-3 min-w-0 rounded-lg border border-[var(--nk-border)] px-3 py-2.5 text-[11.5px] leading-5 text-[var(--nk-text-2)]" data-testid="permission-preview">
-        {preview.source === "missing" ? (
+      </p>}
+      <div className="mb-3 mt-2 min-w-0 rounded-lg border border-[var(--nk-border)] px-3 py-2.5 text-[11.5px] leading-5 text-[var(--nk-text-2)]" data-testid="permission-preview">
+        {preview.source === "request" ? (
+          <div className="min-w-0 space-y-2">
+            {preview.targets.map((target, index) => <p key={index} className="font-mono text-[11px]">{target.path}</p>)}
+            {preview.changes?.length ? preview.changes.map((change, index) => (
+              <div key={index} className="min-w-0">
+                {change.path && <p className="mb-1 font-mono text-[11px]">{permissionPreviewText(change.path, 320)}</p>}
+                <div className="max-h-52 overflow-auto rounded border border-[var(--nk-border)] bg-[var(--nk-base)]" tabIndex={0} role="region" aria-label={change.before !== undefined ? "Thay đổi sắp ghi" : "Nội dung sắp ghi"}>
+                  {change.before !== undefined && <pre dir="ltr" aria-label="Nội dung cũ" className="whitespace-pre-wrap break-words border-b border-[var(--nk-border)] bg-red-500/5 px-2.5 py-2 font-mono text-[11px] text-[var(--nk-text-2)]">{permissionCodeText(change.before) || "(Trống)"}</pre>}
+                  <pre dir="ltr" aria-label="Nội dung mới" className={`whitespace-pre-wrap break-words px-2.5 py-2 font-mono text-[11px] text-[var(--nk-text)] ${change.before !== undefined ? "bg-green-500/5" : ""}`}>{permissionCodeText(change.after) || "(Tệp trống)"}</pre>
+                </div>
+              </div>
+            )) : <p>{fileAction ? "Agent chưa gửi nội dung thay đổi." : permissionPreviewText(request.title)}</p>}
+          </div>
+        ) : preview.source === "missing" ? (
           <p>Chưa có thông tin thao tác.</p>
         ) : (
           <dl className="grid gap-2 sm:grid-cols-2">
@@ -96,9 +112,9 @@ export function PermissionCard({
                 if (!busy) onResolve(option.optionId);
               }}
             >
-              {permissionPreviewText(option.label, 160) ?? "Lựa chọn chưa có nhãn."}
+              {permissionOptionLabel(option) ?? "Lựa chọn chưa có nhãn."}
             </button>
-            <p id={`${scopeId}-reject-${index}`} className="mt-1 max-w-[240px] text-[10.5px] leading-4 text-[var(--nk-text-3)]">{permissionOptionScope(option.kind)}</p>
+            <p id={`${scopeId}-reject-${index}`} className="sr-only">{permissionOptionScope(option)}</p>
           </div>
         ))}
         {allows.map((option, index) => (
@@ -112,9 +128,9 @@ export function PermissionCard({
                 if (!busy) onResolve(option.optionId);
               }}
             >
-              {permissionPreviewText(option.label, 160) ?? "Lựa chọn chưa có nhãn."}
+              {permissionOptionLabel(option) ?? "Lựa chọn chưa có nhãn."}
             </button>
-            <p id={`${scopeId}-allow-${index}`} className="mt-1 max-w-[240px] text-[10.5px] leading-4 text-[var(--nk-text-3)]">{permissionOptionScope(option.kind)}</p>
+            <p id={`${scopeId}-allow-${index}`} className={permissionOptionScope(option) === "Phạm vi do agent quyết định" ? "mt-1 text-[10.5px] text-[var(--nk-text-3)]" : "sr-only"}>{permissionOptionScope(option)}</p>
           </div>
         ))}
       </div>

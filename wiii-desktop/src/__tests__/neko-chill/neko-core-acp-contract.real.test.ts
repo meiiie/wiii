@@ -181,6 +181,10 @@ describe.skipIf(!BINARY)("Neko Core ACP desktop contracts (real binary)", () => 
         const event = h.events.find(event => event.type === "permission-request");
         if (event?.type !== "permission-request") throw new Error("Missing permission request");
         expect(event.request.activityId).toBe("fixture-tool");
+        expect(event.request.toolPreview).toMatchObject({
+          toolName: "write_file", changes: [{ after: "APPROVED_WRITE" }], truncated: false,
+        });
+        expect(event.request.toolPreview?.locations[0].path).toBe(path.join(root, "approved.txt"));
         expect(event.request.options.map(option => option.kind)).toEqual(["allow_once", "allow_always", "reject_once", "reject_always"]);
         const option = event.request.options.find(option => option.kind === choice)!;
         expect(option.optionId).not.toBe("");
