@@ -133,20 +133,28 @@ export function NekoCoworkerHome({ projects }: { projects: NekoProject[] }) {
       .finally(() => setPageBusy(false));
   }, [nativeComputer, refresh, refreshSignalInbox]);
 
-  const roots = useMemo(
-    () => projects.flatMap((project) =>
-      project.roots.map((root) => ({
-        projectId: project.id,
-        projectName: project.name,
-        root,
-      })),
-    ),
-    [projects],
-  );
   const grantedKeys = useMemo(
     () => new Set((status?.grants ?? []).flatMap((item) => item.projectId
       ? [JSON.stringify([item.projectId, item.projectPath])] : [])),
     [status?.grants],
+  );
+  // Scratch roots belong to private chats, not the project grant picker.
+  // Keep an explicitly granted scratch root reachable for revocation.
+  const roots = useMemo(
+    () => projects.flatMap((project) =>
+      project.roots
+        .filter((root) => root.kind !== "scratch"
+          || grantedKeys.has(JSON.stringify([project.id, root.path])))
+        .map((root) => ({ projectId: project.id, projectName: project.name, root })),
+    ),
+    [projects, grantedKeys],
+  );
+  const projectChoices = useMemo(
+    () => projects.map((project) => ({
+      ...project,
+      roots: project.roots.filter((root) => root.kind !== "scratch"),
+    })).filter((project) => project.roots.length > 0),
+    [projects],
   );
   const activeKey = status?.activeProjectId && status.activeProjectPath
     ? JSON.stringify([status.activeProjectId, status.activeProjectPath]) : null;
@@ -155,16 +163,16 @@ export function NekoCoworkerHome({ projects }: { projects: NekoProject[] }) {
     () => coworkerOpenProjectCard({
       environmentProjectName: status?.environment?.projectName,
       environmentProjectPath: status?.environment?.projectPath,
-      wiiiProjects: projects,
+      wiiiProjects: projectChoices,
     }),
-    [projects, status?.environment?.projectName, status?.environment?.projectPath],
+    [projectChoices, status?.environment?.projectName, status?.environment?.projectPath],
   );
   const grantsCard = useMemo(
     () => coworkerGrantsCard({
       grantCount: status?.grants.length ?? 0,
-      wiiiProjectCount: projects.length,
+      wiiiProjectCount: projectChoices.length,
     }),
-    [projects.length, status?.grants.length],
+    [projectChoices.length, status?.grants.length],
   );
   const showChillSeparation = openProjectCard.needsCoworkerGrant || grantsCard.needsCoworkerGrant;
 
@@ -348,7 +356,9 @@ export function NekoCoworkerHome({ projects }: { projects: NekoProject[] }) {
                       {active ? <span className="rounded bg-emerald-50 px-1.5 py-0.5 text-[8px] font-semibold uppercase tracking-[0.06em] text-emerald-700">Đang mở</span> : null}
                       {granted && !active ? <Check aria-label="Đã cấp quyền" className="h-3 w-3 text-emerald-600" /> : null}
                     </div>
-                    <p className="mt-0.5 truncate text-[9.5px] text-[var(--nk-ghost)]">{root.path}</p>
+                    <p title={root.path} className="mt-0.5 truncate text-[9.5px] text-[var(--nk-ghost)]">
+                      {root.kind === "scratch" ? "Thư mục chat đã cấp quyền" : root.path}
+                    </p>
                   </div>
                   {busy ? <LoaderCircle aria-hidden="true" className="h-3.5 w-3.5 animate-spin text-[var(--nk-text-3)]" /> : null}
                   {granted ? (

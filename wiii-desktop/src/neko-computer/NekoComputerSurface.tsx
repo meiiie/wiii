@@ -515,6 +515,15 @@ function NekoComputerSurfaceComponent({
               {semanticLoading ? <LoaderCircle aria-hidden="true" className="h-3 w-3 animate-spin" /> : <ScanSearch aria-hidden="true" className="h-3 w-3" />}
               Kiểm tra giao diện
             </button>
+            <p role="status" className="mb-2 text-[10px] text-[var(--nk-text-3)]">
+              {semanticLoading
+                ? "Đang kiểm tra…"
+                : project?.semanticError
+                  ? "Chưa kiểm tra được. Hãy thử lại."
+                  : project?.semanticSnapshot?.environmentId === environment.environmentId
+                    ? "Đã kiểm tra giao diện"
+                    : null}
+            </p>
             <div className="flex flex-wrap gap-1 border-t border-[var(--nk-border)] pt-2">
               <ComputerControl icon={History} label="Lịch sử" onClick={() => {
                 closeDetails();
@@ -741,7 +750,7 @@ function NekoComputerSurfaceComponent({
           {canObserve && viewerUrl ? (
             <iframe
               ref={viewerFrameRef}
-              key={`${environment.environmentId}:${displayRevision}:${userOwnsSeat ? "control" : "observe"}`}
+              key={`${environment.environmentId}:${mode}:${displayRevision}:${userOwnsSeat ? "control" : "observe"}`}
               title={`Local Computer · ${workspace.name}`}
               src={viewerUrl}
               sandbox="allow-scripts allow-same-origin"
