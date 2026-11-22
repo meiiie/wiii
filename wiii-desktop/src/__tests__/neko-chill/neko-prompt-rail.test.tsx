@@ -1,13 +1,10 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { NekoTranscript } from "@/neko-chill/components/NekoTranscript";
 import {
   activePromptIdAtScroll,
   buildPromptLandmarks,
-  promptRailPosition,
-  promptWavePath,
-  promptWaveWidth,
-  viewportScrollProgress,
+  NekoPromptRail,
 } from "@/neko-chill/components/NekoPromptRail";
 import type { NekoSession } from "@/neko-chill/stores/neko-session-store";
 
@@ -56,77 +53,100 @@ function makeSession(): NekoSession {
   };
 }
 
-describe("Neko prompt rail", () => {
-  it("forms a tapered wave around the current scroll position", () => {
-    const focused = promptWaveWidth(2, 2);
-    const neighbor = promptWaveWidth(1, 2);
-    const distant = promptWaveWidth(0, 2);
-    expect(focused).toBeCloseTo(34);
-    expect(focused).toBeGreaterThan(neighbor);
-    expect(neighbor).toBeGreaterThan(distant);
-    expect(distant).toBeGreaterThanOrEqual(2);
-    expect(promptWavePath(2).split("M ")).toHaveLength(45);
+describe("Neko question navigation", () => {
+  it("indexes user turns without exposing assistant text in navigation", () => {
+    expect(buildPromptLandmarks(makeSession().messages)).toEqual([
+      { id: "user-1", messageIndex: 0, title: "Phân tích luồng đăng nhập hiện tại" },
+      { id: "user-2", messageIndex: 2, title: "Bật cho tôi xem được chứ?" },
+    ]);
+    expect(buildPromptLandmarks([{ id: "code", role: "user", text: "```ts\nconst x = 1;\n```" }])[0].title).toBe("Đoạn mã");
   });
 
-  it("uses the complete scroll range and keeps the final prompt active at the bottom", () => {
-    expect(viewportScrollProgress(0, 1_000, 100)).toBe(0);
-    expect(viewportScrollProgress(450, 1_000, 100)).toBe(0.5);
-    expect(viewportScrollProgress(900, 1_000, 100)).toBe(1);
-    expect(promptRailPosition(0, 900)).toBeCloseTo(0.03);
-    expect(promptRailPosition(900, 900)).toBeCloseTo(0.97);
-
-    const offsets = [
-      { id: "first", offset: 20 },
-      { id: "second", offset: 640 },
-      { id: "last", offset: 900 },
-    ];
+  it("tracks the reading line and final prompt, including an empty history", () => {
+    const offsets = [{ id: "first", offset: 20 }, { id: "second", offset: 640 }, { id: "last", offset: 900 }];
     expect(activePromptIdAtScroll(400, 100, offsets)).toBe("first");
     expect(activePromptIdAtScroll(900, 100, offsets)).toBe("last");
+    expect(activePromptIdAtScroll(0, 100, [])).toBeNull();
   });
 
-  it("indexes only user turns and attaches the next complete assistant answer", () => {
-    const landmarks = buildPromptLandmarks(makeSession().messages);
-    expect(landmarks).toHaveLength(2);
-    expect(landmarks[0]).toMatchObject({
-      id: "user-1",
-      messageIndex: 0,
-      title: "Phân tích luồng đăng nhập hiện tại",
-      preview: "Đã xác định dữ liệu cũ vẫn còn trong IndexedDB.",
-      position: 0.03,
-    });
-    expect(landmarks[1]?.position).toBeCloseTo(2 / 3);
-  });
-
-  it("previews a prompt on hover and jumps to the exact user turn", () => {
+  function mount(session = makeSession()) {
     const scrollIntoView = vi.fn();
-    Object.defineProperty(HTMLElement.prototype, "scrollIntoView", {
-      configurable: true,
-      value: scrollIntoView,
-    });
+    Object.defineProperty(HTMLElement.prototype, "scrollIntoView", { configurable: true, value: scrollIntoView });
+    const props = { session, onResolvePermission: vi.fn(), onInsertPrompt: vi.fn() };
+    return { ...render(<div style={{ height: 400 }}><NekoTranscript {...props} /></div>), props, scrollIntoView };
+  }
 
-    render(
-      <div style={{ height: 400 }}>
-        <NekoTranscript
-          session={makeSession()}
-          onResolvePermission={vi.fn()}
-          onInsertPrompt={vi.fn()}
-        />
-      </div>,
-    );
-
-    const rail = screen.getByRole("navigation", { name: "Điều hướng các lời nhắn của bạn" });
-    expect(rail.className).toContain("left-[18px]");
-    expect(screen.getByTestId("neko-wave-path")).toBeTruthy();
-    const promptMarkers = screen.getAllByTestId("neko-prompt-marker");
-    expect(promptMarkers).toHaveLength(2);
-    expect(promptMarkers.filter((segment) => segment.dataset.active === "true")).toHaveLength(1);
-    const marker = screen.getByRole("button", { name: "Đi tới lời nhắn: Bật cho tôi xem được chứ?" });
-    fireEvent.mouseEnter(marker);
-    expect(screen.getByRole("tooltip").textContent).toContain("Đã mở bản xem trước trên Chrome.");
-    expect(screen.getAllByTestId("neko-prompt-marker")
-      .filter((segment) => segment.dataset.preview === "true")).toHaveLength(1);
-    fireEvent.click(marker);
+  it("shows a named index on demand, then closes it and focuses the exact destination viewport", () => {
+    const { scrollIntoView, props } = mount();
+    const trigger = screen.getByRole("button", { name: "Câu hỏi 2" });
+    expect(trigger.getAttribute("aria-expanded")).toBe("false");
+    expect(screen.queryByRole("button", { name: /Đi tới lời nhắn 2/ })).toBeNull();
+    fireEvent.click(trigger);
+    const destination = screen.getByRole("button", { name: "Đi tới lời nhắn 2: Bật cho tôi xem được chứ?" });
+    fireEvent.click(destination);
     expect(scrollIntoView).toHaveBeenCalledWith({ block: "start", behavior: "smooth" });
-    expect(marker.getAttribute("aria-current")).toBe("location");
+    expect(scrollIntoView.mock.contexts.at(-1)).toBe(document.querySelector('[data-neko-message-index="2"]'));
+    expect(trigger.getAttribute("aria-expanded")).toBe("false");
+    expect(screen.queryByRole("tooltip")).toBeNull();
+    expect(document.activeElement).toBe(screen.getByTestId("neko-transcript"));
+    expect(props.onResolvePermission).not.toHaveBeenCalled();
+    expect(props.onInsertPrompt).not.toHaveBeenCalled();
+  });
+
+  it("supports keyboard choice and Escape without activating or obscuring a prompt", async () => {
+    const { scrollIntoView } = mount();
+    const trigger = screen.getByRole("button", { name: "Câu hỏi 2" });
+    act(() => trigger.focus());
+    fireEvent.keyDown(trigger, { key: "ArrowDown" });
+    await act(async () => { await new Promise(requestAnimationFrame); });
+    expect(screen.getAllByRole("button", { name: /Đi tới lời nhắn/ })).toContain(document.activeElement);
+    scrollIntoView.mockClear();
+    fireEvent.keyDown(document.activeElement!, { key: "Home" });
+    const first = screen.getByRole("button", { name: /Đi tới lời nhắn 1:/ });
+    const last = screen.getByRole("button", { name: /Đi tới lời nhắn 2:/ });
+    expect(document.activeElement).toBe(first);
+    fireEvent.keyDown(first, { key: "End" });
+    expect(document.activeElement).toBe(last);
+    fireEvent.keyDown(last, { key: "ArrowUp" });
+    expect(document.activeElement).toBe(first);
+    fireEvent.keyDown(first, { key: "Escape" });
+    expect(trigger.getAttribute("aria-expanded")).toBe("false");
+    expect(document.activeElement).toBe(trigger);
+    expect(scrollIntoView).not.toHaveBeenCalled();
+  });
+
+  it("keeps every dense-history question reachable even when all measured offsets coincide", () => {
+    const session = makeSession();
+    session.messages = Array.from({ length: 80 }, (_, i) => ({ id: `user-${i}`, role: "user", text: `Câu hỏi số ${i + 1}` }));
+    const onJump = vi.fn();
+    const viewport = document.createElement("div");
+    const resolveMessageOffset = vi.fn(() => 0);
+    render(<NekoPromptRail messages={session.messages} scrollRef={{ current: viewport }}
+      resolveMessageOffset={resolveMessageOffset} onJump={onJump} />);
+    fireEvent.click(screen.getByRole("button", { name: "Câu hỏi 80" }));
+    expect(screen.getAllByRole("button", { name: /Đi tới lời nhắn/ })).toHaveLength(80);
+    fireEvent.click(screen.getByRole("button", { name: "Đi tới lời nhắn 37: Câu hỏi số 37" }));
+    expect(resolveMessageOffset).toHaveBeenCalledTimes(80);
+    expect(onJump).toHaveBeenCalledExactlyOnceWith({ id: "user-36", messageIndex: 36, title: "Câu hỏi số 37" });
+    expect(screen.queryByRole("button", { name: /Đi tới lời nhắn/ })).toBeNull();
+  });
+
+  it("dismisses on outside input and does not carry an open index to another conversation", () => {
+    const view = mount();
+    fireEvent.click(screen.getByRole("button", { name: "Câu hỏi 2" }));
+    fireEvent.pointerDown(screen.getByTestId("neko-transcript"));
+    expect(screen.queryByRole("button", { name: /Đi tới lời nhắn/ })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Câu hỏi 2" }));
+    const next = makeSession();
+    next.id = "different-session";
+    next.messages = next.messages.map(message => ({ ...message, id: "next-" + message.id }));
+    view.rerender(<NekoTranscript {...view.props} session={next} />);
+    expect(screen.getByRole("button", { name: "Câu hỏi 2" }).getAttribute("aria-expanded")).toBe("false");
+    expect(view.scrollIntoView).not.toHaveBeenCalled();
+  });
+
+  it("does not add navigation chrome for a one-turn chat", () => {
+    mount({ ...makeSession(), messages: makeSession().messages.slice(0, 2) });
+    expect(screen.queryByRole("navigation", { name: "Điều hướng các lời nhắn của bạn" })).toBeNull();
   });
 });
