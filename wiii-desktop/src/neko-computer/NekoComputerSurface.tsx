@@ -678,7 +678,7 @@ function NekoComputerSurfaceComponent({
                 setRemoveConfirmation("");
               }).catch(() => undefined)}
             >
-              Gỡ Computer
+              Gỡ máy tính
             </button>
           </div>
         </div>
