@@ -5,8 +5,6 @@ import NekoChillApp from "@/neko-chill/NekoChillApp";
 import { LocalWorkbenchSurface } from "@/App";
 import {
   formatReasoningDuration,
-  formatReasoningLabel,
-  formatReasoningPreview,
   formatToolActivity,
   groupTranscriptBlocks,
   NekoTranscript,
@@ -242,17 +240,7 @@ describe("Neko Chill shell UI", () => {
     expect(hydrate).toHaveBeenCalledTimes(2);
   });
 
-  it("removes transport emphasis markers from reasoning labels only", () => {
-    expect(formatReasoningLabel("**Inspecting workspace**")).toBe("Inspecting workspace");
-    expect(formatReasoningLabel("Keep **inner emphasis** here")).toBe(
-      "Keep **inner emphasis** here",
-    );
-  });
-
   it("keeps reasoning compact until the reader asks for details", () => {
-    expect(formatReasoningPreview("**Inspecting workspace files**", 22)).toBe(
-      "Inspecting workspace…",
-    );
     expect(formatReasoningDuration({
       type: "thinking",
       id: "duration",
@@ -265,6 +253,9 @@ describe("Neko Chill shell UI", () => {
     render(<ThinkingDisclosure block={{
       type: "thinking",
       id: "compact",
+      label: "Inspecting workspace",
+      summary: "Goal is fully met",
+      phase: "Verification",
       content: "Inspecting the workspace before choosing the smallest safe change.",
       toolCalls: [],
       startTime: 1_000,
@@ -273,11 +264,14 @@ describe("Neko Chill shell UI", () => {
 
     const disclosure = screen.getByTestId("thinking-block") as HTMLDetailsElement;
     expect(disclosure.open).toBe(false);
-    expect(screen.getByTestId("thinking-preview").textContent).toContain("Inspecting the workspace");
+    const summary = screen.getByLabelText("Đã suy nghĩ. Mở chi tiết suy luận");
+    expect(summary.textContent).not.toMatch(/Inspecting|Goal|Verification/);
+    expect(screen.queryByTestId("thinking-preview")).toBeNull();
     expect(screen.getByText("2 giây")).toBeTruthy();
 
     fireEvent.click(screen.getByLabelText("Đã suy nghĩ. Mở chi tiết suy luận"));
     expect(disclosure.open).toBe(true);
+    expect(disclosure.textContent).toContain("Inspecting the workspace before choosing the smallest safe change.");
   });
 
   it("marks thinking as live only when the owning session says it is live", () => {

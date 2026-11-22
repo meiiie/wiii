@@ -12,6 +12,12 @@ export interface SessionControlNotice {
 const DIAGNOSTICS_GUIDANCE =
   "Cuộc trò chuyện và bản nháp vẫn được giữ lại.";
 
+const EXIT_NOTICE_COPY = new Map([
+  ["Runtime đã dừng khi rời Neko Chill.", "Phiên đã dừng."],
+  ["Đã kết thúc phiên — nhắn tiếp để khởi động lại agent.", "Đã kết thúc phiên."],
+  ["Phiên đã lưu — nhắn tiếp để khởi động lại agent.", "Phiên đã lưu."],
+]);
+
 function hasUnknownOutcome(events: NekoSessionEvent[]): boolean {
   type NativeIdentity = { agentSessionId: string; runId: string; providerId: string };
   const unknownRuns = new Map<string, NativeIdentity>();
@@ -154,11 +160,10 @@ export function getSessionControlNotices(session: NekoSession): SessionControlNo
     if (cancel) notices.push(cancel);
   }
   if (session.statusDetail?.trim() || session.status === "error") {
-    // Older saved sessions used the internal surface name for a normal exit.
-    // Translate only that known success notice, never arbitrary failure details.
+    // Normalize known success copy at display time, including saved sessions.
+    // Never rewrite persisted data or arbitrary warning/error details.
     const detail = session.status === "exited"
-      && session.statusDetail === "Runtime đã dừng khi rời Neko Chill."
-      ? "Phiên đã dừng." : session.statusDetail;
+      ? EXIT_NOTICE_COPY.get(session.statusDetail ?? "") ?? session.statusDetail : session.statusDetail;
     const duplicateStop = session.status === "exited"
       && notices.some((notice) => notice.tone === "quiet" && notice.text === detail);
     if (!duplicateStop) {

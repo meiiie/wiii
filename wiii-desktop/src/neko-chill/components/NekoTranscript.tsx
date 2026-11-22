@@ -43,27 +43,6 @@ export function dispatchedKnowledgeContexts(session: NekoSession) {
   );
 }
 
-/** Remove one matching outer emphasis pair without interpreting reasoning as HTML. */
-export function formatReasoningLabel(content: string): string {
-  const trimmed = content.trim();
-  for (const marker of ["**", "__", "*", "_"]) {
-    if (
-      trimmed.length > marker.length * 2 &&
-      trimmed.startsWith(marker) &&
-      trimmed.endsWith(marker)
-    ) {
-      return trimmed.slice(marker.length, -marker.length).trim();
-    }
-  }
-  return trimmed;
-}
-
-export function formatReasoningPreview(content: string, maxLength = 112): string {
-  const compact = formatReasoningLabel(content).replace(/\s+/g, " ").trim();
-  if (compact.length <= maxLength) return compact;
-  return `${compact.slice(0, Math.max(1, maxLength - 1)).trimEnd()}…`;
-}
-
 export function formatReasoningDuration(block: ThinkingBlockData): string | null {
   if (
     block.startTime === undefined
@@ -132,8 +111,8 @@ export function ThinkingDisclosure({
   block: ThinkingBlockData;
   active?: boolean;
 }) {
-  const label = block.label || block.summary || block.phase || (active ? "Đang suy nghĩ" : "Đã suy nghĩ");
-  const preview = formatReasoningPreview(block.content);
+  // Provider thought text/metadata is optional detail, not Vietnamese UI copy.
+  const label = active ? "Đang suy nghĩ" : "Đã suy nghĩ";
   const duration = formatReasoningDuration(block);
 
   return (
@@ -142,7 +121,7 @@ export function ThinkingDisclosure({
       data-testid="thinking-block"
     >
       <summary
-        className="flex min-h-6 w-full min-w-0 cursor-pointer list-none items-center gap-2 overflow-hidden rounded-md px-1 v3-outline-none transition-colors hover:bg-[var(--nk-inset)] focus-visible:ring-2 focus-visible:ring-[var(--nk-focus)] [&::-webkit-details-marker]:hidden"
+        className="flex min-h-6 w-full min-w-0 cursor-pointer list-none items-center gap-2 overflow-hidden rounded-md px-1 outline-none transition-colors hover:bg-[var(--nk-inset)] focus-visible:ring-2 focus-visible:ring-[var(--nk-text-3)] [&::-webkit-details-marker]:hidden"
         aria-label={`${label}. Mở chi tiết suy luận`}
       >
         <NekoActivityIcon
@@ -154,14 +133,7 @@ export function ThinkingDisclosure({
           }
         />
         <span className="shrink-0 font-medium text-[var(--nk-text-2)]">{label}</span>
-        {preview && preview !== label ? (
-          <span
-            className="min-w-0 flex-1 truncate text-[var(--nk-ghost)]"
-            data-testid="thinking-preview"
-          >
-            · {preview}
-          </span>
-        ) : null}
+        <span className="min-w-0 flex-1" />
         {duration ? <span className="ml-auto shrink-0 tabular-nums">{duration}</span> : null}
         <ChevronRight
           aria-hidden="true"
@@ -379,8 +351,9 @@ export function SessionControlStatus({
       aria-atomic="true"
       data-testid={`session-control-${notice.kind}`}
       data-stage={notice.stage}
-      className={`my-2 min-w-0 max-w-full rounded-xl border border-[var(--nk-border)] bg-[var(--nk-composer)] px-3 py-2 text-[12px] leading-5 [overflow-wrap:anywhere] ${notice.tone === "danger" ? "text-[var(--nk-danger)]" : notice.tone === "warning" ? "text-[var(--nk-warning)]" : "text-[var(--nk-text-3)]"}`}
+      className={`my-2 min-w-0 max-w-full text-[12px] leading-5 [overflow-wrap:anywhere] ${notice.tone === "quiet" ? "flex items-start gap-2 px-1 text-[var(--nk-text-3)]" : `rounded-xl border border-[var(--nk-border)] bg-[var(--nk-composer)] px-3 py-2 ${notice.tone === "danger" ? "text-[var(--nk-danger)]" : "text-[var(--nk-warning)]"}`}`}
     >
+      {notice.tone === "quiet" ? <span aria-hidden="true" className="mt-2 h-1 w-1 shrink-0 rounded-full bg-[var(--nk-ghost)]" /> : null}
       <p className="whitespace-pre-wrap">{notice.text}</p>
       {notice.guidance ? <p className="mt-1 text-[var(--nk-text-3)]">{notice.guidance}</p> : null}
     </div>
