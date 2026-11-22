@@ -241,6 +241,24 @@ describe("Neko Chill shell UI", () => {
     expect(hydrate).toHaveBeenCalledTimes(2);
   });
 
+  it("keeps exactly one transcript and composer when switching chats and returning", async () => {
+    const first = makeSession("reading-one", "Chat một", { path: "/qa/one", name: "Một" }, {
+      messages: [{ id: "message-one", role: "user", text: "Chỉ có trong cuộc chat một" }],
+    });
+    const second = makeSession("reading-two", "Chat hai", { path: "/qa/two", name: "Hai" }, {
+      messages: [{ id: "message-two", role: "user", text: "Chỉ có trong cuộc chat hai" }],
+    });
+    useNekoSessionStore.setState({ sessions: { [first.id]: first, [second.id]: second }, activeSessionId: first.id });
+    await act(async () => { render(<NekoChillApp />); });
+    for (const session of [second, first]) {
+      await act(async () => { useNekoSessionStore.setState({ activeSessionId: session.id }); });
+      expect(screen.getAllByTestId("neko-transcript")).toHaveLength(1);
+      expect(screen.getAllByTestId("neko-composer-input")).toHaveLength(1);
+      const otherText = session.id === first.id ? second.messages[0].text : first.messages[0].text;
+      expect(screen.queryByText(otherText!)).toBeNull();
+    }
+  });
+
   it("keeps reasoning compact until the reader asks for details", () => {
     expect(formatReasoningDuration({
       type: "thinking",

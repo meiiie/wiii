@@ -1051,7 +1051,7 @@ function NekoChillScreen({
               >
             <div className="flex h-full min-w-0 flex-1 flex-col">
               <LiveNekoTranscript
-                key={session.id}
+                key={`transcript:${session.id}`}
                 sessionId={session.id}
                 readingPositions={transcriptReadingPositions.current}
                 onResolvePermission={(optionId) => void resolvePermission(optionId)}
