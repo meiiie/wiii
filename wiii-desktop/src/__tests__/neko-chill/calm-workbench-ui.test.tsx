@@ -56,7 +56,8 @@ describe("calm workbench interaction contracts", () => {
     />);
     const send = screen.getByRole("button", { name: "Gửi tin nhắn" }) as HTMLButtonElement;
     expect(send.disabled).toBe(true);
-    expect(send.getAttribute("title")).toBe("Gắn dự án trước khi gửi.");
+    fireEvent.mouseEnter(send.parentElement!);
+    expect(screen.getByRole("tooltip").textContent).toBe("Gắn dự án trước khi gửi.");
 
     const folder = screen.getByTestId("neko-composer-choose-folder") as HTMLButtonElement;
     expect(folder.disabled).toBe(true);
@@ -77,7 +78,8 @@ describe("calm workbench interaction contracts", () => {
     fireEvent.change(screen.getByRole("textbox"), { target: { value: "Xin chào" } });
     const send = screen.getByRole("button", { name: "Gửi tin nhắn" }) as HTMLButtonElement;
     expect(send.disabled).toBe(false);
-    expect(send.getAttribute("title")).toBe("Gửi");
+    fireEvent.focus(send);
+    expect(screen.getByRole("tooltip").textContent).toBe("Gửi");
   });
 
     it("keeps an unaccepted session draft across failure and remount, and clears only on acceptance", async () => {
@@ -143,7 +145,8 @@ describe("calm workbench interaction contracts", () => {
     const busy = await vi.waitFor(() =>
       screen.getByRole("button", { name: "Đang gửi" }) as HTMLButtonElement);
     expect(busy.getAttribute("aria-busy")).toBe("true");
-    expect(busy.getAttribute("title")).toBe("Đang gửi…");
+    fireEvent.mouseEnter(busy.parentElement!);
+    expect(screen.getByRole("tooltip").textContent).toBe("Đang gửi…");
     await act(async () => { complete(); });
   });
 
