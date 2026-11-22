@@ -70,7 +70,10 @@ export function normalizeServerEndpoint(value: string): string {
   return normalized;
 }
 
-export function LoginScreen({ onOpenLocal }: { onOpenLocal?: () => void }) {
+export function LoginScreen({ onOpenLocal, intent = "service" }: {
+  onOpenLocal?: () => void;
+  intent?: "service" | "connect";
+}) {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [showDevMode, setShowDevMode] = useState(false);
@@ -517,14 +520,20 @@ export function LoginScreen({ onOpenLocal }: { onOpenLocal?: () => void }) {
               className={onOpenLocal ? "text-[30px] font-normal leading-tight text-text" : "max-w-[430px] text-[38px] font-normal leading-[1.08] text-text sm:text-[46px]"}
               style={{ fontFamily: "var(--font-serif)" }}
             >
-              Kết nối Wiii Service
+              {intent === "connect" ? "Kết nối ứng dụng" : "Kết nối Wiii Service"}
             </h1>
-            {!onOpenLocal && <p className="mt-4 max-w-[430px] text-[15px] leading-6 text-text-tertiary">
+            {intent === "connect" && (
+              <p className="mt-4 text-sm leading-6 text-text-secondary">
+                Đăng nhập Wiii Service để xem và quản lý kết nối ứng dụng.
+                {onOpenLocal && " Chat và dự án trên máy không cần tài khoản."}
+              </p>
+            )}
+            {intent !== "connect" && !onOpenLocal && <p className="mt-4 max-w-[430px] text-[15px] leading-6 text-text-tertiary">
               Bật đồng bộ, tri thức, bộ nhớ và không gian tổ chức khi bạn cần.
               Agent và dự án cục bộ của Wiii vẫn hoạt động mà không cần tài khoản.
             </p>}
 
-            <div className={onOpenLocal ? "mt-4 flex flex-wrap gap-3" : "mt-7 grid gap-3"} aria-label="Năng lực của Wiii Service">
+            {intent !== "connect" && <div className={onOpenLocal ? "mt-4 flex flex-wrap gap-3" : "mt-7 grid gap-3"} aria-label="Năng lực của Wiii Service">
               {[
                 { icon: Cloud, title: "Đồng bộ bền vững", detail: "Tiếp tục công việc giữa các thiết bị và môi trường." },
                 { icon: Database, title: "Knowledge & Memory", detail: "Mang tri thức và ngữ cảnh dài hạn vào từng tác vụ." },
@@ -540,7 +549,7 @@ export function LoginScreen({ onOpenLocal }: { onOpenLocal?: () => void }) {
                   </span>
                 </div>
               ))}
-            </div>
+            </div>}
 
             {onOpenLocal ? (
               <button
@@ -635,7 +644,7 @@ export function LoginScreen({ onOpenLocal }: { onOpenLocal?: () => void }) {
         {/* Divider */}
         <div className="w-full flex items-center gap-3 my-2">
           <div className="flex-1 h-px bg-border" />
-          <span className="text-[11px] text-text-quaternary">hoặc</span>
+          <span className="text-[11px] text-text-secondary">hoặc</span>
           <div className="flex-1 h-px bg-border" />
         </div>
 
@@ -644,7 +653,7 @@ export function LoginScreen({ onOpenLocal }: { onOpenLocal?: () => void }) {
           <div className="w-full flex flex-col gap-2.5">
             <label
               htmlFor="magic-link-email"
-              className="text-xs font-medium text-text-tertiary"
+              className="text-xs font-medium text-text-secondary"
             >
               Đăng nhập bằng email
             </label>
@@ -722,7 +731,7 @@ export function LoginScreen({ onOpenLocal }: { onOpenLocal?: () => void }) {
             <Server aria-hidden="true" size={14} />
             <span className="min-w-0 flex-1">
               <span className="font-medium">Kết nối nâng cao</span>
-              <span className="ml-2 text-text-quaternary">{settings.server_url || "Chưa cấu hình endpoint"}</span>
+              <span className="ml-2 text-text-secondary">{settings.server_url || "Chưa đặt máy chủ"}</span>
             </span>
             {connectionState === "connected" ? (
               <CheckCircle2 aria-hidden="true" size={14} className="text-green-600" />
@@ -735,8 +744,8 @@ export function LoginScreen({ onOpenLocal }: { onOpenLocal?: () => void }) {
           </button>
           {showConnection ? (
             <div className="border-t border-border px-3 pb-3 pt-2">
-              <label htmlFor="wiii-server-endpoint" className="text-[11px] font-medium text-text-tertiary">
-                Endpoint Wiii Service
+              <label htmlFor="wiii-server-endpoint" className="text-[11px] font-medium text-text-secondary">
+                Máy chủ Wiii Service
               </label>
               <div className="mt-1.5 flex gap-2">
                 <input
@@ -774,9 +783,9 @@ export function LoginScreen({ onOpenLocal }: { onOpenLocal?: () => void }) {
                   {connectionMessage}
                 </p>
               ) : (
-                <p className="mt-2 text-[10px] leading-4 text-text-quaternary">
+                <p className="mt-2 text-xs leading-5 text-text-secondary">
                   {onOpenLocal
-                    ? "Chỉ thay đổi khi bạn dùng một Wiii Service riêng. Wiii cục bộ không cần endpoint này."
+                    ? "Chỉ đổi nếu bạn dùng Wiii Service riêng. Chat và dự án trên máy không cần địa chỉ này."
                     : "Bản web kết nối Wiii Service từ xa; không mở tiến trình hoặc tệp cục bộ."}
                 </p>
               )}

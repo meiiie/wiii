@@ -6,7 +6,7 @@ import { useOrgStore } from "@/stores/org-store";
 
 const session = vi.hoisted(() => ({ loading: false, error: null as string | null, retry: vi.fn() }));
 vi.mock("@/workbench/wiii-service-session", () => ({ useWiiiServiceSession: () => session }));
-vi.mock("@/components/auth/LoginScreen", () => ({ LoginScreen: ({ onOpenLocal }: { onOpenLocal: () => void }) => <button onClick={onOpenLocal}>Connexion Service</button> }));
+vi.mock("@/components/auth/LoginScreen", () => ({ LoginScreen: ({ onOpenLocal, intent }: { onOpenLocal: () => void; intent: "service" | "connect" }) => <button onClick={onOpenLocal}>{intent === "connect" ? "Kết nối ứng dụng" : "Connexion Service"}</button> }));
 vi.mock("@/components/common/WiiiMark", () => ({ WiiiMark: () => null }));
 vi.mock("@/components/connect/WiiiConnectPage", async () => {
   const { FullPageView } = await import("@/components/layout/FullPageView");
@@ -35,6 +35,11 @@ describe("native Service surface", () => {
   });
   it("shows login without auth and returns locally", () => {
     mount(); fireEvent.click(screen.getByText("Connexion Service")); expect(onBack).toHaveBeenCalledOnce();
+  });
+  it("preserves the Connections destination through its account gateway", () => {
+    mount("connect");
+    fireEvent.click(screen.getByRole("button", { name: "Kết nối ứng dụng" }));
+    expect(onBack).toHaveBeenCalledOnce();
   });
   it("requires an endpoint even when authenticated", () => {
     useAuthStore.setState({ isAuthenticated: true });

@@ -65,4 +65,17 @@ describe("LoginScreen — optional Wiii Service gateway (#945)", () => {
     fireEvent.click(screen.getByRole("button", { name: /Kết nối nâng cao/i }));
     expect(screen.getByText(/Bản web kết nối Wiii Service từ xa/i)).toBeTruthy();
   });
+
+  it("keeps the Connections destination clear without blocking the local return", () => {
+    const onOpenLocal = vi.fn();
+    render(<LoginScreen onOpenLocal={onOpenLocal} intent="connect" />);
+    expect(screen.getByRole("heading", { name: "Kết nối ứng dụng" })).toBeTruthy();
+    expect(screen.getByText(/Đăng nhập Wiii Service để xem và quản lý kết nối ứng dụng/)).toBeTruthy();
+    expect(screen.getByText(/Chat và dự án trên máy không cần tài khoản/)).toBeTruthy();
+    expect(screen.queryByLabelText("Năng lực của Wiii Service")).toBeNull();
+    expect(screen.getByRole("button", { name: "Đăng nhập với Google" })).toBeTruthy();
+    expect(screen.getByLabelText("Đăng nhập bằng email")).toBeTruthy();
+    fireEvent.click(screen.getByTestId("login-neko-chill-escape"));
+    expect(onOpenLocal).toHaveBeenCalledOnce();
+  });
 });
