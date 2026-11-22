@@ -117,7 +117,7 @@ describe("composer context and keyboard UX", () => {
     act(() => send.focus());
     const tooltip = screen.getByRole("tooltip");
     expect(tooltip.textContent).toBe("Gửi");
-    expect(send.getAttribute("aria-describedby")).toBe(tooltip.id);
+    expect(document.getElementById(send.getAttribute("aria-describedby")!)?.textContent).toBe("Gửi");
     expect(send.hasAttribute("title")).toBe(false);
     fireEvent.mouseLeave(send.parentElement!);
     expect(screen.getByRole("tooltip")).toBe(tooltip);
@@ -161,6 +161,17 @@ describe("composer context and keyboard UX", () => {
     fireEvent.keyDown(input, { key: "Escape" });
     expect(screen.queryByRole("tooltip")).toBeNull();
     expect(document.activeElement).toBe(input);
+    expect(props.onSend).not.toHaveBeenCalled();
+  });
+
+  it("always describes why Send is disabled to assistive technology without needing pointer hover", () => {
+    const { props } = mount();
+    const send = screen.getByTestId("neko-send") as HTMLButtonElement;
+    expect(send.disabled).toBe(true);
+    expect(screen.queryByRole("tooltip")).toBeNull();
+    expect(document.getElementById(send.getAttribute("aria-describedby")!)?.textContent)
+      .toBe("Nhập nội dung trước khi gửi.");
+    fireEvent.click(send);
     expect(props.onSend).not.toHaveBeenCalled();
   });
   it.each(["streaming", "dispatching"] as const)("allows drafting during %s without submitting or cancelling", status => {

@@ -172,8 +172,9 @@ function ComposerSendButton({ disabled, submitting, queueAllowed, busy, tooltip,
         if (!event.currentTarget.contains(event.relatedTarget)) setOpen(false);
       }}
     >
+      <span id={tooltipId} className="sr-only">{tooltip}</span>
       {open && (
-        <span id={tooltipId} role="tooltip" className="absolute bottom-full right-0 z-50 pb-2">
+        <span role="tooltip" className="absolute bottom-full right-0 z-50 pb-2">
           <span className="block w-max max-w-[240px] rounded-lg border border-[var(--nk-border-strong)] bg-[var(--nk-composer)] px-2.5 py-1.5 text-[11px] leading-4 text-[var(--nk-text-2)] shadow-lg">
             {tooltip}
           </span>
@@ -185,7 +186,7 @@ function ComposerSendButton({ disabled, submitting, queueAllowed, busy, tooltip,
         disabled={disabled}
         onClick={() => { setOpen(false); onSend(); }}
         aria-label={submitting ? "Đang gửi" : queueAllowed ? "Xếp hàng tin nhắn" : "Gửi tin nhắn"}
-        aria-describedby={open ? tooltipId : undefined}
+        aria-describedby={tooltipId}
         aria-busy={busy}
         data-testid="neko-send"
       >
