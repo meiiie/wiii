@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { AdeGraph } from "@/ade/domain";
+import type { AdeGraph } from "@/neko/legacy-work-model";
 import type { DriverRuntimeDescriptor } from "@/neko-chill/drivers/types";
 import type { NekoTaskReceipt } from "@/neko-chill/drivers/acp/task-protocol";
 
@@ -28,7 +28,7 @@ const h = vi.hoisted(() => ({
   computerBridge: vi.fn(),
 }));
 
-vi.mock("@/ade/store", () => ({ useAdeWorkStore: { getState: () => ({ ...h.work, hydrate: h.hydrate }) } }));
+vi.mock("@/neko/legacy-work-state", () => ({ legacyWorkState: { getState: () => ({ ...h.work, hydrate: h.hydrate }) } }));
 vi.mock("@tauri-apps/api/core", () => ({ invoke: h.invoke }));
 vi.mock("@/neko/control-client", () => ({ getNekoControlClient: () => ({ spawnProvider: h.spawn }) }));
 vi.mock("@/neko-computer/agent-bridge", () => ({ createComputerAgentBridge: h.computerBridge }));

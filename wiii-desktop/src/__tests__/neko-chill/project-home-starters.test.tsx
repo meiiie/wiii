@@ -47,18 +47,4 @@ describe("Project Home empty-state starters", () => {
     expect(readNekoComposerDraft(`project:${project.id}`)).toBe(NEKO_STARTER_PROMPTS[0].prompt);
   });
 
-  it("hides starters during taskLaunch (task title owns the composer)", () => {
-    render(
-      <ProjectHome
-        project={project}
-        resetToken={0}
-        taskLaunch={{
-          execution: { taskId: "t", runId: "r", environmentId: "e" },
-          workspace: project.roots[0],
-          title: "Task fixture",
-        }}
-      />,
-    );
-    expect(screen.queryByTestId("project-home-starters")).toBeNull();
-  });
 });

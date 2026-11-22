@@ -84,56 +84,6 @@ describe("Project Home readiness and missing Neko recovery", () => {
     expect((screen.getByRole("textbox", { name: "Lời nhắn đầu tiên" }) as HTMLTextAreaElement).value).toBe("");
   });
 
-  it("binds a task session to its Project without deleting the manual draft", async () => {
-    const execution = { taskId: "task-test", runId: "run-test", environmentId: "environment-test" };
-    writeNekoComposerDraft(`project:${project.id}`, "Manual draft");
-    useNekoAgentStore.setState({ agents: [gemini] });
-    render(<ProjectHome project={{ ...project, preferredHarnessId: "gemini" }} resetToken={0}
-      taskLaunch={{ execution, workspace: project.roots[0], title: "Task fixture" }} />);
-    fireEvent.click(sendButton());
-    await vi.waitFor(() => expect(useNekoSessionStore.getState().createSession).toHaveBeenCalledWith(
-      gemini, project.roots[0], null, { projectId: project.id, execution, title: "Task fixture" },
-    ));
-    expect(readNekoComposerDraft(`project:${project.id}`)).toBe("Manual draft");
-    await vi.waitFor(() => expect(useNekoSessionStore.getState().sendPromptToSession).toHaveBeenCalledWith("created", "Task fixture", expect.any(Function)));
-  });
-
-  it("waits for the Work binding and targets the created session despite navigation", async () => {
-    let release!: () => void;
-    const binding = new Promise<void>(resolve => { release = resolve; });
-    const onSessionCreated = vi.fn(async () => {
-      useNekoSessionStore.setState({ activeSessionId: "another-session" });
-      await binding;
-    });
-    useNekoAgentStore.setState({ agents: [gemini] });
-    render(<ProjectHome project={{ ...project, preferredHarnessId: "gemini" }} resetToken={0}
-      taskLaunch={{ execution: { taskId: "task", runId: "run", environmentId: "env" },
-        workspace: project.roots[0], title: "Task goal", acceptanceCriteria: ["Keep data", "Pass tests"], onSessionCreated }} />);
-    expect((screen.getByRole("textbox", { name: "Lời nhắn đầu tiên" }) as HTMLTextAreaElement).value)
-      .toBe("Task goal\n\nTiêu chí chấp nhận:\n- Keep data\n- Pass tests");
-    const send = sendButton();
-    act(() => { fireEvent.click(send); fireEvent.click(send); });
-    await vi.waitFor(() => expect(onSessionCreated).toHaveBeenCalledWith("created"));
-    expect(useNekoSessionStore.getState().sendPromptToSession).not.toHaveBeenCalled();
-    expect(useNekoSessionStore.getState().createSession).toHaveBeenCalledOnce();
-    await act(async () => { release(); });
-    await vi.waitFor(() => expect(useNekoSessionStore.getState().sendPromptToSession).toHaveBeenCalledWith(
-      "created", "Task goal\n\nTiêu chí chấp nhận:\n- Keep data\n- Pass tests", expect.any(Function),
-    ));
-  });
-
-  it("does not dispatch when durable Work binding fails", async () => {
-    const onLaunchError = vi.fn();
-    useNekoAgentStore.setState({ agents: [gemini] });
-    render(<ProjectHome project={{ ...project, preferredHarnessId: "gemini" }} resetToken={0}
-      taskLaunch={{ execution: { taskId: "task", runId: "run", environmentId: "env" },
-        workspace: project.roots[0], title: "Task goal",
-        onSessionCreated: async () => { throw new Error("binding unavailable"); }, onLaunchError }} />);
-    fireEvent.click(sendButton());
-    await vi.waitFor(() => expect(onLaunchError).toHaveBeenCalledOnce());
-    expect(useNekoSessionStore.getState().sendPromptToSession).not.toHaveBeenCalled();
-  });
-
   it("removes all four starter actions, keeping the heading and composer", () => {
     home([gemini]);
     expect(screen.getByRole("heading", { name: /Cùng làm việc với Wiii/ })).toBeTruthy();

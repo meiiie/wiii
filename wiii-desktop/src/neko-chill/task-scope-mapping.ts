@@ -204,6 +204,22 @@ export function markNekoTaskRecovery(mapping: NekoTaskScopeMapping, reason: Neko
   return Object.freeze({ ...safe, state: "recovery-required", reason });
 }
 
+/** Eligibility only, never native stop/root proof or permission to retry a load. */
+export function canRecoverNekoTaskWriter(value: unknown): value is NekoTaskScopeMapping & {
+  state: "recovery-required"; reason: "writer-unavailable"; backendSessionId: string; receipt: NekoTaskReceipt;
+} {
+  return isNekoTaskScopeMapping(value) && value.state === "recovery-required"
+    && value.reason === "writer-unavailable" && value.backendSessionId !== null && value.receipt !== null;
+}
+
+/** Only after positive native lease proof; strictly save before unlocking send.
+ * Receipt/backend remain unchanged. A later explicit load still needs fresh admission.
+ */
+export function retryNekoTaskWriter(mapping: NekoTaskScopeMapping): NekoTaskScopeMapping {
+  if (!canRecoverNekoTaskWriter(mapping)) fail("invalid-transition");
+  return readMapping({ ...mapping, state: "bound" });
+}
+
 /** Restore durable receipt facts only; a history read is not a load attempt.
  * The session store restores runtime=null. An explicit send must persist
  * beginNekoTaskLoad before startup and validate a fresh receipt before dispatch.

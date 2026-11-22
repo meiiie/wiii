@@ -44,7 +44,7 @@ import { NekoComposer, nekoComposerTurnBusy } from "./components/NekoComposer";
 import { NekoOutbox } from "./components/NekoOutbox";
 import { enqueueSessionMessage, useNekoOutboxStore } from "./stores/neko-outbox-store";
 import { NekoOverview } from "./components/NekoOverview";
-import { ProjectHome, type NekoTaskLaunchRequest } from "./components/ProjectHome";
+import { ProjectHome } from "./components/ProjectHome";
 import { ProjectDialog } from "./components/ProjectDialog";
 import { SessionInspector } from "./components/SessionInspector";
 import { SessionSidebar } from "./components/SessionSidebar";
@@ -61,7 +61,6 @@ import {
 import { useNekoWorkspaceStore } from "./stores/neko-workspace-store";
 import {
   projectForSession,
-  projectForWorkspace,
   useNekoProjectStore,
   workspaceKey,
 } from "./stores/neko-project-store";
@@ -134,13 +133,9 @@ function useCompactWorkspace(breakpoint = 1040) {
 function WiiiNavigation({
   onOpenManaged,
   onOpenConnections,
-  onOpenWork,
-  showWorkNavigation,
 }: {
   onOpenManaged: () => void;
   onOpenConnections: () => void;
-  onOpenWork: () => void;
-  showWorkNavigation: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
@@ -214,19 +209,6 @@ function WiiiNavigation({
               Không gian trên máy
             </span>
           </div>
-          {showWorkNavigation ? (
-            <button
-              type="button"
-              role="menuitem"
-              className="w-full rounded-lg px-2.5 py-2 text-left text-[11.5px] text-[var(--nk-text-3)] transition-colors hover:bg-[var(--nk-overlay)]"
-              onClick={() => {
-                setOpen(false);
-                onOpenWork();
-              }}
-            >
-              Mở bản thử nghiệm Công việc
-            </button>
-          ) : null}
           <button
             type="button"
             role="menuitem"
@@ -423,19 +405,13 @@ function NekoChillScreen({
   active = true,
   onOpenManaged = NEKO_CHILL_OPEN_MANAGED_NOOP,
   onOpenConnections,
-  onOpenWork = () => {},
-  showWorkNavigation = false,
-  taskLaunch = null,
 }: {
   active?: boolean;
   onOpenManaged?: () => void;
   onOpenConnections?: () => void;
-  onOpenWork?: () => void;
-  showWorkNavigation?: boolean;
-  taskLaunch?: NekoTaskLaunchRequest | null;
 }) {
   // Preview / bare mount: no Workbench host → do not silently no-op Kết nối.
-  // When only onOpenManaged is wired (ADE), keep falling through to managed.
+  // When only onOpenManaged is wired, keep falling through to managed.
   const openConnections =
     onOpenConnections
     ?? (onOpenManaged === NEKO_CHILL_OPEN_MANAGED_NOOP
@@ -517,15 +493,7 @@ function NekoChillScreen({
   );
   const knownWorkspaceKey = knownWorkspacePaths.join("\n");
   const selectedProject = projects.find((project) => project.id === selectedProjectId) ?? null;
-  const taskProject = useMemo(() => taskLaunch ? {
-    id: `task:${taskLaunch.execution.runId}`,
-    name: taskLaunch.workspace.name,
-    roots: [taskLaunch.workspace],
-    preferredHarnessId: null,
-    createdAt: 0,
-    updatedAt: 0,
-  } : null, [taskLaunch?.execution.runId, taskLaunch?.workspace.path]);
-  const projectHome = selectedProject ?? taskProject;
+  const projectHome = selectedProject;
   const projectWorkspaceId = projectHome ? `project:${projectHome.id}` : null;
   const projectWorkspacePane = useNekoWorkspaceStore(useShallow((state) => {
     const pane = projectWorkspaceId ? state.sessions[projectWorkspaceId] : undefined;
@@ -643,20 +611,6 @@ function NekoChillScreen({
   useEffect(() => {
     if (session) setCoworkerHomeOpen(false);
   }, [session?.id]);
-
-  useEffect(() => {
-    if (!taskLaunch || !projectsHydrated) return;
-    setActiveSession(null);
-    setCoworkerHomeOpen(false);
-    void ensureWorkspaceProjects([taskLaunch.workspace]).then(() => {
-      const project = projectForWorkspace(
-        useNekoProjectStore.getState().projects,
-        taskLaunch.workspace.path,
-      );
-      setSelectedProjectId(project?.id ?? null);
-      setProjectHomeResetToken((value) => value + 1);
-    });
-  }, [ensureWorkspaceProjects, projectsHydrated, setActiveSession, taskLaunch?.execution.runId, taskLaunch?.workspace.path]);
 
   useEffect(() => {
     if (!session?.workspace) return;
@@ -957,7 +911,7 @@ function NekoChillScreen({
   const sidebarSurface = (
     <SessionSidebar
       header={<>
-        <WiiiNavigation onOpenManaged={onOpenManaged} onOpenConnections={openConnections} onOpenWork={onOpenWork} showWorkNavigation={showWorkNavigation} />
+        <WiiiNavigation onOpenManaged={onOpenManaged} onOpenConnections={openConnections} />
         <button type="button" className="nk-chrome-button grid h-8 w-8 place-items-center rounded-md text-[var(--nk-text-2)]"
           aria-label="Tìm phiên hoặc chạy lệnh" title="Tìm phiên hoặc chạy lệnh (Ctrl+K / ⌘K)" aria-keyshortcuts="Control+K Meta+K"
           onClick={openCommandCenter}><Search size={16} aria-hidden="true" /></button>
@@ -1156,7 +1110,6 @@ function NekoChillScreen({
                     <ProjectHome
                       key={projectHome.id}
                       project={projectHome}
-                      taskLaunch={taskLaunch}
                       resetToken={projectHomeResetToken}
                       onWorkspaceChange={updateProjectWorkspace}
                       onManageHarness={() => {

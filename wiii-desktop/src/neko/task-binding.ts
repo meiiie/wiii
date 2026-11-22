@@ -3,7 +3,7 @@
  * This binds Wiii work identity and a native-resolved root; it grants no tool,
  * Computer, filesystem or provider authority and owns no agent memory.
  */
-import { validateAdeGraph, type AdeGraph } from "@/ade/domain";
+import { validateAdeGraph, type AdeGraph } from "./legacy-work-model";
 import type { NekoExecutionBinding } from "./control-client";
 import { canonicalRootIdentity } from "@/neko-chill/drivers/acp/task-protocol";
 
@@ -11,7 +11,7 @@ export interface NekoTaskBindingInput {
   readonly hydrated: boolean;
   readonly graph: AdeGraph;
   readonly execution: NekoExecutionBinding;
-  /** ADE Project ID, never the Neko launcher's synthetic `task:<run>` ID. */
+  /** Original legacy Work Project ID, never a display-only launcher ID. */
   readonly projectId: string;
   readonly workspacePath: string;
   readonly threadId: string;
