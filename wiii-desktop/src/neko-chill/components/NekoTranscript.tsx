@@ -4,7 +4,7 @@
  * MarkdownRenderer for answers, with measured row virtualization for long sessions.
  */
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { useVirtualizer } from "@tanstack/react-virtual";
+import { elementScroll, useVirtualizer } from "@tanstack/react-virtual";
 import { ArrowDown, BookOpen, ChevronRight, Command, FolderGit2 } from "lucide-react";
 import { NEKO_STARTER_PROMPTS } from "../starter-prompts";
 import { MarkdownRenderer } from "@/components/common/MarkdownRenderer";
@@ -418,6 +418,7 @@ export function NekoTranscript({
   const contentRef = useRef<HTMLDivElement>(null);
   const followFrameRef = useRef<number | null>(null);
   const automaticScrollTopRef = useRef<number | null>(null);
+  const restoredSessionRef = useRef<string | null>(null);
   const pendingPromptFocusRef = useRef<{ sessionId: string; messageId: string } | null>(null);
   const messagesRef = useRef(session.messages);
   messagesRef.current = session.messages;
@@ -454,6 +455,11 @@ export function NekoTranscript({
     gap: 4,
     enabled: useVirtual,
     initialOffset: readingPositions?.get(session.id)?.scrollTop ?? 0,
+    scrollToFn: (offset, options, instance) => {
+      elementScroll(offset, options, instance);
+      // Bootstrap and row measurements also scroll; none is reader intent.
+      if (options.behavior !== "smooth") automaticScrollTopRef.current = instance.scrollElement?.scrollTop ?? null;
+    },
   });
 
   const measureVirtualRow = useCallback((node: HTMLDivElement | null) => {
@@ -567,6 +573,9 @@ export function NekoTranscript({
   }, [useVirtual, virtualizer]);
 
   useLayoutEffect(() => {
+    // Crossing the virtualization threshold is not a session remount or send.
+    if (restoredSessionRef.current === session.id) return;
+    restoredSessionRef.current = session.id;
     pendingPromptFocusRef.current = null;
     automaticScrollTopRef.current = null;
     pendingVirtualFallbackRef.current = null;
@@ -586,6 +595,7 @@ export function NekoTranscript({
       restoredReadingTopRef.current = scrollRef.current.scrollTop;
     }
     previousLastMessageRef.current = messagesRef.current[messagesRef.current.length - 1]?.id;
+    if (useVirtual) automaticScrollTopRef.current = scrollRef.current?.scrollTop ?? null;
   }, [session.id, readingPositions, restorePendingReadingPosition, updateFollowingTail, useVirtual, virtualizer]);
 
   // Virtual rows and delayed Markdown can mount after the initial restoration.

@@ -407,6 +407,34 @@ describe("Neko transcript reading continuity", () => {
       else Reflect.deleteProperty(document, "caretRangeFromPoint");
     }
   });
+  it.each([false, true])("follows a new send crossing 50 messages, including a reader previously away: %s", (readingOlder) => {
+    const session = makeSession();
+    session.messages = Array.from({ length: 50 }, (_, index) => ({ id: `old-${index}`, role: index % 2 ? "assistant" as const : "user" as const, text: `Mốc ${index}` }));
+    const positions = new Map<string, TranscriptReadingPosition>([[session.id, { followingTail: true, scrollTop: 1000, bookmark: null }]]);
+    const { viewport, rerender } = mount(session, positions);
+    const scrollTo = vi.fn((options: ScrollToOptions) => { viewport.scrollTop = options.top ?? viewport.scrollTop; });
+    Object.defineProperties(viewport, {
+      offsetHeight: { configurable: true, value: 400 },
+      offsetWidth: { configurable: true, value: 600 },
+      scrollTo: { configurable: true, value: scrollTo },
+    });
+    if (readingOlder) { viewport.scrollTop = 800; fireEvent.scroll(viewport); }
+    // Real TanStack bootstrap/measurements replace the non-virtual geometry.
+    // Its queued scroll is NOT the reader leaving the newly submitted turn.
+    Object.defineProperty(viewport, "scrollHeight", { configurable: true, value: 6400 });
+    const next = { ...session, messages: [...session.messages, { id: "new-user", role: "user" as const, text: "Lời nhắn mới" }] };
+    rerender(<NekoTranscript session={next} readingPositions={positions} onResolvePermission={vi.fn()} onInsertPrompt={vi.fn()} />);
+    fireEvent.scroll(viewport);
+    paint();
+    expect(screen.queryByRole("button", { name: "Đi tới tin nhắn mới nhất" })).toBeNull();
+    expect(scrollTo.mock.calls.some(([options]) => (options.top ?? 0) > 1200)).toBe(true);
+    // An actual later reader scroll still cancels virtual tail-following.
+    viewport.scrollTop = 600; fireEvent.scroll(viewport); scrollTo.mockClear();
+    paint();
+    expect(screen.getByRole("button", { name: "Đi tới tin nhắn mới nhất" })).toBeTruthy();
+    expect(scrollTo).not.toHaveBeenCalled();
+  });
+
   it("follows rendered growth without another message or block", () => {
     const { content } = mount();
     resize(content); resize(content); paint();
