@@ -32,11 +32,17 @@ class ReleaseToolTests(unittest.TestCase):
         self.assertFalse(result["license_mismatches"])
 
     def test_candidate_notes_come_from_unreleased(self) -> None:
-        notes = wiii_release.candidate_changelog_section("1.2.0")
-        self.assertTrue(notes.startswith("## Wiii 1.2.0 candidate\n"))
-        # Candidate notes must contain new work rather than the previous release.
-        self.assertIn("(none yet)", notes)
-        self.assertNotIn("host-aware Workbench bootstrap", notes)
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            for body in ("(none yet)", "New candidate work."):
+                with self.subTest(body=body):
+                    (root / "CHANGELOG.md").write_text(
+                        f"# Changelog\n\n## [Unreleased]\n\n{body}\n\n"
+                        "## [1.2.0] - 2026-08-23\n\nPrevious release work.\n",
+                        encoding="utf-8",
+                    )
+                    notes = wiii_release.candidate_changelog_section("1.2.0", root)
+                    self.assertEqual(notes, f"## Wiii 1.2.0 candidate\n\n{body}\n")
 
     def test_stable_validation_requires_a_dated_current_version(self) -> None:
         # A future version bump must not invalidate this contract test or force
