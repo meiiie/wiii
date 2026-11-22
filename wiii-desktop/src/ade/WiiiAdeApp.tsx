@@ -24,7 +24,6 @@ import NekoChillApp from "@/neko-chill/NekoChillApp";
 import type { NekoTaskLaunchRequest } from "@/neko-chill/components/ProjectHome";
 import { useNekoSessionStore, type NekoSession } from "@/neko-chill/stores/neko-session-store";
 import { NEKO_SESSION_STATUS_LABELS } from "@/neko-chill/session-status";
-import { persistSessionStrict } from "@/neko-chill/persistence";
 import { chooseWorkspaceFolder, workspaceFromPath, type WorkspaceRef } from "@/neko-chill/workspace";
 import type { AdeRun, AdeRunState, AdeTask } from "./domain";
 import {
@@ -330,6 +329,11 @@ function WiiiAdeScreen({ active = true, onOpenManaged = () => {}, onOpenConnecti
       if (!run || terminalStates.includes(run.state)) continue;
 
       const durableOutcome = deriveAdeOutcomeFromSessionEvents(session.events, execution.runId);
+      // A closing/cancelling host can already report a terminal native state
+      // while its renderer lifecycle lock is still held. Wait for that boundary
+      // before choosing a turn result versus a process result, except uncertainty.
+      if (durableOutcome !== "unknown_outcome"
+        && (session.closePending || session.deletePending || session.cancelPending)) continue;
       const turnResult = deriveAdeTurnResult(session);
       // ACP hosts stay alive between turns. Project the correlated result only
       // after its transcript + boundary events have crossed a strict save. A
@@ -339,7 +343,7 @@ function WiiiAdeScreen({ active = true, onOpenManaged = () => {}, onOpenConnecti
         const key = `${execution.runId}:turn-result`;
         if (lifecycleSyncs.current.has(key)) continue;
         lifecycleSyncs.current.add(key);
-        void persistSessionStrict(session).then(async () => {
+        void useNekoSessionStore.getState().persistTurnResult(session.id).then(async () => {
           const current = useNekoSessionStore.getState().sessions[session.id];
           if (!current || current.execution?.runId !== execution.runId
             || deriveAdeTurnResult(current)?.event.eventId !== turnResult.event.eventId)
@@ -369,6 +373,13 @@ function WiiiAdeScreen({ active = true, onOpenManaged = () => {}, onOpenConnecti
           const record = records.find((item) => item.agentSessionId === bound?.id)
             ?? records[records.length - 1];
           const outcome = record ? deriveAdeOutcomeFromNativeRecord(record) : null;
+          const current = useNekoSessionStore.getState().sessions[session.id];
+          if (!current || current.execution?.runId !== execution.runId) return;
+          // The read raced renderer cleanup or a newly saved turn. Never let
+          // an idle-host cancellation replace the more precise prompt result.
+          if (outcome !== "unknown_outcome"
+            && (current.status !== "exited" || current.closePending || current.deletePending
+              || current.cancelPending || deriveAdeTurnResult(current))) return;
           if (outcome) return projectOutcome(execution.runId, outcome);
           return undefined;
         }).catch(() => {}).finally(() => {

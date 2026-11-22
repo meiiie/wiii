@@ -73,6 +73,8 @@ export interface NekoSession {
   deletePending: boolean;
   /** Honest error text for the banner when status is error/exited. */
   statusDetail?: string;
+  /** Ephemeral identity for a failed save; a later save must not clear newer diagnostics. */
+  persistenceFailure?: { context: string; detail: string };
 }
 /** Injected so tests can fake the driver without Tauri (vi.mock factory). */
 export type DriverFactory = (agent: DetectedAgent, sessionId: string, launch: DriverLaunchConfig, onEvent: (event: DriverEvent) => void, ownDriver: (driver: Driver) => void) => Promise<Driver>;
@@ -106,6 +108,8 @@ export interface NekoSessionState {
   setActiveSession: (sessionId: string | null) => void;
   /** DriverEvent intake — exported on the store for direct unit testing. */
   handleEvent: (event: DriverEvent) => void;
+  /** Strictly save a finished turn without dispatching it again. Rejects on failure. */
+  persistTurnResult: (sessionId: string) => Promise<void>;
 }
 export type SessionStoreApi = Mutate<StoreApi<NekoSessionState>, [
   [
