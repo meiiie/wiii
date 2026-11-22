@@ -154,6 +154,25 @@ describe("Scoped recovery deletion and cold-start boundaries", () => {
     return { id, before };
   }
 
+  it("does not require Linux PID-1 lease migration for an ordinary bound scoped stop recovery", async () => {
+    const id = await createScoped(); await coldHydrate(id);
+    const before = copy(session(id));
+    // The PID-1 compatibility command is unsupported on Windows/macOS and is
+    // unrelated to native stop recovery unless Core reported writer-unavailable.
+    nativeControl.recoverLegacySessionLease.mockRejectedValue(new LegacyLeaseRecoveryError(false));
+    useNekoSessionStore.setState(state => {
+      state.sessions[id].status = "error";
+      state.sessions[id].nativeRecoveryRequired = true;
+    });
+    const starts = launches.length;
+    await useNekoSessionStore.getState().recoverSession(id);
+    expect(session(id).status).toBe("exited");
+    expect(session(id).taskScope).toEqual(before.taskScope);
+    expect(session(id).nativeRecoveryRequired).toBe(false);
+    expect(nativeControl.recoverLegacySessionLease).not.toHaveBeenCalled();
+    expect(launches).toHaveLength(starts);
+  });
+
   it("explicitly recovers only the saved writer, preserves scope/history and never sends until a later user action", async () => {
     const { id, before } = await writerUnavailable();
     expect(nativeSessionNeedsRecovery(session(id))).toBe(true);

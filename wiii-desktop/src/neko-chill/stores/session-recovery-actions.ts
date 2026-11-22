@@ -63,14 +63,15 @@ export function createSessionRecoveryActions(set: SessionSet, get: SessionGet, r
           if (taskWriter && (candidate.agentId !== "neko" || candidate.backendSessionId !== taskWriter.backendSessionId)) {
             throw new Error("Scoped backend changed during recovery");
           }
-          if (candidate.agentId === "neko" && candidate.backendSessionId) {
-            if (candidate.taskScope) await reader.recoverLegacySessionLease(sessionId, candidate.backendSessionId, true);
-            else await reader.recoverLegacySessionLease(sessionId, candidate.backendSessionId);
-            if (taskWriter) {
-              if (get().sessions[sessionId]?.taskScope !== taskWriter
-                || get().sessions[sessionId]?.backendSessionId !== taskWriter.backendSessionId) throw new Error("Scoped mapping changed during recovery");
-              candidate.taskScope = retryNekoTaskWriter(taskWriter);
-            }
+          if (taskWriter) {
+            await reader.recoverLegacySessionLease(sessionId, taskWriter.backendSessionId, true);
+            if (get().sessions[sessionId]?.taskScope !== taskWriter
+              || get().sessions[sessionId]?.backendSessionId !== taskWriter.backendSessionId) throw new Error("Scoped mapping changed during recovery");
+            candidate.taskScope = retryNekoTaskWriter(taskWriter);
+          } else if (candidate.agentId === "neko" && candidate.backendSessionId && !candidate.taskScope) {
+            // Preserve ordinary bound scoped stop recovery on every platform;
+            // only the typed writer failure opts into PID-1 lease migration.
+            await reader.recoverLegacySessionLease(sessionId, candidate.backendSessionId);
           }
           set(state => {
             const target = state.sessions[sessionId];
