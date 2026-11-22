@@ -489,7 +489,7 @@ describe("Neko Chill shell UI", () => {
     );
 
     const switcher = screen.getByRole("button", {
-      name: "Mở điều hướng Wiii. Khu vực hiện tại: Neko Chill",
+      name: "Mở menu Wiii. Đang ở Trò chuyện",
     });
     expect(switcher.getAttribute("aria-expanded")).toBe("false");
     expect(switcher.textContent).toContain("Wiii");
@@ -499,9 +499,8 @@ describe("Neko Chill shell UI", () => {
     expect(screen.getByRole("menu", { name: "Điều hướng Wiii" })).toBeTruthy();
     expect(screen.getByText("Không gian trên máy")).toBeTruthy();
     expect(screen.queryByRole("menuitem", { name: /Công việc/i })).toBeNull();
-    expect(screen.getByRole("menuitem", { name: /Neko Chill.*Đang mở/i }).getAttribute("aria-current"))
+    expect(screen.getByRole("menuitem", { name: /Trò chuyện.*Đang mở/i }).getAttribute("aria-current"))
       .toBe("page");
-    expect(screen.getByText(/Quản lý project, harness và các phiên trên máy này/i)).toBeTruthy();
     expect(screen.getByRole("menuitem", { name: /Wiii Service/i })).toBeTruthy();
     expect(screen.getByText(/Đồng bộ và tri thức trực tuyến.*tùy chọn/i)).toBeTruthy();
     expect(screen.queryByText("Wiii Knowledge")).toBeNull();

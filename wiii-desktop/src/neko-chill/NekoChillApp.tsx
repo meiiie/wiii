@@ -187,7 +187,7 @@ function WiiiNavigation({
         ref={triggerRef}
         type="button"
         data-testid="mode-switcher"
-        aria-label="Mở điều hướng Wiii. Khu vực hiện tại: Neko Chill"
+        aria-label="Mở menu Wiii. Đang ở Trò chuyện"
         aria-haspopup="menu"
         aria-expanded={open}
         className="flex h-8 items-center gap-1.5 rounded-lg px-1 text-[15px] font-semibold text-[var(--nk-text)] transition-colors hover:bg-[var(--nk-overlay)]"
@@ -222,11 +222,8 @@ function WiiiNavigation({
             <Bot aria-hidden="true" className="mt-0.5 h-4 w-4 shrink-0 text-[var(--nk-text-2)]" />
             <span className="min-w-0 flex-1">
               <span className="flex items-center justify-between gap-3 text-[13px] font-medium text-[var(--nk-text)]">
-                Neko Chill
+                Trò chuyện
                 <span className="text-[9.5px] font-medium text-[var(--nk-ghost)]">Đang mở</span>
-              </span>
-              <span className="mt-0.5 block text-[11.5px] leading-4 text-[var(--nk-text-3)]">
-                Quản lý project, harness và các phiên trên máy này
               </span>
             </span>
           </button>
