@@ -122,6 +122,28 @@ describe("Neko transcript reading continuity", () => {
     reflow(750, 240); fireEvent.scroll(viewport); resize(viewport);
     expect(viewport.scrollTop).toBe(220);
   });
+  it("anchors the tall paragraph crossing the reading line, not the next closer heading", () => {
+    const { viewport, content, paragraph, reflow } = readingFixture();
+    let expanded = false;
+    paragraph.getBoundingClientRect = () => {
+      const top = 200 - viewport.scrollTop;
+      const height = expanded ? 680 : 580;
+      return { top, bottom: top + height, height } as DOMRect;
+    };
+    const next = document.createElement("h2");
+    next.textContent = "Đoạn tiếp theo";
+    next.getBoundingClientRect = () => {
+      const top = 100 + (expanded ? 800 : 700) - viewport.scrollTop;
+      return { top, bottom: top + 30, height: 30 } as DOMRect;
+    };
+    content.append(next);
+    resize(viewport);
+    viewport.scrollTop = 600; fireEvent.scroll(viewport);
+    expanded = true; reflow(750, 100); resize(viewport); paint();
+    expect(viewport.scrollTop).toBe(600);
+    expect(paragraph.getBoundingClientRect().top).toBe(-400);
+    expect(scroll).not.toHaveBeenCalled();
+  });
   it("does not restore a reading node removed by replacement or virtualization", () => {
     const { viewport, paragraph, reflow } = readingFixture();
     resize(viewport); fireEvent.scroll(viewport);

@@ -50,8 +50,11 @@ export function captureTranscriptReadingAnchor(viewport: HTMLElement): ReadingAn
   )) {
     const rect = element.getBoundingClientRect();
     if (rect.height <= 0 || rect.bottom <= bounds.top || rect.top >= bounds.bottom) continue;
-    const nextDistance = Math.abs(rect.top - readingLine);
-    if (nextDistance < best.distance || best.element?.contains(element)) {
+    // A tall paragraph crossing the reading line wins over a later paragraph
+    // whose top happens to be closer. Among enclosing blocks, prefer the leaf.
+    const nextDistance = rect.top <= readingLine && rect.bottom > readingLine
+      ? 0 : Math.abs(rect.top - readingLine);
+    if (nextDistance < best.distance || (nextDistance === best.distance && best.element?.contains(element))) {
       best.element = element;
       best.distance = nextDistance;
     }
