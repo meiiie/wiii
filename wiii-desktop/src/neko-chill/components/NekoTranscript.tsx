@@ -382,6 +382,7 @@ export function NekoTranscript({
   const bottomRef = useRef<HTMLDivElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
   const followFrameRef = useRef<number | null>(null);
+  const automaticScrollTopRef = useRef<number | null>(null);
   const pendingPromptFocusRef = useRef<{ sessionId: string; messageId: string } | null>(null);
   const messagesRef = useRef(session.messages);
   messagesRef.current = session.messages;
@@ -445,6 +446,7 @@ export function NekoTranscript({
       } else if (typeof bottomRef.current?.scrollIntoView === "function") {
         bottomRef.current.scrollIntoView({ block: "end", behavior });
       }
+      automaticScrollTopRef.current = behavior === "auto" ? scrollRef.current?.scrollTop ?? null : null;
     },
     [messageCount, useVirtual, virtualizer],
   );
@@ -497,6 +499,7 @@ export function NekoTranscript({
 
   useEffect(() => {
     pendingPromptFocusRef.current = null;
+    automaticScrollTopRef.current = null;
     updateFollowingTail(true);
   }, [session.id, updateFollowingTail]);
 
@@ -531,6 +534,10 @@ export function NekoTranscript({
       // choosing to resume tail-following; restore their text position first.
       if (width !== viewport.clientWidth) return;
       if (restoredScrollTop !== null && Math.abs(viewport.scrollTop - restoredScrollTop) < 1) return;
+      // A requested follow can emit scroll after another streaming chunk has
+      // grown the content. That old position is not the reader scrolling away.
+      if (followingTailRef.current && automaticScrollTopRef.current !== null
+        && Math.abs(viewport.scrollTop - automaticScrollTopRef.current) < 1) return;
       restoredScrollTop = null;
       updateFollowingTail(viewport.scrollHeight - viewport.scrollTop - viewport.clientHeight < 96);
       rememberReadingPosition();
