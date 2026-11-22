@@ -496,7 +496,7 @@ export function NekoCoworkerHome({ projects }: { projects: NekoProject[] }) {
 
         {error ? (
           <p className="mt-4 rounded-xl border border-[var(--nk-danger-soft)] bg-[var(--nk-danger-soft)]/35 px-3 py-2.5 text-[10px] leading-4 text-[var(--nk-danger)]" role="alert">
-            {error}
+            Máy tính chưa sẵn sàng
           </p>
         ) : null}
       </div>

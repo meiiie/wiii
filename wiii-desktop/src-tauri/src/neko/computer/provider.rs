@@ -18,8 +18,9 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::thread;
 use std::time::{Duration, Instant};
 
-const IMAGE_REF: &str = "wiii/web-computer:semantic-v43";
-const OBSOLETE_IMAGE_REFS: [&str; 42] = [
+const IMAGE_REF: &str = "wiii/web-computer:semantic-v44";
+const OBSOLETE_IMAGE_REFS: [&str; 43] = [
+    "wiii/web-computer:semantic-v43",
     "wiii/web-computer:semantic-v42",
     "wiii/web-computer:semantic-v41",
     "wiii/web-computer:semantic-v40",
@@ -64,9 +65,9 @@ const OBSOLETE_IMAGE_REFS: [&str; 42] = [
     "wiii/local-computer:pilot-v1",
 ];
 const OWNER_LABEL: &str = "neko-computer-v1";
-const PACK_ID: &str = "web-computer-semantic-v43";
+const PACK_ID: &str = "web-computer-semantic-v44";
 const PACK_SCHEMA_VERSION: &str = "wiii-computer-pack.v2";
-const PACK_VERSION: &str = "semantic-v43";
+const PACK_VERSION: &str = "semantic-v44";
 const PACK_CHANNEL: &str = "preview";
 const PROFILE_SCHEMA_VERSION: u32 = 1;
 pub(crate) const CORE_PACKAGE_ID: &str = "web-computer-core";
@@ -894,7 +895,7 @@ impl LocalDockerComputerProvider {
     }
 
     fn materialize_build_context(&self) -> Result<PathBuf, String> {
-        let context = self.state_root.join("image-semantic-v43");
+        let context = self.state_root.join("image-semantic-v44");
         fs::create_dir_all(&context)
             .map_err(|error| format!("create Wiii computer image context failed: {error}"))?;
         write_if_changed(
@@ -1942,6 +1943,35 @@ mod tests {
             }
         });
         assert!(!container_time_zone_matches(&stale, "Asia/Ho_Chi_Minh"));
+    }
+
+    #[test]
+    fn display_secret_is_private_and_staged_before_workload_start() {
+        let root = std::env::temp_dir().join(format!("wiii-secret-test-{}", uuid::Uuid::new_v4()));
+        let provider = LocalDockerComputerProvider::new(root.clone());
+        let path = provider.ensure_display_secret("fixture").unwrap();
+        let secret = fs::read_to_string(&path).unwrap();
+        assert_eq!(secret.len(), 32);
+        assert_eq!(provider.ensure_display_secret("fixture").unwrap(), path);
+        assert_eq!(fs::read_to_string(&path).unwrap(), secret);
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            assert_eq!(
+                fs::metadata(&path).unwrap().permissions().mode() & 0o777,
+                0o600
+            );
+        }
+        let entrypoint = include_str!("image/entrypoint.sh");
+        let staged = entrypoint
+            .find("cat > /tmp/wiii-secrets/vnc-password")
+            .unwrap();
+        assert!(staged < entrypoint.find("semantic_bridge.py serve").unwrap());
+        assert!(entrypoint.contains("--reuid=\"$(stat -c %u"));
+        assert!(entrypoint.contains("umask 077"));
+        assert!(include_str!("image/semantic_bridge.py")
+            .contains("CONTINUATION_SECRET_PATH = \"/tmp/wiii-secrets/vnc-password\""));
+        fs::remove_dir_all(root).unwrap();
     }
 
     #[test]
