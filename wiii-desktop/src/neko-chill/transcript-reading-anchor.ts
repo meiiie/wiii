@@ -1,7 +1,25 @@
 interface ReadingAnchor {
   node: Node;
   offset: number;
+  character?: number;
+  imageFraction?: number;
   measure: () => Pick<DOMRect, "top" | "height"> | null;
+}
+
+interface ReadingBookmark {
+  messageId: string;
+  path: number[];
+  offset: number;
+  character?: number;
+  sample?: string;
+  imageFraction?: number;
+}
+
+/** Transient workspace UI state: no DOM nodes or conversation-store writes. */
+export interface TranscriptReadingPosition {
+  followingTail: boolean;
+  scrollTop: number;
+  bookmark: ReadingBookmark | null;
 }
 
 /** Keep a text position, not a scroll percentage: wrapping changes earlier rows. */
@@ -81,6 +99,7 @@ function captureImageAnchor(viewport: HTMLElement, bounds: DOMRect, readingLine:
     best.distance = distance; best.atPoint = atPoint;
     best.anchor = {
       node: image, offset: rect.top + fraction * rect.height - bounds.top,
+      imageFraction: fraction,
       measure: () => {
         const next = image.getBoundingClientRect();
         const top = next.top + fraction * next.height;
@@ -141,6 +160,7 @@ function anchorFromRange(viewport: HTMLElement, range: Range, bounds: DOMRect): 
   const length = (node: Node) => node.nodeType === Node.TEXT_NODE ? node.textContent?.length ?? 0 : node.childNodes.length;
   return {
     node: startNode, offset: rect.top - bounds.top,
+    character: startOffset,
     measure: () => {
       if (!endNode.isConnected || !viewport.contains(endNode)
         || startOffset > length(startNode) || endOffset > length(endNode)) return null;
@@ -159,6 +179,57 @@ export function restoreTranscriptReadingAnchor(viewport: HTMLElement, anchor: Re
   const bounds = anchor.measure();
   if (!bounds || bounds.height <= 0) return false;
   const delta = bounds.top - viewport.getBoundingClientRect().top - anchor.offset;
+  if (!Number.isFinite(delta)) return false;
+  if (Math.abs(delta) > 0.5) viewport.scrollTop += delta;
+  return true;
+}
+
+/** Rebind the existing text/image anchor after React has remounted a chat. */
+export function captureTranscriptReadingBookmark(
+  viewport: HTMLElement,
+  anchor = captureTranscriptReadingAnchor(viewport),
+): ReadingBookmark | null {
+  if (!anchor) return null;
+  const element = anchor.node.nodeType === Node.ELEMENT_NODE ? anchor.node as HTMLElement : anchor.node.parentElement;
+  const message = element?.closest<HTMLElement>("[data-neko-message-id]");
+  if (!message?.dataset.nekoMessageId || !viewport.contains(message)) return null;
+  const path: number[] = [];
+  for (let node = anchor.node; node !== message;) {
+    const parent = node.parentNode;
+    if (!parent) return null;
+    path.unshift(Array.prototype.indexOf.call(parent.childNodes, node));
+    node = parent;
+  }
+  return {
+    messageId: message.dataset.nekoMessageId, path, offset: anchor.offset,
+    character: anchor.character, imageFraction: anchor.imageFraction,
+    sample: anchor.character === undefined ? undefined
+      : anchor.node.textContent?.slice(Math.max(0, anchor.character - 16), anchor.character + 16),
+  };
+}
+
+export function restoreTranscriptReadingBookmark(viewport: HTMLElement, bookmark: ReadingBookmark): boolean {
+  let node: Node | undefined = Array.from(viewport.querySelectorAll<HTMLElement>("[data-neko-message-id]"))
+    .find((row) => row.dataset.nekoMessageId === bookmark.messageId);
+  for (const index of bookmark.path) node = node?.childNodes[index];
+  if (!node) return false;
+  let rect: Pick<DOMRect, "top" | "bottom" | "height">;
+  if (bookmark.imageFraction !== undefined && node.nodeName === "IMG") {
+    const box = (node as HTMLElement).getBoundingClientRect();
+    if (box.height <= 0) return false;
+    const top = box.top + bookmark.imageFraction * box.height;
+    rect = { top, bottom: top + 0.5, height: 0.5 };
+  } else {
+    const character = bookmark.character;
+    if (node.nodeType !== Node.TEXT_NODE || character === undefined || character >= (node.textContent?.length ?? 0)
+      || node.textContent?.slice(Math.max(0, character - 16), character + 16) !== bookmark.sample) return false;
+    const range = viewport.ownerDocument.createRange();
+    range.setStart(node, character); range.setEnd(node, character + 1);
+    if (typeof range.getBoundingClientRect !== "function") return false;
+    rect = range.getBoundingClientRect();
+  }
+  if (!visiblePart(viewport, node, rect)) return false;
+  const delta = rect.top - viewport.getBoundingClientRect().top - bookmark.offset;
   if (!Number.isFinite(delta)) return false;
   if (Math.abs(delta) > 0.5) viewport.scrollTop += delta;
   return true;

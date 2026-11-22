@@ -41,6 +41,7 @@ import { NEKO_SESSION_STATUS_LABELS } from "./session-status";
 import { sessionStatusDotClass } from "./session-catalog";
 import { NekoTranscript } from "./components/NekoTranscript";
 import { getStoppedPrompt } from "./session-control-status";
+import type { TranscriptReadingPosition } from "./transcript-reading-anchor";
 import { NekoComposer, nekoComposerTurnBusy } from "./components/NekoComposer";
 import { NekoOutbox } from "./components/NekoOutbox";
 import { enqueueSessionMessage, useNekoOutboxStore } from "./stores/neko-outbox-store";
@@ -366,10 +367,12 @@ function LiveNekoTranscript({
   sessionId,
   onResolvePermission,
   onInsertPrompt,
+  readingPositions,
 }: {
   sessionId: string;
   onResolvePermission: (optionId: string | null) => void;
   onInsertPrompt: (text: string) => void;
+  readingPositions: Map<string, TranscriptReadingPosition>;
 }) {
   const session = useNekoSessionStore((state) => state.sessions[sessionId]);
   const recoverSession = useNekoSessionStore((state) => state.recoverSession);
@@ -386,6 +389,7 @@ function LiveNekoTranscript({
   return (
     <NekoTranscript
       session={session}
+      readingPositions={readingPositions}
       onResolvePermission={onResolvePermission}
       onInsertPrompt={onInsertPrompt}
       onRecover={() => void recoverSession(sessionId)}
@@ -432,6 +436,13 @@ function NekoChillScreen({
   const hydrationError = useNekoSessionStore((state) => state.hydrationError);
   const activeSessionId = useNekoSessionStore((state) => state.activeSessionId);
   const sessions = useNekoSessionCatalog();
+  const transcriptReadingPositions = useRef(new Map<string, TranscriptReadingPosition>());
+  useEffect(() => {
+    const remaining = new Set(sessions.map(({ id }) => id));
+    for (const id of transcriptReadingPositions.current.keys()) {
+      if (!remaining.has(id)) transcriptReadingPositions.current.delete(id);
+    }
+  }, [sessions]);
   const session = useMemo(
     () => activeSessionId
       ? useNekoSessionStore.getState().sessions[activeSessionId] ?? null
@@ -1040,7 +1051,9 @@ function NekoChillScreen({
               >
             <div className="flex h-full min-w-0 flex-1 flex-col">
               <LiveNekoTranscript
+                key={session.id}
                 sessionId={session.id}
+                readingPositions={transcriptReadingPositions.current}
                 onResolvePermission={(optionId) => void resolvePermission(optionId)}
                 onInsertPrompt={insertIntoComposer}
               />
