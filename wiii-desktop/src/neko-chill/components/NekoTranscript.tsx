@@ -458,8 +458,10 @@ export function NekoTranscript({
     initialMeasurementsCache: readingPositions?.get(session.id)?.virtualMeasurements,
     scrollToFn: (offset, options, instance) => {
       elementScroll(offset, options, instance);
-      // Bootstrap and row measurements also scroll; none is reader intent.
-      if (options.behavior !== "smooth") automaticScrollTopRef.current = instance.scrollElement?.scrollTop ?? null;
+      // Follow/bootstrap scrolls are automatic. For older readers, only row
+      // adjustments preserve the anchor; an explicit question jump replaces it.
+      if (options.behavior !== "smooth") automaticScrollTopRef.current = followingTailRef.current || options.adjustments !== undefined
+        ? instance.scrollElement?.scrollTop ?? null : null;
     },
   });
 
@@ -642,10 +644,11 @@ export function NekoTranscript({
       if (width !== viewport.clientWidth) return;
       if (restoredReadingTopRef.current !== null && Math.abs(viewport.scrollTop - restoredReadingTopRef.current) < 1) return;
       if (restoredScrollTop !== null && Math.abs(viewport.scrollTop - restoredScrollTop) < 1) return;
-      // A requested follow can emit scroll after another streaming chunk has
-      // grown the content. That old position is not the reader scrolling away.
-      if (followingTailRef.current && automaticScrollTopRef.current !== null
+      // Automatic row measurements may scroll before React commits their
+      // geometry. Keep the older text anchor as well as tail-following intact.
+      if (automaticScrollTopRef.current !== null
         && Math.abs(viewport.scrollTop - automaticScrollTopRef.current) < 1) return;
+      automaticScrollTopRef.current = null;
       restoredScrollTop = null;
       restoredReadingTopRef.current = null;
       pendingReadingBookmarkRef.current = null;

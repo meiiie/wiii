@@ -92,8 +92,8 @@ beforeEach(() => {
 afterEach(() => { cleanup(); vi.restoreAllMocks(); vi.unstubAllGlobals(); });
 
 describe("Neko transcript reading continuity", () => {
-  function readingFixture() {
-    const view = mount();
+  function readingFixture(session = makeSession()) {
+    const view = mount(session);
     const textRects = new WeakMap<Node, (range: Range) => DOMRect>();
     const createRange = document.createRange.bind(document);
     vi.spyOn(document, "createRange").mockImplementation(() => {
@@ -138,6 +138,63 @@ describe("Neko transcript reading continuity", () => {
     expect(viewport.scrollTop).toBe(300);
     expect(paragraph.getBoundingClientRect().top).toBe(120);
     expect(scroll).not.toHaveBeenCalled();
+  });
+
+  it("keeps an older text anchor while virtual measurement scroll arrives before row layout", () => {
+    const { viewport, content, paragraph, reflow } = readingFixture();
+    resize(viewport); fireEvent.scroll(viewport);
+    const hook = vi.mocked(virtualization.useVirtualizer);
+    const options = hook.mock.calls[hook.mock.calls.length - 1][0];
+    const instance = hook.mock.results[hook.mock.results.length - 1].value;
+    instance.scrollElement = viewport;
+    Object.defineProperty(viewport, "scrollTo", { configurable: true, value: (next: ScrollToOptions) => { viewport.scrollTop = next.top ?? viewport.scrollTop; } });
+
+    // TanStack adjusts the offset immediately; React commits row transforms
+    // afterward. That intermediate scroll must not pick a new reading anchor.
+    act(() => options.scrollToFn?.(300, { adjustments: -100 }, instance));
+    expect(viewport.scrollTop).toBe(200);
+    fireEvent.scroll(viewport);
+    reflow(500, 220); resize(content); paint();
+    expect(viewport.scrollTop).toBe(200);
+    expect(paragraph.getBoundingClientRect().top).toBe(120);
+
+    // A later genuine scroll may revisit that old automatic offset. It must
+    // own the anchor again, rather than being suppressed by a stale marker.
+    viewport.scrollTop = 100; fireEvent.scroll(viewport);
+    viewport.scrollTop = 200; fireEvent.scroll(viewport);
+    reflow(500, 240); resize(content); paint();
+    expect(viewport.scrollTop).toBe(220);
+    expect(screen.getByRole("button", { name: "Đi tới tin nhắn mới nhất" })).toBeTruthy();
+  });
+
+  it("treats reduced-motion virtual question jumps as intentional new reading positions", () => {
+    vi.stubGlobal("matchMedia", () => ({ matches: true, addEventListener() {}, removeEventListener() {} }));
+    const session = makeSession();
+    session.messages = Array.from({ length: 52 }, (_, index) => ({ id: `question-${index}`, role: "user" as const, text: `Câu hỏi ${index + 1}` }));
+    const fakeVirtualizer = {
+      getTotalSize: () => 5200,
+      getVirtualItems: () => session.messages.map((message, index) => ({ index, key: message.id, start: index * 100, size: 100, end: index * 100 + 100, lane: 0 })),
+      getOffsetForIndex: (index: number) => [index * 100],
+      measureElement: vi.fn(),
+      scrollToIndex: vi.fn((index: number, next: { behavior?: ScrollBehavior }) => {
+        const hook = vi.mocked(virtualization.useVirtualizer);
+        const options = hook.mock.calls[hook.mock.calls.length - 1][0];
+        const instance = { scrollElement: screen.getByRole("log"), options: { horizontal: false } } as ReturnType<typeof virtualization.useVirtualizer>;
+        options.scrollToFn?.(300 + index * 5, { behavior: next.behavior }, instance);
+      }),
+    };
+    vi.mocked(virtualization.useVirtualizer).mockReturnValue(fakeVirtualizer as unknown as ReturnType<typeof virtualization.useVirtualizer>);
+    const { viewport, content } = readingFixture(session);
+    resize(viewport); fireEvent.scroll(viewport);
+    Object.defineProperty(viewport, "scrollTo", { configurable: true, value: (next: ScrollToOptions) => { viewport.scrollTop = next.top ?? viewport.scrollTop; } });
+    fireEvent.click(screen.getByRole("button", { name: "Câu hỏi 52" }));
+    fireEvent.click(screen.getByRole("button", { name: /^Đi tới lời nhắn 3:/ }));
+    expect(fakeVirtualizer.scrollToIndex).toHaveBeenLastCalledWith(2, { align: "start", behavior: "auto" });
+    fireEvent.scroll(viewport);
+    expect(viewport.scrollTop).toBe(310);
+    resize(content); paint();
+    expect(viewport.scrollTop).toBe(310);
+    expect(document.activeElement).toBe(viewport.querySelector('[data-neko-message-id="question-2"]'));
   });
   it("rebinds a saved character to remounted DOM after its chat changed width", () => {
     const { viewport, paragraph, reflow } = readingFixture();
