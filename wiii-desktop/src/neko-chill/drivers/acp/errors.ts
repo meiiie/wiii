@@ -77,6 +77,7 @@ export class AcpRpcError extends Error {
   readonly dataPresent: boolean;
   readonly method: string;
   readonly taskRecovery: NekoTaskRecovery | undefined;
+  readonly sessionRecovery: "writer-locked" | undefined;
 
   constructor(readonly requestId: number, method: string, error: { code?: unknown; message?: unknown; data?: unknown }) {
     const code = Number.isSafeInteger(error.code) ? error.code as number : null;
@@ -86,9 +87,14 @@ export class AcpRpcError extends Error {
     const label = code !== null ? RPC_LABELS[code] ?? "Agent báo lỗi RPC" : "Agent báo lỗi RPC";
     const codeLabel = code === null ? "" : ` (${code})`;
     const remoteLabel = remote && remote !== "Internal error" ? `: ${remote}` : ".";
-    super(`${label}${codeLabel}${remoteLabel}${details ? ` Chi tiết: ${details}` : ""}`);
+    const writerLocked = (method === "session/load" || method === "session/resume") && code === -32000
+      && /already has an active writer|already active or has an unsafe lock/.test(remote);
+    super(writerLocked
+      ? "Cuộc trò chuyện cần nối lại. Lịch sử và bản nháp được giữ lại."
+      : `${label}${codeLabel}${remoteLabel}${details ? ` Chi tiết: ${details}` : ""}`);
     this.name = "AcpRpcError";
     this.code = code;
+    this.sessionRecovery = writerLocked ? "writer-locked" : undefined;
     // Read only the versioned bounded subset before diagnostic redaction.
     this.taskRecovery = parseNekoTaskRecoveryError(code, error.data);
     this.data = data;

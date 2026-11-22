@@ -1,6 +1,8 @@
 /** User-requested orphan stop. Native termination and a saved checkpoint precede reuse. */
 import { persistSessionStrict } from "../persistence";
 import { isNekoTaskScopeMapping } from "../task-scope-mapping";
+import { buildNekoTaskEchoMeta } from "../drivers/acp/task-protocol";
+import { LegacyLeaseRecoveryError } from "@/neko/control-recovery";
 import {
   NATIVE_TERMINAL_STATES, nativeTaskId, nativeSessionsForTask, nativeRuntimeIdentity,
   nativeRunBlocksRespawn, retireAbsentNativeCheckpoints, reconcileNativeRuntime,
@@ -27,7 +29,7 @@ export function createSessionRecoveryActions(set: SessionSet, get: SessionGet, r
         session.statusDetail = "Đang dừng phiên cũ…";
       });
       const operation = (async () => {
-        let stopped = false;
+        let phase: "stop" | "lease" | "save" = "stop";
         try {
           await waitForHolds(dispatchBarriers, sessionId);
           await waitForHolds(runtimeOperations, sessionId);
@@ -43,6 +45,11 @@ export function createSessionRecoveryActions(set: SessionSet, get: SessionGet, r
           const active = before.filter(native => !NATIVE_TERMINAL_STATES.has(native.state));
           if (active.length) await reader.cancelUnresolvedStarts(sessionId, {
             taskId: nativeTaskId(session), agentSessionIds: active.map(native => native.agentSessionId),
+            ...(session.backendSessionId ? { acpSession: {
+              sessionId: session.backendSessionId,
+              ...(isNekoTaskScopeMapping(session.taskScope) && session.taskScope.receipt
+                ? { _meta: buildNekoTaskEchoMeta(session.taskScope.receipt) } : {}),
+            } } : {}),
           });
 
           const candidate = { ...get().sessions[sessionId], events: [...get().sessions[sessionId].events] };
@@ -51,13 +58,17 @@ export function createSessionRecoveryActions(set: SessionSet, get: SessionGet, r
           for (const native of natives) await reconcileNativeRuntime(candidate, native, reader);
           // A cancel receipt, missing record, or UI flag alone is never stop proof.
           if (nativeRunBlocksRespawn(candidate)) throw new Error("Native stop not proven");
-          stopped = true;
+          phase = "lease";
+          if (candidate.agentId === "neko" && candidate.backendSessionId && !candidate.taskScope) {
+            await reader.recoverLegacySessionLease(sessionId, candidate.backendSessionId);
+          }
           set(state => {
             const target = state.sessions[sessionId];
             target.events = candidate.events;
             target.eventHighWaterMark = candidate.eventHighWaterMark;
           });
           // Keep replay cursors in memory if a later write fails, but keep sending locked.
+          phase = "save";
           await persistSessionStrict(get().sessions[sessionId]);
           set(state => {
             const target = state.sessions[sessionId];
@@ -69,12 +80,14 @@ export function createSessionRecoveryActions(set: SessionSet, get: SessionGet, r
             target.cancelPending = false;
             target.statusDetail = "Bạn có thể tiếp tục trò chuyện.";
           });
-        } catch {
+        } catch (error) {
           set(state => {
             const target = state.sessions[sessionId];
             if (!target) return;
             target.status = "error";
-            target.statusDetail = stopped
+            target.statusDetail = phase === "lease"
+              ? error instanceof LegacyLeaseRecoveryError ? error.message : "Chưa nối lại được cuộc trò chuyện. Bạn có thể thử lại."
+              : phase === "save"
               ? "Chưa lưu được cuộc trò chuyện. Bạn có thể thử lại."
               : "Chưa dừng được phiên cũ. Bạn có thể thử lại.";
           });

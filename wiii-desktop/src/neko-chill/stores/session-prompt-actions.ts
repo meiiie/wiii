@@ -13,6 +13,7 @@ import { v4 as uuidv4 } from "uuid";
 import type { NekoSessionEvent } from "../session-events";
 import type { SessionSet, SessionGet, NekoSessionState } from "./session-store-types";
 import type { SessionRuntime } from "./session-runtime-lifecycle";
+import { AcpRpcError } from "../drivers/acp/errors";
 export function createSessionPromptActions(set: SessionSet, get: SessionGet, runtime: SessionRuntime): Pick<NekoSessionState, "sendPrompt" | "sendPromptToSession"> {
   const { runtimes, acquireHold, runtimeOperations, retainTaskAdmissionFailure, defaultDriverFactory, taskAdmissionLaunch, assertScopedRuntimeAdmitted, persistSessionNowOrReport, dispatchBarriers, observeInvocationAfterMarker } = runtime;
   return {
@@ -179,9 +180,12 @@ export function createSessionPromptActions(set: SessionSet, get: SessionGet, run
             const reason = err instanceof Error ? err.message : String(err);
             set((state) => {
               const s = state.sessions[sessionId];
-              if (s?.status === "connecting") {
+              const writerRecovery = Boolean(s && s.agentId === "neko" && !s.runtime && !s.closePending && !s.deletePending
+                && err instanceof AcpRpcError && err.sessionRecovery === "writer-locked");
+              if (s && (s.status === "connecting" || writerRecovery)) {
                 s.status = "error";
                 s.statusDetail = reason;
+                if (writerRecovery) s.nativeRecoveryRequired = true;
                 appendOwnedSessionEvent(s, "runtime", {
                   type: "runtime-attach-failed",
                   providerId: s.agentId,

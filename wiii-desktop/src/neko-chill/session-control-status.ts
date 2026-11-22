@@ -10,7 +10,7 @@ export interface SessionControlNotice {
 }
 
 const DIAGNOSTICS_GUIDANCE =
-  "Giữ nguyên phiên và bản nháp; mở nhật ký phiên để kiểm tra.";
+  "Cuộc trò chuyện và bản nháp vẫn được giữ lại.";
 
 function hasUnknownOutcome(events: NekoSessionEvent[]): boolean {
   type NativeIdentity = { agentSessionId: string; runId: string; providerId: string };
@@ -165,7 +165,7 @@ export function getSessionControlNotices(session: NekoSession): SessionControlNo
       notices.push({
         kind: "detail",
         tone: session.status === "error" ? "danger" : session.status === "exited" ? "quiet" : "warning",
-        text: detail?.trim() ? detail : "Phiên gặp lỗi; xem nhật ký để biết thêm.",
+        text: detail?.trim() ? detail : "Chưa thể tiếp tục cuộc trò chuyện.",
         guidance: session.status === "error" && !unknown ? DIAGNOSTICS_GUIDANCE : undefined,
       });
     }

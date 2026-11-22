@@ -217,7 +217,8 @@ describe("transcript status visibility and capability copy", () => {
     expect(notice.textContent).toBe(detail);
     expect(container.querySelector("img")).toBeNull();
     expect(screen.queryByRole("button")).toBeNull();
-    expect(screen.getByTestId("session-control-unknown").textContent).toContain("Giữ nguyên phiên và bản nháp");
+    expect(screen.getByTestId("session-control-unknown").textContent).toContain("Cuộc trò chuyện và bản nháp vẫn được giữ lại.");
+    expect(container.textContent).not.toMatch(/nhật ký|journal/);
     expect(JSON.stringify(session)).toBe(before);
   });
 

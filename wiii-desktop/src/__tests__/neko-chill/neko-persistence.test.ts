@@ -143,6 +143,7 @@ const nativeControl = {
   unresolvedStartSessionIds: vi.fn(),
   reconcilableStartSessionIds: vi.fn(),
   cancelUnresolvedStarts: vi.fn(),
+  recoverLegacySessionLease: vi.fn().mockResolvedValue(undefined),
 };
 
 class FakeDriver implements Driver {
@@ -267,6 +268,7 @@ describe("neko-chill persistence", () => {
     nativeControl.unresolvedStartSessionIds.mockReset();
     nativeControl.reconcilableStartSessionIds.mockReset();
     nativeControl.cancelUnresolvedStarts.mockReset();
+    nativeControl.recoverLegacySessionLease.mockReset().mockResolvedValue(undefined);
     nativeControl.listSessions.mockResolvedValue([]);
     nativeControl.readEvents.mockImplementation(async (streamId: string, afterSeq = 0) => ({
       streamId,
@@ -660,7 +662,9 @@ describe("neko-chill persistence", () => {
     expect(restored.messages).toEqual(before.messages);
     expect(JSON.stringify([...storage.values()])).not.toContain("nativeRecoveryRequired");
     expect(spawned).toHaveLength(1);
-    expect(nativeControl.cancelUnresolvedStarts).toHaveBeenCalledExactlyOnceWith(id, { taskId: `legacy-local/task/${id}`, agentSessionIds: ["orphan"] });
+    expect(nativeControl.cancelUnresolvedStarts).toHaveBeenCalledExactlyOnceWith(id, {
+      taskId: `legacy-local/task/${id}`, agentSessionIds: ["orphan"], acpSession: { sessionId: before.backendSessionId },
+    });
     await useNekoSessionStore.getState().sendPromptToSession(id, "an explicit new user turn");
     expect(spawned).toHaveLength(2);
     expect(launches.at(-1)?.backendSessionId).toBe(before.backendSessionId);
@@ -692,6 +696,68 @@ describe("neko-chill persistence", () => {
     await Promise.all([first, second]);
     expect(nativeControl.cancelUnresolvedStarts).toHaveBeenCalledTimes(1);
     expect(useNekoSessionStore.getState().sessions[id].status).toBe("exited");
+  });
+
+  it("keeps sending locked through the native legacy-lease check without starting a replacement", async () => {
+    const { id, stop } = await restoreOrphan();
+    nativeControl.cancelUnresolvedStarts.mockImplementation(async () => { stop(); return 1; });
+    let release!: () => void;
+    const gate = new Promise<void>(resolve => { release = resolve; });
+    let entered!: () => void;
+    const started = new Promise<void>(resolve => { entered = resolve; });
+    nativeControl.recoverLegacySessionLease.mockImplementationOnce(async (local, backend) => {
+      expect(local).toBe(id);
+      expect(backend).toBe(useNekoSessionStore.getState().sessions[id].backendSessionId);
+      entered(); await gate;
+    });
+    const recovery = useNekoSessionStore.getState().recoverSession(id);
+    await started;
+    await useNekoSessionStore.getState().sendPromptToSession(id, "blocked until lease check");
+    expect(spawned).toHaveLength(1);
+    expect(useNekoSessionStore.getState().sessions[id].closePending).toBe(true);
+    release(); await recovery;
+    expect(useNekoSessionStore.getState().sessions[id].status).toBe("exited");
+    expect(spawned).toHaveLength(1);
+  });
+
+  it("keeps a refused legacy cleanup retryable even after native termination is already proven", async () => {
+    const { LegacyLeaseRecoveryError } = await import("@/neko/control-recovery");
+    const { id, stop } = await restoreOrphan();
+    nativeControl.cancelUnresolvedStarts.mockImplementation(async () => { stop(); return 1; });
+    nativeControl.recoverLegacySessionLease.mockRejectedValueOnce(new LegacyLeaseRecoveryError(true));
+    await useNekoSessionStore.getState().recoverSession(id);
+    const failed = useNekoSessionStore.getState().sessions[id];
+    expect(failed.status).toBe("error");
+    expect(failed.nativeRecoveryRequired).toBe(true);
+    expect(failed.statusDetail).toMatch(/cuộc trò chuyện chưa dừng/);
+    await useNekoSessionStore.getState().sendPromptToSession(id, "not until the guard succeeds");
+    expect(spawned).toHaveLength(1);
+    await useNekoSessionStore.getState().recoverSession(id);
+    expect(useNekoSessionStore.getState().sessions[id].status).toBe("exited");
+    expect(nativeControl.cancelUnresolvedStarts).toHaveBeenCalledOnce();
+    expect(spawned).toHaveLength(1);
+  });
+
+  it("offers recovery after a legacy backend load rejects, without losing the conversation or auto-sending", async () => {
+    const { AcpRpcError } = await import("@/neko-chill/drivers/acp/errors");
+    const id = await useNekoSessionStore.getState().createSession(AGENT, WORKSPACE);
+    await useNekoSessionStore.getState().sendPrompt("original turn");
+    await useNekoSessionStore.getState().closeSession(id);
+    const before = useNekoSessionStore.getState().sessions[id];
+    _setDriverFactoryForTests(async () => {
+      throw new AcpRpcError(2, "session/resume", { code: -32000, message: "Session 'backend' already has an active writer" });
+    });
+    await useNekoSessionStore.getState().sendPromptToSession(id, "draft not sent");
+    const failed = useNekoSessionStore.getState().sessions[id];
+    expect(failed.status).toBe("error");
+    expect(failed.nativeRecoveryRequired).toBe(true);
+    expect(failed.messages).toEqual(before.messages);
+    expect(failed.events.at(-1)?.data.type).toBe("runtime-attach-failed");
+    await useNekoSessionStore.getState().recoverSession(id);
+    expect(nativeControl.recoverLegacySessionLease).toHaveBeenCalledWith(id, before.backendSessionId);
+    expect(useNekoSessionStore.getState().sessions[id].status).toBe("exited");
+    expect(useNekoSessionStore.getState().sessions[id].backendSessionId).toBe(before.backendSessionId);
+    expect(spawned).toHaveLength(1);
   });
 
   it.each(["rejected", "still-running", "unknown", "missing", "uncertain-continuity"])('keeps recovery retryable and sending locked after %s stop proof', async outcome => {

@@ -171,6 +171,19 @@
   scoped cancellation and actionable presentation with focused regressions.
 - [ ] T537 Verify native reload -> safe stop -> same-chat explicit reply, plus
   paused outbox and hard-restart fences in the native harness.
+- [x] T538 Attempt bounded, exact-transport ACP close before orphan cancellation;
+  test response correlation, timeouts, failed/late listener cleanup and Task scope.
+- [x] T539 Add native-only legacy PID-1 lease recovery with global managed-Neko
+  physical quiescence, persisted admission/identity/time proof, safe file bounds and
+  no mutation of heartbeat/foreign/changed/linked leases; keep send locked.
+- [x] T541 Correlate writer failures on the actual `session/resume` path and
+  remove generic log-inspection advice; preserve unrelated historical unknown
+  outcomes while independently verifying physical sandbox absence.
+- [x] T542 Declare recovery in both the generated app-command manifest and the
+  local main-window capability; test end-to-end IPC command authority wiring.
+- [x] T540 Verify the existing 1.9.3 stale-lease conversation can continue through
+  the UI, including refusal while another managed Neko remains alive, then
+  repeat a real reload -> recovery -> explicit same-session reply.
 
 1. Phase 1 freezes semantics.
 2. Lifecycle and provider contracts precede SQLite/process work.

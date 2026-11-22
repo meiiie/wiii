@@ -80,7 +80,7 @@ export interface NekoSession {
 }
 /** Injected so tests can fake the driver without Tauri (vi.mock factory). */
 export type DriverFactory = (agent: DetectedAgent, sessionId: string, launch: DriverLaunchConfig, onEvent: (event: DriverEvent) => void, ownDriver: (driver: Driver) => void) => Promise<Driver>;
-export type NativeControlReader = Pick<NekoControlClient, "listSessions" | "readEvents" | "unresolvedStartSessionIds" | "reconcilableStartSessionIds" | "cancelUnresolvedStarts">;
+export type NativeControlReader = Pick<NekoControlClient, "listSessions" | "readEvents" | "unresolvedStartSessionIds" | "reconcilableStartSessionIds" | "cancelUnresolvedStarts" | "recoverLegacySessionLease">;
 export interface NekoSessionState {
   sessions: Record<string, NekoSession>;
   activeSessionId: string | null;

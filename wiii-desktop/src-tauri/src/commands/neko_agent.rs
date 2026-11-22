@@ -5,6 +5,7 @@
 //! durable lifecycle facts stay inside `NekoRuntime`.
 
 use crate::neko::journal::{ReplayPage, SessionRecord};
+use crate::neko::legacy_lease::LegacyLeaseRequest;
 use crate::neko::provider::{AgentInfo, AgentProfile};
 use crate::neko::provider_sessions::ProviderSessionCatalog;
 use crate::neko::runtime::{
@@ -97,6 +98,18 @@ pub async fn neko_control_session_cancel(
     tauri::async_runtime::spawn_blocking(move || runtime.cancel_session(&app, request))
         .await
         .map_err(|error| format!("Neko session cancel task failed: {error}"))?
+}
+
+#[tauri::command]
+pub async fn neko_control_legacy_lease_recover(
+    app: AppHandle,
+    runtime: State<'_, NekoRuntime>,
+    request: LegacyLeaseRequest,
+) -> Result<bool, String> {
+    let runtime = runtime.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || runtime.recover_legacy_lease(&app, request))
+        .await
+        .map_err(|_| "Legacy recovery worker failed")?
 }
 
 #[tauri::command]

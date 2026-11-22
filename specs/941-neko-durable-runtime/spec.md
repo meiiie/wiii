@@ -405,3 +405,12 @@ side-effect/committed phases become `unknown_outcome`.
 - **SC-019**: Scoped recovery never cancels unselected native identities,
   another Task or an execution still owned by a visible live session. Existing
   malformed task-admission and outbox-review fences remain in force.
+- **SC-020**: Reload recovery first attempts a bounded ACP `session/close`
+  through the selected existing native transport, without initializing,
+  loading or prompting a replacement. Native termination remains mandatory
+  even after an ACP close acknowledgement.
+- **SC-021**: A rejected legacy backend load exposes the same recovery action,
+  not raw writer diagnostics. Linux may remove only that backend's original
+  PID-1 legacy lease after native Neko quiescence and persisted successful
+  admission are proven. Unknown/new-format leases, foreign identities,
+  changed files and unsafe metadata remain untouched; refusal stays retryable.

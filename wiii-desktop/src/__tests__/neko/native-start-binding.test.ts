@@ -9,7 +9,7 @@ const provider = {
   availability: "available", supportsProfiles: true,
 };
 
-type StartPayload = { request: { agentSessionId: string; runId: string } };
+type StartPayload = { request: { agentSessionId: string; runId: string; line?: string } };
 function installStartResponse(change: Record<string, unknown> = {}) {
   native.invoke.mockImplementation(async (command: string, payload: StartPayload) => {
     if (command === "neko_control_session_list") return [];
@@ -76,18 +76,36 @@ describe("native start result identity correlation", () => {
     expect(result.canonicalWorkspacePath).toBeUndefined();
   });
 
-  it("cancels only selected orphan identities of the exact recovery Task", async () => {
+  it("closes before cancelling only selected orphan identities of the exact recovery Task", async () => {
     const record = { agentSessionId: "selected", taskId: "work-task", runId: "work-run", environmentId: "env",
       providerId: "neko", providerVersion: "test", workspacePath: "E:/Synthetic", state: "running",
       operationPhase: "running", continuity: "active", pid: 1, createdAt: "2026-08-23T00:00:00Z", updatedAt: "2026-08-23T00:01:00Z" };
     const records = [record, { ...record, agentSessionId: "unselected" }, { ...record, agentSessionId: "foreign", taskId: "foreign-task" }];
+    let deliver!: (event: { payload: string }) => void;
+    let closed = false;
+    native.listen.mockImplementation(async (event, callback) => {
+      expect(event).toBe("neko-session://line/selected");
+      deliver = callback;
+      return vi.fn();
+    });
     native.invoke.mockImplementation(async (command: string, payload: StartPayload) => {
       if (command === "neko_control_session_list") return records;
-      if (command === "neko_control_session_cancel") return { agentSessionId: payload.request.agentSessionId, cancelled: true };
+      if (command === "neko_control_session_write") {
+        const frame = JSON.parse(payload.request.line!);
+        expect(frame.method).toBe("session/close");
+        expect(frame.params).toEqual({ sessionId: "saved-backend" });
+        closed = true;
+        deliver({ payload: JSON.stringify({ jsonrpc: "2.0", id: frame.id, result: {} }) });
+        return;
+      }
+      if (command === "neko_control_session_cancel") {
+        expect(closed).toBe(true);
+        return { agentSessionId: payload.request.agentSessionId, cancelled: true };
+      }
       throw new Error(`Unexpected test command ${command}`);
     });
     const { getNekoControlClient } = await import("@/neko/control-client");
-    await expect(getNekoControlClient().cancelUnresolvedStarts("visible-thread", { taskId: "work-task", agentSessionIds: ["selected", "foreign"] })).resolves.toBe(1);
+    await expect(getNekoControlClient().cancelUnresolvedStarts("visible-thread", { taskId: "work-task", agentSessionIds: ["selected", "foreign"], acpSession: { sessionId: "saved-backend" } })).resolves.toBe(1);
     const cancellations = native.invoke.mock.calls.filter(([command]) => command === "neko_control_session_cancel");
     expect(cancellations).toHaveLength(1);
     expect(cancellations[0][1].request).toEqual({ requestId: "reconcile-retained-start-selected", agentSessionId: "selected", runId: "work-run" });

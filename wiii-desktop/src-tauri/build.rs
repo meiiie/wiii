@@ -16,6 +16,7 @@ fn main() {
         "neko_control_session_start",
         "neko_control_session_write",
         "neko_control_session_cancel",
+        "neko_control_legacy_lease_recover",
         "neko_control_events_read",
         "neko_computer_doctor",
         "neko_computer_coworker_status",
