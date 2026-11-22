@@ -262,9 +262,26 @@ async function main() {
 
     log("approving the permission request");
     await element(driver, '[data-testid="permission-card"]', "permission card", 60_000);
-    await waitText(driver, "write_file", "write_file permission preview");
+    await until(async () => (await driver.execute(`
+      return document.querySelector('[data-testid="permission-card"] [aria-label="Nội dung mới"]')?.textContent;
+    `)) === APPROVED_CONTENT, "exact pending write content");
+    const choices = await driver.execute(`
+      const card = document.querySelector('[data-testid="permission-card"]');
+      if (card.querySelector('details').open) throw new Error('session choices started expanded');
+      return [...card.querySelectorAll('[role="group"] button')].map(button => button.textContent.trim());
+    `);
+    if (JSON.stringify(choices) !== JSON.stringify(["Cho phép", "Từ chối"])) {
+      throw new Error(`unexpected permission choices: ${JSON.stringify(choices)}`);
+    }
+    await driver.click(await elementWithText(driver, '[data-testid="permission-card"] summary', "Thêm lựa chọn"));
+    await until(() => driver.execute('return document.querySelector(\'[data-testid="permission-card"] details\').open;'), "session choices expanded");
+    await elementWithText(driver, '[data-testid="permission-card"] button', "Cho phép ghi tệp cả phiên");
+    await elementWithText(driver, '[data-testid="permission-card"] button', "Chặn ghi tệp cả phiên");
+    await driver.click(await elementWithText(driver, '[data-testid="permission-card"] summary', "Thêm lựa chọn"));
+    await until(() => driver.execute('return !document.querySelector(\'[data-testid="permission-card"] details\').open;'), "session choices collapsed");
+    if (existsSync(path.join(project, APPROVED_FILE))) throw new Error("file was written before permission approval");
     await capture(driver, "permission-card");
-    await driver.click(await elementWithText(driver, '[data-testid="permission-card"] button', "Allow once"));
+    await driver.click(await elementWithText(driver, '[data-testid="permission-card"] button', "Cho phép"));
     await waitText(driver, MARKERS.permissionDone, "answer after approval", 60_000);
     const written = path.join(project, APPROVED_FILE);
     await until(() => existsSync(written), "approved file on disk");
@@ -314,6 +331,7 @@ async function main() {
     writeFileSync(path.join(artifacts, "model-requests.json"), JSON.stringify(model.requests, null, 2));
     log("PASS");
   } catch (error) {
+    log(`failure before cleanup: ${error.stack ?? error}`);
     if (driver) {
       await capture(driver, "failure");
       // textContent includes collapsed <details>, where Wiii puts the Neko probe error.
@@ -336,7 +354,13 @@ async function main() {
     if (driver) await driver.quit().catch(() => {});
     tauriDriver.kill("SIGTERM");
     await model.close();
-    if (!args.keep) rmSync(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
+    if (!args.keep) {
+      try {
+        rmSync(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
+      } catch (error) {
+        log(`temporary profile cleanup failed: ${error.message}`);
+      }
+    }
   }
 }
 
