@@ -2,7 +2,7 @@
  * Unit tests for theme management utilities.
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
-import { initTheme, setTheme, getCurrentTheme } from "@/lib/theme";
+import { initTheme, setTheme, getCurrentTheme, getThemeMode } from "@/lib/theme";
 
 // Mock window.matchMedia (not available in jsdom)
 function mockMatchMedia(prefersDark = false) {
@@ -57,8 +57,24 @@ describe("Theme Utilities", () => {
   });
 
   afterEach(() => {
+    setTheme("light");
     document.documentElement.classList.remove("dark");
     localStorage.clear();
+  });
+
+  it("keeps the system choice distinct from its resolved dark appearance", () => {
+    mockMatchMedia(true);
+    setTheme("system");
+    expect(getThemeMode()).toBe("system");
+    expect(getCurrentTheme()).toBe("dark");
+    expect(initTheme()).toBe("system");
+  });
+
+  it("reads persisted explicit choices and falls back when storage is unavailable", () => {
+    setTheme("dark");
+    expect(getThemeMode()).toBe("dark");
+    vi.mocked(localStorage.getItem).mockImplementation(() => { throw new Error("unavailable"); });
+    expect(getThemeMode()).toBe("system");
   });
 
   it("should initialize with system theme by default", () => {
