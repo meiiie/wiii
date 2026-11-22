@@ -1,5 +1,6 @@
 import type { NekoSessionEvent } from "./session-events";
 import type { NekoSession } from "./stores/neko-session-store";
+import { nativeRunBlocksRespawn } from "./stores/session-native-recovery";
 
 export interface SessionControlNotice {
   kind: "cancel" | "detail" | "unknown";
@@ -176,6 +177,30 @@ export function getSessionControlNotices(session: NekoSession): SessionControlNo
     }
   }
   return notices;
+}
+
+/** Only the last actually dispatched, confirmed cancelled input can be retried. */
+export function getStoppedPrompt(session: NekoSession): { eventId: string; text: string } | null {
+  if ((session.status !== "idle" && session.status !== "exited") || !session.workspace
+    || session.cancelPending || session.closePending || session.deletePending
+    || session.pendingControlId || session.pendingPermission || session.resolvingPermissionId
+    || session.nativeRecoveryRequired || hasUnknownOutcome(session.events)
+    || (!session.runtime && nativeRunBlocksRespawn(session))
+    || cancellationNotice(session)?.stage !== "cancelled") return null;
+
+  const events = [...session.events].sort((a, b) => a.seq - b.seq);
+  const command = [...events].reverse().find(({ data }) => data.type === "runtime-command")?.data;
+  const input = [...events].reverse().find(({ data }) => data.type === "model-input");
+  if (command?.type !== "runtime-command" || command.action !== "cancel"
+    || !input?.eventId || input.eventId !== command.promptEventId || input.data.type !== "model-input"
+    || input.data.source !== "live" || !input.data.text.trim()
+    || input.data.providerInstanceId !== command.providerInstanceId) return null;
+  const inputIndex = events.indexOf(input);
+  const commandIndex = events.findIndex(({ data }) => data === command);
+  const dispatched = events.slice(inputIndex + 1, commandIndex).some(({ data }) =>
+    data.type === "dispatch-invoked" && data.action === "prompt"
+    && data.targetEventId === input.eventId && data.providerInstanceId === command.providerInstanceId);
+  return dispatched ? { eventId: input.eventId, text: input.data.text } : null;
 }
 
 export function workspaceIsolationLabel(session: NekoSession): string {

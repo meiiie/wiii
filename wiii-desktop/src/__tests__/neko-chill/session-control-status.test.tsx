@@ -1,7 +1,7 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { NekoTranscript, SessionControlStatus } from "@/neko-chill/components/NekoTranscript";
-import { getSessionControlNotices, workspaceIsolationLabel } from "@/neko-chill/session-control-status";
+import { getSessionControlNotices, getStoppedPrompt, workspaceIsolationLabel } from "@/neko-chill/session-control-status";
 import type { NekoSessionEvent, NekoSessionEventData } from "@/neko-chill/session-events";
 import type { NekoSession } from "@/neko-chill/stores/neko-session-store";
 import { createProviderCapabilitySnapshot } from "@/neko/provider-registry";
@@ -276,6 +276,69 @@ describe("correlated runtime turn completion", () => {
   const terminal = (stopReason = "cancelled", instance = "instance", promptId = input.eventId!) => event(13, {
     type: "turn-terminal", providerInstanceId: instance, promptEventId: promptId, stopReason,
   } as NekoSessionEventData);
+  const stopped = (overrides: Partial<NekoSession> = {}) => makeSession({
+    status: "idle", events: [dispatch, terminal(), command, prompt, input], ...overrides,
+  });
+  it("offers a retry only on explicit activation and never rewrites partial history", async () => {
+    let finish!: () => void;
+    const retry = vi.fn(() => new Promise<void>(resolve => { finish = resolve; }));
+    const session = stopped({ messages: [
+      { id: "message", role: "user", text: "Task" },
+      { id: "partial", role: "assistant", blocks: [{ id: "part", type: "answer", content: "Câu trả lời dở" }] },
+    ] });
+    const before = JSON.stringify(session);
+    const view = render(<NekoTranscript session={session} onResolvePermission={vi.fn()} onInsertPrompt={vi.fn()} onRetry={retry} />);
+    expect(getStoppedPrompt(session)).toEqual({ eventId: input.eventId, text: "Task" });
+    expect(retry).not.toHaveBeenCalled();
+    const button = screen.getByRole("button", { name: "Thử lại tin nhắn vừa dừng" });
+    fireEvent.click(button); fireEvent.click(button);
+    expect(retry).toHaveBeenCalledExactlyOnceWith(input.eventId);
+    expect((button as HTMLButtonElement).disabled).toBe(true);
+    expect(document.activeElement).toBe(screen.getByRole("log"));
+    await act(async () => { finish(); });
+    expect(screen.getByText("Câu trả lời dở")).toBeTruthy();
+    expect(JSON.stringify(session)).toBe(before);
+    view.unmount();
+    render(<SessionControlStatus session={session} onRetry={retry} />);
+    expect(retry).toHaveBeenCalledOnce();
+  });
+  it.each(["end_turn", "error", "refusal", "max_tokens"])("never offers retry after %s instead of cancellation", reason => {
+    const session = stopped({ events: [input, prompt, command, dispatch, terminal(reason)] });
+    expect(getStoppedPrompt(session)).toBeNull();
+    render(<SessionControlStatus session={session} onRetry={vi.fn()} />);
+    expect(screen.queryByRole("button", { name: "Thử lại tin nhắn vừa dừng" })).toBeNull();
+  });
+  it.each([
+    { cancelPending: true }, { closePending: true }, { deletePending: true }, { pendingControlId: "change" },
+    { pendingPermission: { requestId: "approval", title: "Write", options: [] } },
+    { resolvingPermissionId: "approval" }, { nativeRecoveryRequired: true }, { workspace: null },
+    { status: "dispatching" }, { status: "streaming" }, { status: "error" },
+  ] satisfies Partial<NekoSession>[])("withholds retry during admission or recovery guards: %o", guard => {
+    expect(getStoppedPrompt(stopped(guard))).toBeNull();
+  });
+  it("does not retry stale, staged, uncorrelated or unknown inputs", () => {
+    const base = stopped().events;
+    const otherInput = event(15, { ...input.data, messageId: "next" } as NekoSessionEventData);
+    for (const events of [
+      [input, command, dispatch, terminal()],
+      [input, prompt, command, terminal()],
+      [input, prompt, command, dispatch, terminal("cancelled", "other")],
+      [...base, otherInput], [...base, native(16, "unknown_outcome")],
+      [...base, event(16, { type: "native-runtime-cleanup-uncertain", agentSessionId: "native-session", runId: "run", providerId: "neko", reason: "Unknown" })],
+    ]) expect(getStoppedPrompt(stopped({ events }))).toBeNull();
+    expect(getStoppedPrompt(stopped({ runtime: null, events: [...base, native(16, "running")] }))).toBeNull();
+    for (const data of [
+      { ...input.data, source: "legacy-migration" }, { ...input.data, providerInstanceId: "other" }, { ...input.data, text: "  " },
+    ]) expect(getStoppedPrompt(stopped({ events: [{ ...input, data } as NekoSessionEvent, prompt, command, dispatch, terminal()] }))).toBeNull();
+  });
+  it("keeps a failed retry actionable and announces it without exposing internal errors", async () => {
+    const retry = vi.fn().mockRejectedValue(new Error("private implementation error"));
+    render(<SessionControlStatus session={stopped()} onRetry={retry} />);
+    await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Thử lại tin nhắn vừa dừng" })); });
+    expect(screen.getByRole("alert").textContent).toBe("Chưa gửi lại được. Hãy thử lại.");
+    expect((screen.getByRole("button", { name: "Thử lại tin nhắn vừa dừng" }) as HTMLButtonElement).disabled).toBe(false);
+    expect(screen.queryByText(/private implementation/)).toBeNull();
+  });
   it("confirms canonical cancelled even when the ACP host remains alive", () => {
     const session = makeSession({ status: "idle", events: [input, prompt, command, dispatch, terminal()] });
     expect(getSessionControlNotices(session)[0]?.stage).toBe("cancelled");
