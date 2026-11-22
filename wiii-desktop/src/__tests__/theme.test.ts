@@ -77,6 +77,33 @@ describe("Theme Utilities", () => {
     expect(getThemeMode()).toBe("system");
   });
 
+  it("stops the original system observer when an explicit appearance is chosen", () => {
+    const queries: MediaQueryList[] = [];
+    vi.mocked(window.matchMedia).mockImplementation((media) => {
+      const query = Object.assign(new EventTarget(), {
+        matches: false, media, onchange: null,
+        addListener: vi.fn(), removeListener: vi.fn(),
+      }) as MediaQueryList;
+      queries.push(query);
+      return query;
+    });
+    setTheme("system");
+    const observed = queries.at(-1)!;
+    observed.dispatchEvent(Object.assign(new Event("change"), { matches: true }));
+    expect(getCurrentTheme()).toBe("dark");
+    setTheme("light");
+    observed.dispatchEvent(Object.assign(new Event("change"), { matches: true }));
+    expect(getCurrentTheme()).toBe("light");
+    expect(getThemeMode()).toBe("light");
+    setTheme("system");
+    const nextObserver = queries.at(-1)!;
+    nextObserver.dispatchEvent(Object.assign(new Event("change"), { matches: true }));
+    expect(getCurrentTheme()).toBe("dark");
+    setTheme("dark");
+    nextObserver.dispatchEvent(Object.assign(new Event("change"), { matches: false }));
+    expect(getCurrentTheme()).toBe("dark");
+  });
+
   it("should initialize with system theme by default", () => {
     const mode = initTheme();
     expect(mode).toBe("system");

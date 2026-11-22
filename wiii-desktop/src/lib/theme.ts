@@ -55,6 +55,8 @@ export function initTheme(): ThemeMode {
   // Listen for system preference changes when mode is "system"
   if (mode === "system") {
     setupSystemListener();
+  } else {
+    removeSystemListener();
   }
 
   return mode;
@@ -81,22 +83,21 @@ export function setTheme(mode: ThemeMode) {
 }
 
 // System preference change listener
-let systemListener: ((e: MediaQueryListEvent) => void) | null = null;
+let stopSystemListener: (() => void) | null = null;
 
 function setupSystemListener() {
-  if (systemListener) return;
+  if (stopSystemListener) return;
   const mq = window.matchMedia("(prefers-color-scheme: dark)");
-  systemListener = (e: MediaQueryListEvent) => {
+  const listener = (e: MediaQueryListEvent) => {
     applyTheme(e.matches ? "dark" : "light");
   };
-  mq.addEventListener("change", systemListener);
+  mq.addEventListener("change", listener);
+  stopSystemListener = () => mq.removeEventListener("change", listener);
 }
 
 function removeSystemListener() {
-  if (!systemListener) return;
-  const mq = window.matchMedia("(prefers-color-scheme: dark)");
-  mq.removeEventListener("change", systemListener);
-  systemListener = null;
+  stopSystemListener?.();
+  stopSystemListener = null;
 }
 
 /**
