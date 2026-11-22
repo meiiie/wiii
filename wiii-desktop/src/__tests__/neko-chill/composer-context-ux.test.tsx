@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { NekoComposer } from "@/neko-chill/components/NekoComposer";
 import { clearNekoComposerDraft } from "@/neko-chill/composer-drafts";
@@ -107,6 +107,48 @@ describe("composer context and keyboard UX", () => {
     fireEvent.click(send);
     expect(view.props.onSend).not.toHaveBeenCalled();
     expect(view.props.onCancel).not.toHaveBeenCalled();
+  });
+
+  it("labels keyboard Send, keeps it on hover, and dismisses without sending or losing the draft", () => {
+    const { props } = mount();
+    const input = screen.getByTestId("neko-composer-input") as HTMLTextAreaElement;
+    fireEvent.change(input, { target: { value: "Chưa gửi" } });
+    const send = screen.getByRole("button", { name: "Gửi tin nhắn" });
+    act(() => send.focus());
+    const tooltip = screen.getByRole("tooltip");
+    expect(tooltip.textContent).toBe("Gửi");
+    expect(send.getAttribute("aria-describedby")).toBe(tooltip.id);
+    expect(send.hasAttribute("title")).toBe(false);
+    fireEvent.mouseLeave(send.parentElement!);
+    expect(screen.getByRole("tooltip")).toBe(tooltip);
+    fireEvent.keyDown(send, { key: "Escape" });
+    expect(screen.queryByRole("tooltip")).toBeNull();
+    expect(document.activeElement).toBe(send);
+    expect(input.value).toBe("Chưa gửi");
+    expect(props.onSend).not.toHaveBeenCalled();
+    act(() => input.focus());
+    fireEvent.mouseEnter(send.parentElement!);
+    expect(screen.getByRole("tooltip").textContent).toBe("Gửi");
+    fireEvent.mouseLeave(send.parentElement!);
+    expect(screen.queryByRole("tooltip")).toBeNull();
+  });
+
+  it("clears the Send popup on explicit send and retains the disabled explanation", async () => {
+    const view = mount();
+    view.props.onSend.mockImplementation((_text, accepted) => accepted());
+    const input = screen.getByTestId("neko-composer-input") as HTMLTextAreaElement;
+    fireEvent.change(input, { target: { value: "Gửi một lần" } });
+    const send = screen.getByTestId("neko-send") as HTMLButtonElement;
+    fireEvent.mouseEnter(send.parentElement!);
+    await act(async () => fireEvent.click(send));
+    expect(view.props.onSend).toHaveBeenCalledOnce();
+    expect(screen.queryByRole("tooltip")).toBeNull();
+    expect(send.disabled).toBe(true);
+    fireEvent.mouseLeave(send.parentElement!);
+    fireEvent.mouseEnter(send.parentElement!);
+    expect(screen.getByRole("tooltip").textContent).toBe("Nhập nội dung trước khi gửi.");
+    fireEvent.click(send);
+    expect(view.props.onSend).toHaveBeenCalledOnce();
   });
   it.each(["streaming", "dispatching"] as const)("allows drafting during %s without submitting or cancelling", status => {
     const props = { session: { ...session, status }, disabled: true, streaming: true,

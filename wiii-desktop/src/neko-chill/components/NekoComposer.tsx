@@ -135,6 +135,63 @@ function ControlSelect({
   );
 }
 
+/** Keep the label above its control, including keyboard focus, not in a native popup. */
+function ComposerSendButton({ disabled, submitting, queueAllowed, busy, tooltip, onSend }: {
+  disabled: boolean;
+  submitting: boolean;
+  queueAllowed: boolean;
+  busy: boolean;
+  tooltip: string;
+  onSend(): void;
+}) {
+  const [open, setOpen] = useState(false);
+  const tooltipId = useId();
+  useEffect(() => setOpen(false), [disabled, tooltip]);
+
+  return (
+    <span
+      className="relative flex shrink-0"
+      onMouseEnter={() => setOpen(true)}
+      onMouseLeave={(event) => {
+        if (!event.currentTarget.contains(document.activeElement)) setOpen(false);
+      }}
+      onFocus={() => setOpen(true)}
+      onBlur={(event) => {
+        if (!event.currentTarget.contains(event.relatedTarget)) setOpen(false);
+      }}
+      onKeyDown={(event) => {
+        if (event.key === "Escape" && open) {
+          event.preventDefault();
+          event.stopPropagation();
+          setOpen(false);
+        }
+      }}
+    >
+      {open && (
+        <span id={tooltipId} role="tooltip" className="absolute bottom-full right-0 z-50 pb-2">
+          <span className="block w-max max-w-[240px] rounded-lg border border-[var(--nk-border-strong)] bg-[var(--nk-composer)] px-2.5 py-1.5 text-[11px] leading-4 text-[var(--nk-text-2)] shadow-lg">
+            {tooltip}
+          </span>
+        </span>
+      )}
+      <button
+        type="button"
+        className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[var(--nk-inverse)] text-[var(--nk-on-inverse)] disabled:opacity-30"
+        disabled={disabled}
+        onClick={() => { setOpen(false); onSend(); }}
+        aria-label={submitting ? "Đang gửi" : queueAllowed ? "Xếp hàng tin nhắn" : "Gửi tin nhắn"}
+        aria-describedby={open ? tooltipId : undefined}
+        aria-busy={busy}
+        data-testid="neko-send"
+      >
+        {submitting
+          ? <LoaderCircle aria-hidden="true" className="h-3 w-3 animate-spin" />
+          : <ArrowUp aria-hidden="true" className="h-3 w-3" strokeWidth={1.8} />}
+      </button>
+    </span>
+  );
+}
+
 function NekoComposerComponent({
   session,
   disabled,
@@ -523,20 +580,14 @@ function NekoComposerComponent({
                 <Square aria-hidden="true" className="h-2.5 w-2.5 fill-current" />
               </button>
             ) : (
-              <button
-                type="button"
-                className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[var(--nk-inverse)] text-[var(--nk-on-inverse)] disabled:opacity-30"
+              <ComposerSendButton
                 disabled={composerDisabled || !session.workspace || !draft.trim()}
-                onClick={() => void submit()}
-                title={queueAllowed ? "Thêm vào cuối hàng đợi" : sendTitle}
-                aria-label={submitting ? "Đang gửi" : queueAllowed ? "Xếp hàng tin nhắn" : "Gửi tin nhắn"}
-                aria-busy={draftReadOnly}
-                data-testid="neko-send"
-              >
-                {submitting
-                  ? <LoaderCircle aria-hidden="true" className="h-3 w-3 animate-spin" />
-                  : <ArrowUp aria-hidden="true" className="h-3 w-3" strokeWidth={1.8} />}
-              </button>
+                onSend={() => void submit()}
+                tooltip={queueAllowed ? "Thêm vào cuối hàng đợi" : sendTitle}
+                submitting={submitting}
+                queueAllowed={queueAllowed}
+                busy={draftReadOnly}
+              />
             )}
           </div>
           </div>
