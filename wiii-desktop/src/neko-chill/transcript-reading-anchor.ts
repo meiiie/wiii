@@ -1,7 +1,7 @@
 interface ReadingAnchor {
   node: Node;
   offset: number;
-  measure: () => DOMRect;
+  measure: () => DOMRect | null;
 }
 
 /** Keep a text position, not a scroll percentage: wrapping changes earlier rows. */
@@ -22,7 +22,23 @@ export function captureTranscriptReadingAnchor(viewport: HTMLElement): ReadingAn
     }
     const rect = range.getBoundingClientRect();
     if (rect.height > 0 && rect.bottom > bounds.top && rect.top < bounds.bottom) {
-      return { node: range.startContainer, offset: rect.top - bounds.top, measure: () => range.getBoundingClientRect() };
+      // Text.data replacement (including streaming appends) resets a live
+      // Range's offsets to zero. Keep immutable boundaries, not its live caret.
+      const startNode = range.startContainer;
+      const endNode = range.endContainer;
+      const startOffset = range.startOffset;
+      const endOffset = range.endOffset;
+      const length = (node: Node) => node.nodeType === Node.TEXT_NODE ? node.textContent?.length ?? 0 : node.childNodes.length;
+      return {
+        node: startNode, offset: rect.top - bounds.top,
+        measure: () => {
+          if (!endNode.isConnected || !viewport.contains(endNode)
+            || startOffset > length(startNode) || endOffset > length(endNode)) return null;
+          range.setStart(startNode, startOffset);
+          range.setEnd(endNode, endOffset);
+          return range.getBoundingClientRect();
+        },
+      };
     }
   }
 
@@ -50,7 +66,7 @@ export function restoreTranscriptReadingAnchor(viewport: HTMLElement, anchor: Re
   // scroll to a detached node or reuse an anchor from another conversation.
   if (!anchor?.node.isConnected || !viewport.contains(anchor.node)) return false;
   const bounds = anchor.measure();
-  if (bounds.height <= 0) return false;
+  if (!bounds || bounds.height <= 0) return false;
   const delta = bounds.top - viewport.getBoundingClientRect().top - anchor.offset;
   if (!Number.isFinite(delta)) return false;
   if (Math.abs(delta) > 0.5) viewport.scrollTop += delta;

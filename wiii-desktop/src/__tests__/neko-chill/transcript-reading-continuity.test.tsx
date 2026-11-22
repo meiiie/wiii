@@ -138,13 +138,14 @@ describe("Neko transcript reading continuity", () => {
     expect(screen.getByRole("button", { name: "Đi tới tin nhắn mới nhất" })).toBeTruthy();
     expect(scroll).not.toHaveBeenCalled();
   });
-  it("anchors the same character within a tall paragraph when point-to-text ranges exist", () => {
+  it("anchors the same character across text-node streaming updates and repeated reflow", () => {
     const { viewport, paragraph, reflow } = readingFixture();
     const original = Object.getOwnPropertyDescriptor(document, "caretRangeFromPoint");
     const range = document.createRange();
     range.setStart(paragraph.firstChild!, 12); range.collapse(true);
     let lineTop = 360;
     range.getBoundingClientRect = () => {
+      if (range.startOffset === 0) return paragraph.getBoundingClientRect();
       const top = 100 + lineTop - viewport.scrollTop;
       return { top, bottom: top + 20, height: 20 } as DOMRect;
     };
@@ -159,12 +160,18 @@ describe("Neko transcript reading continuity", () => {
     Object.defineProperty(document, "caretRangeFromPoint", { configurable: true, value: () => ++probes === 1 ? range : otherCharacter });
     try {
       resize(viewport); fireEvent.scroll(viewport);
+      paragraph.firstChild!.nodeValue += " · Nội dung đang được bổ sung";
+      expect(range.startOffset).toBe(0); // native live Range reset by Text.data replacement
       reflow(750, 240); lineTop = 260; otherLineTop = 300; resize(viewport);
       expect(viewport.scrollTop).toBe(200); // character moved 100px, paragraph only 80px
       fireEvent.scroll(viewport); // own restore notification must not choose another character
       reflow(650, 260); lineTop = 280; otherLineTop = 340; resize(viewport);
       expect(viewport.scrollTop).toBe(220);
       expect(range.startOffset).toBe(12);
+      paragraph.firstChild!.nodeValue = "Ngắn";
+      reflow(500, 320);
+      expect(() => resize(viewport)).not.toThrow(); // old offsets no longer exist
+      expect(viewport.scrollTop).toBe(220);
     } finally {
       if (original) Object.defineProperty(document, "caretRangeFromPoint", original);
       else Reflect.deleteProperty(document, "caretRangeFromPoint");
