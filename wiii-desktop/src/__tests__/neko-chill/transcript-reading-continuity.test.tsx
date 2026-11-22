@@ -194,6 +194,58 @@ describe("Neko transcript reading continuity", () => {
     expect(scroll).toHaveBeenCalledWith({ block: "end", behavior: "auto" });
     expect(screen.queryByRole("button", { name: "Đi tới tin nhắn mới nhất" })).toBeNull();
   });
+  it("returns to the same older virtual row after remounting measured, unequal-height history", () => {
+    const session = makeSession();
+    session.messages = Array.from({ length: 56 }, (_, index) => index % 2
+      ? { id: `history-${index}`, role: "assistant" as const, blocks: [{ id: `answer-${index}`, type: "answer" as const, content: `Mốc ${index}` }] }
+      : { id: `history-${index}`, role: "user" as const, text: `Mốc ${index}` });
+    const positions = new Map<string, TranscriptReadingPosition>([[session.id, { followingTail: false, scrollTop: 1500, bookmark: null }]]);
+    const isViewport = (element: HTMLElement) => element.dataset.testid === "neko-transcript";
+    const height = (element: HTMLElement) => isViewport(element) ? 400 : element.hasAttribute("data-index") ? Number(element.dataset.index) % 2 ? 44 : 72 : 0;
+    vi.spyOn(HTMLElement.prototype, "offsetHeight", "get").mockImplementation(function () { return height(this); });
+    vi.spyOn(HTMLElement.prototype, "offsetWidth", "get").mockReturnValue(600);
+    vi.spyOn(HTMLElement.prototype, "clientWidth", "get").mockReturnValue(600);
+    vi.spyOn(HTMLElement.prototype, "clientHeight", "get").mockImplementation(function () { return isViewport(this) ? 400 : height(this); });
+    vi.spyOn(HTMLElement.prototype, "scrollHeight", "get").mockImplementation(function () {
+      return isViewport(this) ? Number.parseFloat((this.firstElementChild?.firstElementChild as HTMLElement | null)?.style.height ?? "0") + 32 : height(this);
+    });
+    const originalScrollTo = Object.getOwnPropertyDescriptor(HTMLElement.prototype, "scrollTo");
+    Object.defineProperty(HTMLElement.prototype, "scrollTo", { configurable: true, value: function (this: HTMLElement, options: ScrollToOptions) { this.scrollTop = options.top ?? this.scrollTop; } });
+    const renderChat = () => render(<NekoTranscript session={session} readingPositions={positions} onResolvePermission={vi.fn()} onInsertPrompt={vi.fn()} />);
+    const settle = (viewport: HTMLElement) => {
+      for (let pass = 0; pass < 8; pass++) {
+        paint(); fireEvent.scroll(viewport);
+        act(() => {
+          for (const observer of [...observers].filter((item) => !item.disconnected && item.elements.size > 0)) {
+            const entries = [...observer.elements].map((target) => ({ target, borderBoxSize: [{ blockSize: height(target as HTMLElement), inlineSize: 600 }] })) as unknown as ResizeObserverEntry[];
+            (observer.callback as ResizeObserverCallback)(entries, {} as ResizeObserver);
+          }
+        });
+      }
+    };
+    const topRow = (viewport: HTMLElement) => [...viewport.querySelectorAll<HTMLElement>("[data-index]")].find((row) => {
+      const start = Number(/translateY\(([-\d.]+)px\)/.exec(row.style.transform)?.[1] ?? 0);
+      return start + height(row) > viewport.scrollTop;
+    })?.dataset.index;
+    try {
+      const first = renderChat();
+      const viewport = screen.getByRole("log"); settle(viewport);
+      viewport.scrollTop = 1500; fireEvent.scroll(viewport); settle(viewport);
+      const reference = topRow(viewport);
+      expect(reference).toBeDefined();
+      expect(screen.getByRole("button", { name: "Đi tới tin nhắn mới nhất" })).toBeTruthy();
+      first.unmount();
+      renderChat();
+      const returned = screen.getByRole("log"); settle(returned);
+      expect(topRow(returned)).toBe(reference);
+      expect(screen.getByRole("button", { name: "Đi tới tin nhắn mới nhất" })).toBeTruthy();
+    } finally {
+      cleanup();
+      if (originalScrollTo) Object.defineProperty(HTMLElement.prototype, "scrollTo", originalScrollTo);
+      else Reflect.deleteProperty(HTMLElement.prototype, "scrollTo");
+    }
+  });
+
   it("keeps the cached pixel fallback when a virtual row mounts with changed bookmarked text", () => {
     const session = makeSession();
     session.messages = Array.from({ length: 52 }, (_, index) => ({ id: `message-${index}`, role: "user" as const, text: `Tin nhắn ${index}` }));
