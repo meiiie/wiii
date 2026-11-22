@@ -321,7 +321,7 @@ async function main() {
       return [...document.querySelectorAll('[data-testid="neko-outbox-row"] button[title]')]
         .some((node) => node.getAttribute("title") === arguments[0]);`, [QUEUED_TEXT]), "queued text after restart");
     // WebDriver ends the app without its graceful exit, so recovery must fail closed rather than resume.
-    await waitText(driver, "Lần chạy native có kết quả chưa xác định", "fail-closed recovery notice");
+    await waitText(driver, "Chưa rõ kết quả lượt trước. Wiii không tự gửi lại.", "fail-closed recovery notice");
     const outboxText = await driver.execute("return document.querySelector('[data-testid=\"neko-outbox\"]').innerText;");
     await capture(driver, "restored-session-and-outbox");
     if (model.requests.some((request) => request.user.includes("E2E_QUEUED"))) {
