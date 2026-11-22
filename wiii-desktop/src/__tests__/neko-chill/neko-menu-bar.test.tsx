@@ -2,6 +2,7 @@ import { act, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { NekoMenuBar } from "@/neko-chill/components/NekoMenuBar";
 import { captureTextEditTarget, runTextEdit } from "@/neko-chill/text-edit-target";
+import { setTheme } from "@/lib/theme";
 
 const readText = vi.fn<() => Promise<string>>();
 const writeText = vi.fn<(text: string) => Promise<void>>();
@@ -31,6 +32,7 @@ function openEdit() {
 
 describe("application menu and local editing", () => {
   beforeEach(() => {
+    vi.stubGlobal("matchMedia", vi.fn(() => ({ matches: false, addEventListener: vi.fn(), removeEventListener: vi.fn() })));
     readText.mockReset().mockResolvedValue("Văn bản mới");
     writeText.mockReset().mockResolvedValue(undefined);
     execute.mockReset().mockReturnValue(true);
@@ -40,6 +42,9 @@ describe("application menu and local editing", () => {
     Object.defineProperty(document, "execCommand", { configurable: true, value: execute });
   });
   afterEach(() => {
+    setTheme("light");
+    localStorage.removeItem("wiii:theme");
+    vi.unstubAllGlobals();
     if (originalClipboard) Object.defineProperty(navigator, "clipboard", originalClipboard);
     else Reflect.deleteProperty(navigator, "clipboard");
     Reflect.deleteProperty(document, "queryCommandSupported");
@@ -47,17 +52,35 @@ describe("application menu and local editing", () => {
     Reflect.deleteProperty(document, "execCommand");
   });
 
+  it("changes appearance from View, persists it, and returns focus to the draft", () => {
+    setTheme("system");
+    const { input } = setup();
+    const view = screen.getByRole("menuitem", { name: "Xem", exact: true });
+    fireEvent.pointerDown(view);
+    fireEvent.click(view);
+    expect(screen.getByRole("menuitemradio", { name: "Theo hệ thống" }).getAttribute("aria-checked")).toBe("true");
+    fireEvent.click(screen.getByRole("menuitemradio", { name: "Tối", exact: true }));
+    expect(document.documentElement.classList.contains("dark")).toBe(true);
+    expect(localStorage.getItem("wiii:theme")).toBe("dark");
+    expect(document.activeElement).toBe(input);
+    fireEvent.click(view);
+    expect(screen.getByRole("menuitemradio", { name: "Tối", exact: true }).getAttribute("aria-checked")).toBe("true");
+    fireEvent.click(screen.getByRole("menuitemradio", { name: "Sáng", exact: true }));
+    expect(document.documentElement.classList.contains("dark")).toBe(false);
+    expect(localStorage.getItem("wiii:theme")).toBe("light");
+  });
+
   it("routes real project/search/view actions without starting a task implicitly", () => {
     const { actions } = setup();
     fireEvent.click(screen.getByRole("menuitem", { name: "Tệp", exact: true }));
-    fireEvent.click(screen.getByRole("menuitem", { name: "Tạo Project…" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "Tạo dự án…" }));
     expect(actions.onCreateProject).toHaveBeenCalledOnce();
     expect(actions.onNewSession).not.toHaveBeenCalled();
     fireEvent.click(screen.getByRole("menuitem", { name: "Xem", exact: true }));
     fireEvent.click(screen.getByRole("menuitemcheckbox", { name: /Thanh bên/ }));
     expect(actions.onToggleSidebar).toHaveBeenCalledOnce();
     fireEvent.click(screen.getByRole("menuitem", { name: "Tệp", exact: true }));
-    fireEvent.click(screen.getByRole("menuitem", { name: /Tìm Project/ }));
+    fireEvent.click(screen.getByRole("menuitem", { name: /Tìm dự án/ }));
     expect(actions.onSearch).toHaveBeenCalledOnce();
   });
 
@@ -69,11 +92,7 @@ describe("application menu and local editing", () => {
     fireEvent.keyDown(document.activeElement!, { key: "ArrowRight" });
     fireEvent.keyDown(document.activeElement!, { key: "ArrowRight" });
     const tools = screen.getByRole("menuitemcheckbox", { name: /Công cụ dự án/ });
-    expect(tools.getAttribute("title")).toBe(
-      "Cần mở Project hoặc phiên có thư mục nguồn trước khi dùng công cụ dự án.",
-    );
-    expect(screen.getByTestId("workspace-tools-disabled-hint").textContent)
-      .toContain("chỉ bật khi đã có Project");
+    expect(tools.getAttribute("title")).toBe("Mở dự án hoặc phiên có thư mục trước.");
     fireEvent.click(tools);
     expect(actions.onToggleWorkspace).not.toHaveBeenCalled();
   });

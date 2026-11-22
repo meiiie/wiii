@@ -41,7 +41,6 @@ export const SessionSidebar = memo(function SessionSidebar({
   coworkerActive,
   projects,
   selectedProjectId,
-  externalSessionCount,
   onShowOverview,
   onShowCoworker,
   onShowConnections,
@@ -59,7 +58,6 @@ export const SessionSidebar = memo(function SessionSidebar({
   coworkerActive: boolean;
   projects: NekoProject[];
   selectedProjectId: string | null;
-  externalSessionCount: number;
   onShowOverview: () => void;
   onShowCoworker: () => void;
   onShowConnections: () => void;
@@ -183,7 +181,6 @@ export const SessionSidebar = memo(function SessionSidebar({
         >
           <LayoutDashboard aria-hidden="true" className="h-3.5 w-3.5 text-[var(--nk-text-3)]" />
           Tổng quan
-          {externalSessionCount ? <span className="ml-auto text-[9.5px] font-normal tabular-nums text-[var(--nk-ghost)]">{externalSessionCount} ngoài Wiii</span> : null}
         </button>
         <button
           type="button"
@@ -248,8 +245,8 @@ export const SessionSidebar = memo(function SessionSidebar({
         <button
           type="button"
           className="grid h-6 w-6 place-items-center rounded-md transition-colors hover:bg-[var(--nk-overlay)] hover:text-[var(--nk-text)]"
-          aria-label="Tạo Project"
-          title="Tạo Project"
+          aria-label="Tạo dự án"
+          title="Tạo dự án"
           onClick={onCreateProject}
         >
           <Plus aria-hidden="true" className="h-3.5 w-3.5" />
@@ -275,7 +272,7 @@ export const SessionSidebar = memo(function SessionSidebar({
                 data-testid="create-first-project"
               >
                 <Plus aria-hidden="true" className="h-3.5 w-3.5" />
-                Tạo Project đầu tiên
+                Tạo dự án đầu tiên
               </button>
             </div>
           )
@@ -291,7 +288,7 @@ export const SessionSidebar = memo(function SessionSidebar({
                     <button
                       type="button"
                       className="grid h-8 w-6 shrink-0 place-items-center text-[var(--nk-text-3)]"
-                      aria-label={`${isCollapsed ? "Mở" : "Thu gọn"} Project ${project.name}`}
+                      aria-label={`${isCollapsed ? "Mở" : "Thu gọn"} dự án ${project.name}`}
                       aria-expanded={!isCollapsed}
                       onClick={() => setCollapsed((current) => {
                         const next = new Set(current);
@@ -325,7 +322,7 @@ export const SessionSidebar = memo(function SessionSidebar({
                     <button
                       type="button"
                       className="nk-row-action mr-1 grid h-6 w-6 place-items-center rounded-md text-[var(--nk-ghost)] transition-colors hover:bg-[var(--nk-raised)] hover:text-[var(--nk-text)]"
-                      aria-label={`Chỉnh sửa Project ${project.name}`}
+                      aria-label={`Chỉnh sửa dự án ${project.name}`}
                       onClick={() => onEditProject(project.id)}
                     >
                       <MoreHorizontal aria-hidden="true" className="h-3.5 w-3.5" />
