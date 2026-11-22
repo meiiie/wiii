@@ -331,8 +331,8 @@ describe("Wiii task-first desktop shell", () => {
     expect(useAdeWorkStore.getState().graph.runs[0].state).toBe("review");
     expect(useNekoSessionStore.getState().sessions.visible.runtime).toBe(session.runtime);
     fireEvent.click(screen.getByRole("button", { name: /Review ACP answer/ }));
-    expect(screen.getByText(/Lần chạy: Sẵn sàng duyệt/)).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: /Mở phiên agent/ }));
+    expect(screen.getByText("Sẵn sàng duyệt")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Mở trò chuyện" }));
     expect(useNekoSessionStore.getState().activeSessionId).toBe("visible");
   });
 
