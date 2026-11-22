@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent } from "react";
 import { Check, X } from "lucide-react";
 import { APP_VERSION } from "@/lib/constants";
+import { getThemeMode, setTheme, type ThemeMode } from "@/lib/theme";
 import { CompletionPreferences } from "./CompletionPreferences";
 import { captureTextEditTarget, runTextEdit, type TextEditCommand, type TextEditTarget } from "../text-edit-target";
 
@@ -16,7 +17,7 @@ interface MenuAction {
   shortcut?: string;
   disabled?: boolean;
   checked?: boolean;
-  /** Explains why the item is unavailable (shown as title + View-menu helper). */
+  /** Contextual tooltip for unavailable actions. */
   disabledReason?: string;
   run: () => void;
 }
@@ -41,6 +42,7 @@ export function NekoMenuBar(props: NekoMenuBarProps) {
   const [left, setLeft] = useState(8);
   const [error, setError] = useState<string | null>(null);
   const [help, setHelp] = useState<"shortcuts" | "about" | "notifications" | null>(null);
+  const [theme, setThemeMode] = useState(getThemeMode);
   const root = useRef<HTMLElement>(null);
   const popup = useRef<HTMLDivElement>(null);
   const triggers = useRef<(HTMLButtonElement | null)[]>([]);
@@ -57,6 +59,7 @@ export function NekoMenuBar(props: NekoMenuBarProps) {
     editTarget.current = captureTextEditTarget(root.current?.closest(".nk-root") ?? null);
   }, []);
   const show = (index: number) => {
+    if (index === 2) setThemeMode(getThemeMode());
     setActive(index);
     setLeft(Math.max(8, Math.min(triggers.current[index]?.getBoundingClientRect().left ?? 8, innerWidth - 288)));
     setOpen(index);
@@ -83,8 +86,8 @@ export function NekoMenuBar(props: NekoMenuBarProps) {
   const actions: MenuAction[][] = [
     [
       { label: "Phiên mới", disabled: !props.ready, run: props.onNewSession },
-      { label: "Tạo Project…", disabled: !props.ready, run: props.onCreateProject },
-      { label: "Tìm Project hoặc phiên…", shortcut: `${modifier}K`, disabled: !props.ready, run: props.onSearch },
+      { label: "Tạo dự án…", disabled: !props.ready, run: props.onCreateProject },
+      { label: "Tìm dự án hoặc phiên…", shortcut: `${modifier}K`, disabled: !props.ready, run: props.onSearch },
       { label: "Tài khoản & ứng dụng…", run: props.onConnections },
       { label: "Thông báo & âm thanh…", run: () => setHelp("notifications") },
     ],
@@ -102,7 +105,7 @@ export function NekoMenuBar(props: NekoMenuBarProps) {
         disabled: !props.workspaceAvailable,
         disabledReason: props.workspaceAvailable
           ? undefined
-          : "Cần mở Project hoặc phiên có thư mục nguồn trước khi dùng công cụ dự án.",
+          : "Mở dự án hoặc phiên có thư mục trước.",
         run: props.onToggleWorkspace,
       },
     ],
@@ -221,14 +224,24 @@ export function NekoMenuBar(props: NekoMenuBarProps) {
                 {action.shortcut && <kbd className="text-[10px] text-[var(--nk-text-3)]">{action.shortcut}</kbd>}
               </button>
             ))}
+            {open === 2 && <div role="group" aria-label="Giao diện" className="mt-1 border-t border-[var(--nk-border)] pt-1">
+              <p className="px-3 py-1 text-[10.5px] text-[var(--nk-text-3)]">Giao diện</p>
+              {([["light", "Sáng"], ["dark", "Tối"], ["system", "Theo hệ thống"]] satisfies [ThemeMode, string][]).map(([mode, label]) => (
+                <button key={mode} type="button" role="menuitemradio" aria-checked={theme === mode} tabIndex={-1}
+                  className="nk-menu-action flex min-h-8 w-full items-center gap-2 rounded px-2 text-left text-[12px]"
+                  onClick={() => {
+                    setTheme(mode);
+                    setThemeMode(mode);
+                    close(true);
+                  }}>
+                  <span className="w-3.5 shrink-0">{theme === mode && <Check size={14} aria-hidden="true" />}</span>
+                  <span>{label}</span>
+                </button>
+              ))}
+            </div>}
             {open === 1 && <p className="border-t border-[var(--nk-border)] px-3 py-2 text-[11px] leading-4 text-[var(--nk-text-3)]">
               Sửa ô nhập trong Wiii. Trình sửa tệp và Computer dùng phím tắt trong vùng đó.
             </p>}
-            {open === 2 && !props.workspaceAvailable ? (
-              <p className="border-t border-[var(--nk-border)] px-3 py-2 text-[11px] leading-4 text-[var(--nk-text-3)]" data-testid="workspace-tools-disabled-hint">
-                Công cụ dự án chỉ bật khi đã có Project hoặc phiên với thư mục nguồn.
-              </p>
-            ) : null}
           </div>
         )}
       </nav>

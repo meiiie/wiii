@@ -2,7 +2,7 @@
  * Unit tests for theme management utilities.
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
-import { initTheme, setTheme, getCurrentTheme } from "@/lib/theme";
+import { initTheme, setTheme, getCurrentTheme, getThemeMode } from "@/lib/theme";
 
 // Mock window.matchMedia (not available in jsdom)
 function mockMatchMedia(prefersDark = false) {
@@ -57,8 +57,51 @@ describe("Theme Utilities", () => {
   });
 
   afterEach(() => {
+    setTheme("light");
     document.documentElement.classList.remove("dark");
     localStorage.clear();
+  });
+
+  it("keeps the system choice distinct from its resolved dark appearance", () => {
+    mockMatchMedia(true);
+    setTheme("system");
+    expect(getThemeMode()).toBe("system");
+    expect(getCurrentTheme()).toBe("dark");
+    expect(initTheme()).toBe("system");
+  });
+
+  it("reads persisted explicit choices and falls back when storage is unavailable", () => {
+    setTheme("dark");
+    expect(getThemeMode()).toBe("dark");
+    vi.mocked(localStorage.getItem).mockImplementation(() => { throw new Error("unavailable"); });
+    expect(getThemeMode()).toBe("system");
+  });
+
+  it("stops the original system observer when an explicit appearance is chosen", () => {
+    const queries: MediaQueryList[] = [];
+    vi.mocked(window.matchMedia).mockImplementation((media) => {
+      const query = Object.assign(new EventTarget(), {
+        matches: false, media, onchange: null,
+        addListener: vi.fn(), removeListener: vi.fn(),
+      }) as MediaQueryList;
+      queries.push(query);
+      return query;
+    });
+    setTheme("system");
+    const observed = queries.at(-1)!;
+    observed.dispatchEvent(Object.assign(new Event("change"), { matches: true }));
+    expect(getCurrentTheme()).toBe("dark");
+    setTheme("light");
+    observed.dispatchEvent(Object.assign(new Event("change"), { matches: true }));
+    expect(getCurrentTheme()).toBe("light");
+    expect(getThemeMode()).toBe("light");
+    setTheme("system");
+    const nextObserver = queries.at(-1)!;
+    nextObserver.dispatchEvent(Object.assign(new Event("change"), { matches: true }));
+    expect(getCurrentTheme()).toBe("dark");
+    setTheme("dark");
+    nextObserver.dispatchEvent(Object.assign(new Event("change"), { matches: false }));
+    expect(getCurrentTheme()).toBe("dark");
   });
 
   it("should initialize with system theme by default", () => {

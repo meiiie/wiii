@@ -32,25 +32,31 @@ function applyTheme(theme: "light" | "dark") {
 }
 
 /**
- * Initialize theme from persisted preference.
- * Call once at app startup (before React renders).
+ * Read the chosen mode, not the effective system color.
  */
-export function initTheme(): ThemeMode {
-  let mode: ThemeMode = "system";
+export function getThemeMode(): ThemeMode {
   try {
     const stored = localStorage.getItem(THEME_STORAGE_KEY);
     if (stored === "light" || stored === "dark" || stored === "system") {
-      mode = stored;
+      return stored;
     }
   } catch {
     // localStorage unavailable
   }
+  return "system";
+}
+
+/** Initialize before React renders to prevent a flash of the wrong theme. */
+export function initTheme(): ThemeMode {
+  const mode = getThemeMode();
 
   applyTheme(resolveTheme(mode));
 
   // Listen for system preference changes when mode is "system"
   if (mode === "system") {
     setupSystemListener();
+  } else {
+    removeSystemListener();
   }
 
   return mode;
@@ -77,22 +83,21 @@ export function setTheme(mode: ThemeMode) {
 }
 
 // System preference change listener
-let systemListener: ((e: MediaQueryListEvent) => void) | null = null;
+let stopSystemListener: (() => void) | null = null;
 
 function setupSystemListener() {
-  if (systemListener) return;
+  if (stopSystemListener) return;
   const mq = window.matchMedia("(prefers-color-scheme: dark)");
-  systemListener = (e: MediaQueryListEvent) => {
+  const listener = (e: MediaQueryListEvent) => {
     applyTheme(e.matches ? "dark" : "light");
   };
-  mq.addEventListener("change", systemListener);
+  mq.addEventListener("change", listener);
+  stopSystemListener = () => mq.removeEventListener("change", listener);
 }
 
 function removeSystemListener() {
-  if (!systemListener) return;
-  const mq = window.matchMedia("(prefers-color-scheme: dark)");
-  mq.removeEventListener("change", systemListener);
-  systemListener = null;
+  stopSystemListener?.();
+  stopSystemListener = null;
 }
 
 /**

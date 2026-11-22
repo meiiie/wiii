@@ -94,7 +94,10 @@ function LocalWorkbenchScreens() {
         />}
       </div>
       {surface === "service" || surface === "connect" ? (
-        <WiiiServiceSurface view={surface} onBack={() => setSurface(returnSurface)} onOpenConnect={onOpenConnections} />
+        // Loading an optional screen must not suspend the local runtime owner.
+        <Suspense fallback={<BootSplash label="Wiii đang mở kết nối..." />}>
+          <WiiiServiceSurface view={surface} onBack={() => setSurface(returnSurface)} onOpenConnect={onOpenConnections} />
+        </Suspense>
       ) : null}
       {navigationError ? (
         <p role="status" data-testid="work-navigation-status"
