@@ -33,6 +33,7 @@ import {
   type AdeNativeOutcome,
 } from "./native-lifecycle";
 import { useAdeWorkStore } from "./store";
+import { deriveAdeTurnResult } from "./turn-lifecycle";
 import "@/neko-chill/theme.css";
 
 const RUN_LABELS: Record<AdeRunState, string> = {
@@ -263,6 +264,8 @@ function WiiiAdeScreen({ active = true, onOpenManaged = () => {}, onOpenConnecti
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
   const [pendingLaunch, setPendingLaunch] = useState<NekoTaskLaunchRequest | null>(null);
   const [navigationError, setNavigationError] = useState<string | null>(null);
+  const [resultError, setResultError] = useState(false);
+  const [resultRetry, setResultRetry] = useState(0);
   const lifecycleSyncs = useRef(new Set<string>());
   const sessions = useNekoSessionStore((state) => state.sessions);
   const desktopChrome = typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
@@ -318,6 +321,34 @@ function WiiiAdeScreen({ active = true, onOpenManaged = () => {}, onOpenConnecti
       if (!run || terminalStates.includes(run.state)) continue;
 
       const durableOutcome = deriveAdeOutcomeFromSessionEvents(session.events, execution.runId);
+      // A closing/cancelling host can already report a terminal native state
+      // while its renderer lifecycle lock is still held. Wait for that boundary
+      // before choosing a turn result versus a process result, except uncertainty.
+      if (durableOutcome !== "unknown_outcome"
+        && (session.closePending || session.deletePending || session.cancelPending)) continue;
+      const turnResult = deriveAdeTurnResult(session);
+      // ACP hosts stay alive between turns. Project the correlated result only
+      // after its transcript + boundary events have crossed a strict save. A
+      // cleanup uncertainty still takes precedence over any apparent result.
+      if (turnResult && durableOutcome !== "unknown_outcome") {
+        if (run.state === "review") continue;
+        const key = `${execution.runId}:turn-result`;
+        if (lifecycleSyncs.current.has(key)) continue;
+        lifecycleSyncs.current.add(key);
+        void useNekoSessionStore.getState().persistTurnResult(session.id).then(async () => {
+          const current = useNekoSessionStore.getState().sessions[session.id];
+          if (!current || current.execution?.runId !== execution.runId
+            || deriveAdeTurnResult(current)?.event.eventId !== turnResult.event.eventId)
+            return;
+          const nativeOutcome = deriveAdeOutcomeFromSessionEvents(current.events, execution.runId);
+          await projectOutcome(execution.runId, nativeOutcome === "unknown_outcome" ? nativeOutcome : turnResult.outcome);
+        }).catch(() => {
+          setResultError(true);
+        }).finally(() => {
+          lifecycleSyncs.current.delete(key);
+        });
+        continue;
+      }
       if (durableOutcome) {
         void projectOutcome(execution.runId, durableOutcome).catch(() => {});
         continue;
@@ -334,6 +365,13 @@ function WiiiAdeScreen({ active = true, onOpenManaged = () => {}, onOpenConnecti
           const record = records.find((item) => item.agentSessionId === bound?.id)
             ?? records[records.length - 1];
           const outcome = record ? deriveAdeOutcomeFromNativeRecord(record) : null;
+          const current = useNekoSessionStore.getState().sessions[session.id];
+          if (!current || current.execution?.runId !== execution.runId) return;
+          // The read raced renderer cleanup or a newly saved turn. Never let
+          // an idle-host cancellation replace the more precise prompt result.
+          if (outcome !== "unknown_outcome"
+            && (current.status !== "exited" || current.closePending || current.deletePending
+              || current.cancelPending || deriveAdeTurnResult(current))) return;
           if (outcome) return projectOutcome(execution.runId, outcome);
           return undefined;
         }).catch(() => {}).finally(() => {
@@ -341,7 +379,7 @@ function WiiiAdeScreen({ active = true, onOpenManaged = () => {}, onOpenConnecti
         });
       }
     }
-  }, [graph.agentSessions, graph.runs, hydrated, sessions]);
+  }, [graph.agentSessions, graph.runs, hydrated, sessions, resultRetry]);
 
   const visibleTasks = useMemo(() => graph.tasks.filter((task) =>
     !selectedProjectId || task.projectId === selectedProjectId), [graph.tasks, selectedProjectId]);
@@ -443,9 +481,20 @@ function WiiiAdeScreen({ active = true, onOpenManaged = () => {}, onOpenConnecti
     setSurface("neko");
   };
 
+  const resultNotice = resultError ? (
+    <div role="status" className="fixed bottom-4 right-4 z-50 flex items-center gap-3 rounded-xl border border-[var(--nk-border)] bg-[var(--nk-composer)] px-4 py-3 text-[12px] shadow-lg">
+      <span>Chưa lưu được kết quả lần chạy.</span>
+      <button type="button" className="font-medium text-[var(--nk-accent)]" onClick={() => {
+        setResultError(false);
+        setResultRetry((value) => value + 1);
+      }}>Thử lại</button>
+    </div>
+  ) : null;
+
   if (surface === "neko") {
     return (
       <>
+        {resultNotice}
         <NekoChillApp
           active={active}
           onOpenManaged={onOpenManaged}
@@ -466,6 +515,7 @@ function WiiiAdeScreen({ active = true, onOpenManaged = () => {}, onOpenConnecti
 
   return (
     <div className="nk-root flex h-screen flex-col bg-[var(--nk-canvas)] text-[var(--nk-text)]" data-testid="wiii-ade-app">
+      {resultNotice}
       <TitleBar
         minimal
         leading={<span className="flex h-8 items-center gap-2 px-2.5 text-[13px] font-semibold"><WiiiMark size={17} /> Wiii</span>}

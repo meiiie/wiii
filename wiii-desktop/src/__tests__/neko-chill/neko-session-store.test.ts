@@ -158,6 +158,33 @@ describe("neko-session-store", () => {
     expect(useCompletionNoticeStore.getState().notices).toEqual([]);
   });
 
+  it("clears only the recovered turn-save diagnostic after strict retry without redispatch", async () => {
+    const id = await setup();
+    emit({ type: "turn-started", sessionId: id });
+    emit({ type: "answer-delta", sessionId: id, text: "Result to save" });
+    vi.mocked(saveStoreStrict).mockRejectedValueOnce(new Error("disk unavailable"));
+    emit({ type: "turn-finished", sessionId: id, stopReason: "end_turn" });
+    await vi.waitFor(() => expect(session(id).persistenceFailure?.detail).toContain("disk unavailable"));
+    await useNekoSessionStore.getState().persistTurnResult(id);
+    expect(session(id).statusDetail).toBeUndefined();
+    expect(session(id).persistenceFailure).toBeUndefined();
+    expect(driver.prompts).toEqual([]);
+    expect(session(id).status).toBe("idle");
+  });
+
+  it("does not clear a different diagnostic while recovering a turn-save failure", async () => {
+    const id = await setup();
+    emit({ type: "turn-started", sessionId: id });
+    vi.mocked(saveStoreStrict).mockRejectedValueOnce(new Error("disk unavailable"));
+    emit({ type: "turn-finished", sessionId: id, stopReason: "end_turn" });
+    await vi.waitFor(() => expect(session(id).persistenceFailure).toBeDefined());
+    useNekoSessionStore.setState((state) => {
+      state.sessions[id].statusDetail = "Native cleanup is uncertain";
+    });
+    await useNekoSessionStore.getState().persistTurnResult(id);
+    expect(session(id).statusDetail).toBe("Native cleanup is uncertain");
+  });
+
   it("does not announce a previous turn after a new turn has started", async () => {
     const id = await setup();
     emit({ type: "turn-started", sessionId: id });

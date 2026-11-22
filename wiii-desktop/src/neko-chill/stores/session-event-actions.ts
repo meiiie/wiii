@@ -15,9 +15,13 @@ import { useCompletionNoticeStore } from "./completion-notice-store";
 import { persistSessionDebounced } from "../persistence";
 import type { SessionSet, SessionGet, NekoSessionState } from "./session-store-types";
 import type { SessionRuntime } from "./session-runtime-lifecycle";
-export function createSessionEventActions(set: SessionSet, get: SessionGet, runtime: SessionRuntime): Pick<NekoSessionState, "handleEvent"> {
+export function createSessionEventActions(set: SessionSet, get: SessionGet, runtime: SessionRuntime): Pick<NekoSessionState, "handleEvent" | "persistTurnResult"> {
   const { enqueuePresentationDelta, drainPresentationStreams, runtimes, persistSessionNowOrReport } = runtime;
   return {
+    persistTurnResult: async (sessionId) => {
+      if (!await persistSessionNowOrReport(sessionId, "lượt trả lời đã kết thúc", { strict: true }))
+        throw new Error("Chưa lưu được kết quả lần chạy.");
+    },
     handleEvent: (event) => {
       // A terminal from an older prompt must never finish a newer turn, even
       // when both share the same long-lived ACP process. Runtime callbacks
