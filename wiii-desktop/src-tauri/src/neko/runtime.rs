@@ -928,7 +928,7 @@ impl NekoRuntime {
     }
 
     pub fn kill_all(&self, app: &AppHandle) {
-        let processes = {
+        let mut processes = {
             let _operation = lock(&self.inner.operations);
             // Starts release the lifecycle lock while probing providers. Mark
             // the authority closed before draining so a probe cannot spawn
@@ -938,9 +938,18 @@ impl NekoRuntime {
             let mut processes = lock(&self.inner.processes);
             processes.drain().collect::<Vec<_>>()
         };
-        for (agent_session_id, mut process) in processes {
+        for (_, process) in &mut processes {
+            let (disconnected, _) = sync_channel(0);
+            drop(std::mem::replace(&mut process.writer, disconnected));
+        }
+        let results = provider::shutdown_children(
+            &mut processes
+                .iter_mut()
+                .map(|(_, process)| &mut process.child)
+                .collect::<Vec<_>>(),
+        );
+        for ((agent_session_id, _process), termination) in processes.into_iter().zip(results) {
             let _operation = lock(&self.inner.operations);
-            let termination = kill_proc(&mut process);
             let fact = match termination {
                 Ok(()) => PendingTerminalFact {
                     next_state: RunState::Cancelled,
@@ -1891,6 +1900,32 @@ fn bounded_error(error: &impl std::fmt::Display) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[cfg(unix)]
+    #[test]
+    fn disconnecting_idle_writer_closes_child_stdin_promptly() {
+        let mut child = std::process::Command::new("sh")
+            .args(["-c", "cat >/dev/null"])
+            .stdin(Stdio::piped())
+            .spawn()
+            .unwrap();
+        let writer = spawn_writer(child.stdin.take().unwrap()).unwrap();
+        assert!(child.stdin.is_none());
+        drop(writer);
+        let deadline = std::time::Instant::now() + Duration::from_secs(1);
+        loop {
+            if let Some(status) = child.try_wait().unwrap() {
+                assert!(status.success());
+                break;
+            }
+            if std::time::Instant::now() >= deadline {
+                child.kill().unwrap();
+                child.wait().unwrap();
+                panic!("writer channel disconnect did not deliver EOF promptly");
+            }
+            std::thread::sleep(Duration::from_millis(10));
+        }
+    }
 
     fn runtime_test_path() -> std::path::PathBuf {
         std::env::temp_dir()
