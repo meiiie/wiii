@@ -415,6 +415,17 @@ export function NekoTranscript({
     enabled: useVirtual,
   });
 
+  const measureVirtualRow = useCallback((node: HTMLDivElement | null) => {
+    virtualizer.measureElement(node);
+    if (!node) return;
+    return () => {
+      // Paging can recycle the focused question. Keep keyboard scrolling in
+      // this viewport rather than letting focus fall back to the document.
+      if (node.contains(document.activeElement)) scrollRef.current?.focus({ preventScroll: true });
+      virtualizer.measureElement(null);
+    };
+  }, [virtualizer]);
+
   const updateFollowingTail = useCallback((next: boolean) => {
     if (followingTailRef.current === next) return;
     followingTailRef.current = next;
@@ -604,7 +615,7 @@ export function NekoTranscript({
               return (
                 <div
                   key={message.id}
-                  ref={virtualizer.measureElement}
+                  ref={measureVirtualRow}
                   data-index={row.index}
                   className="absolute left-0 top-0 w-full"
                   style={{ transform: `translateY(${row.start}px)` }}

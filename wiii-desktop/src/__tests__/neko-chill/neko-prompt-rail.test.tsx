@@ -202,4 +202,24 @@ describe("Neko question navigation", () => {
     expect(document.activeElement).toBe(outside);
     outside.remove();
   });
+
+  it("keeps keyboard scrolling in the transcript when paging unmounts the focused virtual row", () => {
+    const session = makeSession();
+    session.messages = Array.from({ length: 60 }, (_, index) => ({
+      id: `page-${index}`, role: "user", text: `Câu hỏi dài ${index + 1}`,
+    }));
+    virtual.rows = [{ index: 0, start: 0 }];
+    const view = mount(session);
+    fireEvent.click(screen.getByRole("button", { name: "Câu hỏi 60" }));
+    fireEvent.click(screen.getByRole("button", { name: "Đi tới lời nhắn 1: Câu hỏi dài 1" }));
+    const viewport = screen.getByTestId("neko-transcript");
+    expect(document.activeElement).toBe(document.querySelector('[data-neko-message-index="0"]'));
+
+    viewport.scrollTop = 3600;
+    virtual.rows = [{ index: 20, start: 3600 }];
+    view.rerender(<div style={{ height: 400 }}><NekoTranscript {...view.props} /></div>);
+    expect(document.querySelector('[data-neko-message-index="0"]')).toBeNull();
+    expect(document.activeElement).toBe(viewport);
+    expect(viewport.scrollTop).toBe(3600);
+  });
 });
