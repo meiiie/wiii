@@ -4,7 +4,7 @@ import type { NekoTopLevelSessionKind } from "@/neko/session-ownership";
 import type { NekoNativeSessionRecord } from "@/neko/control-client";
 import type { RuntimeProviderSnapshot } from "../runtime-manager";
 import { appendOwnedSessionEvent } from "./session-projections";
-import { isNekoTaskScopeMapping } from "../task-scope-mapping";
+import { canRecoverNekoTaskWriter, isNekoTaskScopeMapping } from "../task-scope-mapping";
 export const NATIVE_REPLAY_PAGE_SIZE = 500;
 export const MAX_NATIVE_REPLAY_EVENTS = 10000;
 export const NATIVE_TERMINAL_STATES = new Set(["completed", "failed", "cancelled"]);
@@ -87,10 +87,11 @@ export function nativeRunBlocksRespawn(session: NekoSession): boolean {
 }
 /** UI affordance only: the recovery action still verifies native truth and persistence. */
 export function nativeSessionNeedsRecovery(session: NekoSession): boolean {
+  const taskWriter = canRecoverNekoTaskWriter(session.taskScope);
   return !session.runtime &&
-    (!session.taskScope || (isNekoTaskScopeMapping(session.taskScope) && session.taskScope.state !== "recovery-required")) &&
+    (!session.taskScope || taskWriter || (isNekoTaskScopeMapping(session.taskScope) && session.taskScope.state !== "recovery-required")) &&
     (session.status === "error" || (session.status === "stopping" && session.closePending)) &&
-    (Boolean(session.nativeRecoveryRequired) || nativeRunBlocksRespawn(session));
+    (taskWriter || Boolean(session.nativeRecoveryRequired) || nativeRunBlocksRespawn(session));
 }
 export function retireAbsentNativeCheckpoints(session: NekoSession, natives: NekoNativeSessionRecord[]): boolean {
   const present = new Set(natives.map((native) => native.agentSessionId));

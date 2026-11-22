@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import type { AdeGraph } from "@/ade/domain";
+import type { AdeGraph } from "@/neko/legacy-work-model";
 import {
   validateNekoTaskBinding,
   validateNekoTaskWorkItem,

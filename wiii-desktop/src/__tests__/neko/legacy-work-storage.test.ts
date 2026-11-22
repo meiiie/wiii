@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { AdeGraph } from "@/ade/domain";
+import type { AdeGraph } from "@/neko/legacy-work-model";
 
 const storage = new Map<string, unknown>();
 
@@ -15,8 +15,7 @@ import {
   emptyAdeGraph,
   loadAdeWorkSnapshot,
   parseAdeWorkSnapshot,
-  saveAdeWorkGraph,
-} from "@/ade/persistence";
+} from "@/neko/legacy-work-storage";
 
 function validGraph(): AdeGraph {
   const graph = emptyAdeGraph();
@@ -58,17 +57,21 @@ function validGraph(): AdeGraph {
   return graph;
 }
 
-describe("Wiii ADE work persistence", () => {
+describe("retired Work compatibility reader", () => {
   beforeEach(() => storage.clear());
 
-  it("round-trips one validated versioned work graph", async () => {
+  it("reads an existing versioned Work graph without changing its bytes", async () => {
     const graph = validGraph();
-    await saveAdeWorkGraph(graph);
+    const snapshot = { v: 1, updatedAt: new Date().toISOString(), graph };
+    storage.set("wiii-ade-work.json:snapshot", structuredClone(snapshot));
 
     await expect(loadAdeWorkSnapshot()).resolves.toEqual(expect.objectContaining({
       v: 1,
       graph,
     }));
+    expect(storage.get("wiii-ade-work.json:snapshot")).toEqual(snapshot);
+    const { saveStoreStrict } = await import("@/lib/storage");
+    expect(saveStoreStrict).not.toHaveBeenCalled();
   });
 
   it("treats a missing snapshot as empty authority without writing defaults", async () => {
@@ -99,11 +102,4 @@ describe("Wiii ADE work persistence", () => {
     })).toThrow(/missing_environment/);
   });
 
-  it("rejects an invalid graph before the storage write barrier", async () => {
-    const graph = validGraph();
-    graph.runs[0].environmentId = "missing";
-
-    await expect(saveAdeWorkGraph(graph)).rejects.toThrow(/missing_environment/);
-    expect(storage.size).toBe(0);
-  });
 });

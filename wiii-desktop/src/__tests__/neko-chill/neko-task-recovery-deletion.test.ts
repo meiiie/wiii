@@ -7,6 +7,8 @@ import type { Driver, DriverEvent, PermissionDecision } from "@/neko-chill/drive
 import type { DetectedAgent } from "@/neko-chill/stores/neko-agent-store";
 import type { NekoTaskReceipt } from "@/neko-chill/drivers/acp/task-protocol";
 import { AcpRpcError, AcpTransportError } from "@/neko-chill/drivers/acp/errors";
+import { LegacyLeaseRecoveryError } from "@/neko/control-recovery";
+import { nativeSessionNeedsRecovery } from "@/neko-chill/stores/session-native-recovery";
 
 const memory = vi.hoisted(() => ({
   values: new Map<string, unknown>(),
@@ -60,6 +62,7 @@ const nativeControl = {
   readEvents: vi.fn(async (streamId: string, afterSeq = 0) => ({ streamId, events: [], nextAfterSeq: afterSeq, hasMore: false })),
   unresolvedStartSessionIds: vi.fn(() => []), reconcilableStartSessionIds: vi.fn(async () => []),
   cancelUnresolvedStarts: vi.fn(async () => 0),
+  recoverLegacySessionLease: vi.fn(async (_client: string, _backend: string, _requireTaskProof?: boolean) => {}),
 };
 function session(id: string) { return useNekoSessionStore.getState().sessions[id]; }
 function snapshot(id: string) {
@@ -122,6 +125,7 @@ describe("Scoped recovery deletion and cold-start boundaries", () => {
   beforeEach(() => {
     _clearLiveDriversForTests();
     memory.values.clear(); memory.recoveryFailuresRemaining = 0;
+    nativeControl.recoverLegacySessionLease.mockReset().mockResolvedValue(undefined);
     memory.rejectRecoveryTranscript = false; memory.rejectAllWrites = false; memory.rejectedWrites = 0;
     drivers.length = 0; launches.length = 0;
     vi.mocked(deleteStoreStrict).mockClear();
@@ -135,6 +139,95 @@ describe("Scoped recovery deletion and cold-start boundaries", () => {
   afterEach(() => {
     memory.recoveryFailuresRemaining = 0; memory.rejectRecoveryTranscript = false; memory.rejectAllWrites = false;
     _clearLiveDriversForTests(); _setDriverFactoryForTests(undefined); _setNativeControlReaderForTests(undefined);
+  });
+
+  async function writerUnavailable() {
+    const id = await createScoped(); await coldHydrate(id);
+    const before = copy(session(id));
+    _setDriverFactoryForTests(async (_agent, _id, launch) => {
+      launches.push(launch);
+      throw new AcpRpcError(2, "session/resume", { code: -32002, message: "Writer unavailable",
+        data: { "neko.taskError": { version: 1, kind: "writer_unavailable", action: "retain_mapping_and_request_recovery" } } });
+    });
+    await useNekoSessionStore.getState().sendPrompt("harmless follow-up not dispatched");
+    expect(session(id).taskScope).toMatchObject({ state: "recovery-required", reason: "writer-unavailable" });
+    return { id, before };
+  }
+
+  it("does not require Linux PID-1 lease migration for an ordinary bound scoped stop recovery", async () => {
+    const id = await createScoped(); await coldHydrate(id);
+    const before = copy(session(id));
+    // The PID-1 compatibility command is unsupported on Windows/macOS and is
+    // unrelated to native stop recovery unless Core reported writer-unavailable.
+    nativeControl.recoverLegacySessionLease.mockRejectedValue(new LegacyLeaseRecoveryError(false));
+    useNekoSessionStore.setState(state => {
+      state.sessions[id].status = "error";
+      state.sessions[id].nativeRecoveryRequired = true;
+    });
+    const starts = launches.length;
+    await useNekoSessionStore.getState().recoverSession(id);
+    expect(session(id).status).toBe("exited");
+    expect(session(id).taskScope).toEqual(before.taskScope);
+    expect(session(id).nativeRecoveryRequired).toBe(false);
+    expect(nativeControl.recoverLegacySessionLease).not.toHaveBeenCalled();
+    expect(launches).toHaveLength(starts);
+  });
+
+  it("explicitly recovers only the saved writer, preserves scope/history and never sends until a later user action", async () => {
+    const { id, before } = await writerUnavailable();
+    expect(nativeSessionNeedsRecovery(session(id))).toBe(true);
+    const starts = launches.length;
+    await useNekoSessionStore.getState().recoverSession(id);
+    expect(nativeControl.recoverLegacySessionLease).toHaveBeenCalledExactlyOnceWith(id, before.backendSessionId, true);
+    expect(session(id).taskScope).toEqual(before.taskScope);
+    expect(snapshot(id)?.entry.taskScope).toEqual(before.taskScope);
+    expect(session(id).messages).toEqual(before.messages);
+    expect(session(id).status).toBe("exited");
+    expect(launches).toHaveLength(starts);
+    expect(drivers[0].prompts).toEqual([]);
+    useAdmittingFactory();
+    await useNekoSessionStore.getState().sendPrompt("explicit same-session continuation");
+    expect(launches.at(-1)?.backendSessionId).toBe(before.backendSessionId);
+    expect(launches.at(-1)?.taskScope?.receipt).toEqual(before.taskScope?.state === "bound" ? before.taskScope.receipt : undefined);
+    expect(session(id).taskScope).toMatchObject({ state: "bound", receipt: { activationEpoch: 2 } });
+    expect(drivers.at(-1)?.prompts).toEqual(["explicit same-session continuation"]);
+  });
+
+  it("keeps scoped recovery blocked after a failed strict save and retries proof without replay or replacement", async () => {
+    const { id, before } = await writerUnavailable();
+    const starts = launches.length;
+    memory.rejectAllWrites = true;
+    await useNekoSessionStore.getState().recoverSession(id);
+    expect(session(id).taskScope).toMatchObject({ state: "recovery-required", reason: "writer-unavailable", receipt: before.taskScope?.receipt });
+    expect(session(id).status).toBe("error");
+    await useNekoSessionStore.getState().sendPrompt("still locked");
+    expect(launches).toHaveLength(starts);
+    memory.rejectAllWrites = false;
+    await useNekoSessionStore.getState().recoverSession(id);
+    expect(nativeControl.recoverLegacySessionLease).toHaveBeenCalledTimes(2);
+    expect(snapshot(id)?.entry.taskScope).toEqual(before.taskScope);
+    expect(session(id).status).toBe("exited");
+    expect(launches).toHaveLength(starts);
+  });
+
+  it("refuses live/unsupported native proof and leaves all other scoped recovery reasons blocked", async () => {
+    const { id } = await writerUnavailable();
+    nativeControl.recoverLegacySessionLease.mockRejectedValueOnce(new LegacyLeaseRecoveryError(true));
+    await useNekoSessionStore.getState().recoverSession(id);
+    expect(session(id).taskScope).toMatchObject({ state: "recovery-required", reason: "writer-unavailable" });
+    expect(session(id).status).toBe("error");
+    const starts = launches.length;
+    for (const reason of ["load-response-uncertain", "close-unconfirmed", "recovery-required"] as const) {
+      useNekoSessionStore.setState(state => {
+        const scope = state.sessions[id].taskScope;
+        if (scope?.state === "recovery-required") state.sessions[id].taskScope = { ...scope, reason };
+      });
+      expect(nativeSessionNeedsRecovery(session(id))).toBe(false);
+      await useNekoSessionStore.getState().recoverSession(id);
+      await useNekoSessionStore.getState().sendPrompt("must remain locked");
+    }
+    expect(nativeControl.recoverLegacySessionLease).toHaveBeenCalledOnce();
+    expect(launches).toHaveLength(starts);
   });
 
   it.each(["session/new", "session/load"] as const)("confirmed deletion after uncertain %s removes Wiii history/mapping without creating or deleting a Neko task", async (method) => {

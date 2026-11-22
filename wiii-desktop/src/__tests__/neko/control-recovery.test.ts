@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { tryCloseOrphanAcpSession } from "@/neko/control-recovery";
+import { getNekoControlClient } from "@/neko/control-client";
 
 const native = vi.hoisted(() => ({ invoke: vi.fn(), listen: vi.fn() }));
 vi.mock("@tauri-apps/api/core", () => ({ invoke: native.invoke }));
@@ -12,6 +13,20 @@ beforeEach(() => {
   native.listen.mockReset().mockImplementation(async (_event, callback) => { deliver = callback; return detach; });
 });
 afterEach(() => vi.useRealTimers());
+
+it.each([false, undefined, {}, "true"])("does not treat native result %j as scoped recovery proof", async result => {
+  native.invoke.mockResolvedValueOnce(result);
+  await expect(getNekoControlClient().recoverLegacySessionLease("thread", "backend", true)).rejects.toThrow();
+  expect(native.invoke).toHaveBeenCalledExactlyOnceWith("neko_control_legacy_lease_recover", {
+    request: { clientSessionId: "thread", backendSessionId: "backend" },
+  });
+});
+
+it("accepts only positive native scoped proof, while keeping a legacy no-op compatible", async () => {
+  native.invoke.mockResolvedValueOnce(true).mockResolvedValueOnce(false);
+  await expect(getNekoControlClient().recoverLegacySessionLease("thread", "backend", true)).resolves.toBeUndefined();
+  await expect(getNekoControlClient().recoverLegacySessionLease("legacy", "backend")).resolves.toBeUndefined();
+});
 
 it("closes only the bound backend through the existing native identity, never initializes or prompts", async () => {
   const params = { sessionId: "saved-backend", _meta: { "neko.task": { task_id: "task" } } };

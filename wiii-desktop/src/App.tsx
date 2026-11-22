@@ -29,7 +29,6 @@ const NekoRuntimeScope = lazy(async () => {
   return { default: module.NekoRuntimeScope };
 });
 
-const WiiiAdeApp = lazy(async () => import("@/ade/WiiiAdeApp"));
 const WiiiServiceSurface = lazy(async () => {
   const mod = await import("@/workbench/WiiiServiceSurface");
   return { default: mod.WiiiServiceSurface };
@@ -53,10 +52,9 @@ export function LocalWorkbenchSurface() {
 }
 
 function LocalWorkbenchScreens() {
-  const [surface, setSurface] = useState<"neko" | "work" | "service" | "connect">("neko");
-  const [returnSurface, setReturnSurface] = useState<"neko" | "work">("neko");
+  const [surface, setSurface] = useState<"neko" | "service" | "connect">("neko");
   const [navigationError, setNavigationError] = useState<string | null>(null);
-  const openSurface = async (target: "work" | "service" | "connect") => {
+  const openSurface = async (target: "service" | "connect") => {
     try {
       // Read fresh state at the action boundary, without mounting/initializing
       // the local session store for managed-only hosts.
@@ -70,7 +68,6 @@ function LocalWorkbenchScreens() {
         return;
       }
       setNavigationError(null);
-      if (surface === "neko" || surface === "work") setReturnSurface(surface);
       if (target === "connect") useUIStore.getState().openWiiiConnect("gmail");
       setSurface(target);
     } catch {
@@ -79,26 +76,19 @@ function LocalWorkbenchScreens() {
   };
   const onOpenManaged = () => { void openSurface("service"); };
   const onOpenConnections = () => { void openSurface("connect"); };
-  const localSurface = surface === "service" || surface === "connect" ? returnSurface : surface;
   return (
     <>
       <div className="h-full" hidden={surface === "service" || surface === "connect"}>
-        {localSurface === "work" ? (
-          <Suspense fallback={<BootSplash label="Wiii đang mở Công việc..." />}>
-            <WiiiAdeApp active={surface === "work"} onOpenManaged={onOpenManaged} onOpenConnections={onOpenConnections} />
-          </Suspense>
-        ) : <NekoChillApp
+        <NekoChillApp
           active={surface === "neko"}
           onOpenManaged={onOpenManaged}
           onOpenConnections={onOpenConnections}
-          showWorkNavigation
-          onOpenWork={() => void openSurface("work")}
-        />}
+        />
       </div>
       {surface === "service" || surface === "connect" ? (
         // Loading an optional screen must not suspend the local runtime owner.
         <Suspense fallback={<BootSplash label="Wiii đang mở kết nối..." />}>
-          <WiiiServiceSurface view={surface} onBack={() => setSurface(returnSurface)} onOpenConnect={onOpenConnections} />
+          <WiiiServiceSurface view={surface} onBack={() => setSurface("neko")} onOpenConnect={onOpenConnections} />
         </Suspense>
       ) : null}
       {navigationError ? (
@@ -198,16 +188,6 @@ export default function App() {
     return (
       <Suspense fallback={<BootSplash label="Wiii đang mở kết nối..." />}>
         <WiiiConnectPreview />
-      </Suspense>
-    );
-  }
-
-  // Product-shell verification rig: browser fallback storage, no managed
-  // bootstrap and no native provider side effects until a task is dispatched.
-  if (localPreviewEnabled && window.location.search.includes("preview=ade")) {
-    return (
-      <Suspense fallback={<BootSplash label="Wiii đang mở Công việc..." />}>
-        <WiiiAdeApp />
       </Suspense>
     );
   }

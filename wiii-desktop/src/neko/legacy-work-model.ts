@@ -1,9 +1,8 @@
 /**
- * Dependency-free Wiii ADE work ontology.
+ * Read-only schema for retired Wiii Công việc snapshots.
  *
- * These records describe product/work identity, not provider conversation
- * state. Keep them JSON-compatible so the same contract can later cross the
- * Neko Control boundary or be mapped to SQLite without UI dependencies.
+ * Retained solely to validate the original scope/root identity of existing
+ * native sessions. This is not an active product model or a task-creation API.
  */
 
 export interface AdeProject {

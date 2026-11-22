@@ -11,7 +11,6 @@ import {
 import { ChillCatalogPicker, type ChillCatalogItem } from "./ChillCatalogPicker";
 import { WiiiMark } from "@/components/common/WiiiMark";
 import { getNekoControlClient } from "@/neko/control-client";
-import type { NekoExecutionBinding } from "@/neko/control-client";
 import { findProviderDefinition } from "@/neko/provider-registry";
 import {
   codexBootstrapIdentity,
@@ -37,23 +36,6 @@ import {
   writeNekoComposerDraft,
 } from "../composer-drafts";
 import { NEKO_STARTER_PROMPTS } from "../starter-prompts";
-
-export interface NekoTaskLaunchRequest {
-  execution: NekoExecutionBinding;
-  workspace: WorkspaceRef;
-  title: string;
-  acceptanceCriteria?: readonly string[];
-  onSessionCreated?: (sessionId: string) => void | Promise<void>;
-  onLaunchError?: (error: unknown) => void | Promise<void>;
-}
-
-
-function taskLaunchPrompt(launch: NekoTaskLaunchRequest): string {
-  const criteria = launch.acceptanceCriteria?.map(item => item.trim()).filter(Boolean) ?? [];
-  return criteria.length
-    ? `${launch.title}\n\nTiêu chí chấp nhận:\n${criteria.map(item => `- ${item}`).join("\n")}`
-    : launch.title;
-}
 
 /** Control-local reason when send is gated (ZCode cue: disabled = explained). */
 export function projectHomeSendTitle(args: {
@@ -84,14 +66,12 @@ export function projectHomeSendTitle(args: {
 export function ProjectHome({
   project,
   resetToken,
-  taskLaunch,
   onEditProject,
   onWorkspaceChange,
   onManageHarness,
 }: {
   project: NekoProject;
   resetToken: number;
-  taskLaunch?: NekoTaskLaunchRequest | null;
   onEditProject?: () => void;
   onWorkspaceChange?: (workspace: WorkspaceRef) => void;
   onManageHarness?: () => void;
@@ -108,12 +88,11 @@ export function ProjectHome({
   })));
   const createSession = useNekoSessionStore((state) => state.createSession);
   const setPreferredHarness = useNekoProjectStore((state) => state.setPreferredHarness);
-  const taskPrompt = taskLaunch ? taskLaunchPrompt(taskLaunch) : null;
   const [draft, setDraftState] = useState(
-    () => taskPrompt ?? readNekoComposerDraft(draftScope),
+    () => readNekoComposerDraft(draftScope),
   );
   const [selectedRootPath, setSelectedRootPath] = useState(
-    taskLaunch?.workspace.path ?? project.roots[0]?.path ?? "",
+    project.roots[0]?.path ?? "",
   );
   const [selectedAgentId, setSelectedAgentId] = useState(project.preferredHarnessId ?? "neko");
   const attemptedProviders = useRef(new Set<string>());
@@ -163,9 +142,7 @@ export function ProjectHome({
   }, [agents, detect, discoveryError, isLoading, selectedAgentId]);
 
   useEffect(() => {
-    if (taskPrompt !== null) {
-      setDraftState(taskPrompt);
-    } else if (previousResetTokenRef.current !== resetToken) {
+    if (previousResetTokenRef.current !== resetToken) {
       setDraftState(readNekoComposerDraft(draftScope));
     }
     previousResetTokenRef.current = resetToken;
@@ -176,18 +153,11 @@ export function ProjectHome({
       if (document.activeElement === focusAtRequest || document.activeElement === document.body) textareaRef.current?.focus();
     });
     return () => cancelAnimationFrame(frame);
-  }, [draftScope, resetToken, taskLaunch?.execution.runId, taskPrompt]);
+  }, [draftScope, resetToken]);
 
   useEffect(() => {
-    const requestedPath = taskLaunch?.workspace.path;
-    const requestedRoot = requestedPath
-      ? project.roots.find((root) => workspaceKey(root.path) === workspaceKey(requestedPath))
-      : null;
-    const nextRoot = requestedRoot
-      ? requestedRoot.path
-      : project.roots[0]?.path ?? "";
-    setSelectedRootPath(nextRoot);
-  }, [project.id, project.roots, taskLaunch?.workspace.path]);
+    setSelectedRootPath(project.roots[0]?.path ?? "");
+  }, [project.id, project.roots]);
 
   useEffect(() => {
     setSelectedAgentId(project.preferredHarnessId ?? "neko");
@@ -308,7 +278,7 @@ export function ProjectHome({
     && !starting
     && !isLoading
     && !discoveryError
-    && (taskLaunch || draft.trim())
+    && draft.trim()
     && !(selectedAgent.id === "neko" && (profileLoading || profileError))
     && !(selectedAgent.id === "codex" && codexAccountState !== "signed-in"),
   );
@@ -319,7 +289,7 @@ export function ProjectHome({
     discoveryError,
     selectedRoot: Boolean(selectedRoot),
     selectedAgent: Boolean(selectedAgent),
-    draftReady: Boolean(taskLaunch || draft.trim()),
+    draftReady: Boolean(draft.trim()),
     nekoProfileBlocked: Boolean(selectedAgent?.id === "neko" && profileError),
     nekoProfileLoading: Boolean(selectedAgent?.id === "neko" && profileLoading),
     codexBlocked: Boolean(selectedAgent?.id === "codex" && codexAccountState !== "signed-in"),
@@ -385,7 +355,7 @@ export function ProjectHome({
     const profile = selectedAgent.id === "neko"
       ? profiles.find((item) => item.id === selectedProfileId) ?? null
       : null;
-    const prompt = taskPrompt ?? draft.trim();
+    const prompt = draft.trim();
     setStarting(true);
     setError(null);
     try {
@@ -393,14 +363,10 @@ export function ProjectHome({
         selectedAgent,
         selectedRoot,
         profile,
-        taskLaunch
-          ? { projectId: project.id, execution: taskLaunch.execution, title: taskLaunch.title }
-          : { projectId: quickChat ? null : project.id },
+        { projectId: quickChat ? null : project.id },
       );
-      await taskLaunch?.onSessionCreated?.(sessionId);
       if (prompt) {
         await useNekoSessionStore.getState().sendPromptToSession(sessionId, prompt, () => {
-          if (taskLaunch) return; // Work intent is durable; do not erase the manual draft.
           if (readNekoComposerDraft(draftScope).trim() === prompt) {
             clearNekoComposerDraft(draftScope);
           }
@@ -409,13 +375,6 @@ export function ProjectHome({
       }
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause));
-      try {
-        await taskLaunch?.onLaunchError?.(cause);
-      } catch (classificationError) {
-        setError(classificationError instanceof Error
-          ? classificationError.message
-          : String(classificationError));
-      }
     } finally {
       launchInFlight.current = false;
       setStarting(false);
@@ -540,7 +499,6 @@ export function ProjectHome({
               ref={textareaRef}
               rows={Math.min(draft.split("\n").length || 1, 6)}
               value={draft}
-              readOnly={Boolean(taskLaunch)}
               disabled={starting}
               className="max-h-44 min-h-[62px] w-full resize-none bg-transparent px-1 text-[13.5px] leading-5 text-[var(--nk-text)] v3-outline-none placeholder:text-[var(--nk-ghost)]"
               placeholder={quickChat ? "Nhắn cho Neko…" : "Mô tả việc bạn muốn làm…"}
@@ -630,7 +588,7 @@ export function ProjectHome({
             </div>
           </div>
 
-          {!taskLaunch && !quickChat ? (
+          {!quickChat ? (
             <div className="mt-6 flex flex-wrap justify-center gap-2" data-testid="project-home-starters" aria-label="Gợi ý bắt đầu">
               {NEKO_STARTER_PROMPTS.map((starter) => (
                 <button key={starter.label} type="button" aria-label={`Chèn gợi ý ${starter.label}`}

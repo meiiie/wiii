@@ -130,7 +130,7 @@ export interface NekoControlClient {
   unresolvedStartSessionIds(): string[];
   reconcilableStartSessionIds(): Promise<string[]>;
   cancelUnresolvedStarts(clientSessionId: string, scope?: NativeRecoveryScope): Promise<number>;
-  recoverLegacySessionLease(clientSessionId: string, backendSessionId: string): Promise<void>;
+  recoverLegacySessionLease(clientSessionId: string, backendSessionId: string, requireTaskProof?: boolean): Promise<void>;
   spawnProvider(request: NekoProviderSpawnRequest): Promise<NekoSpawnedProvider>;
 }
 
@@ -304,11 +304,13 @@ class TauriNekoControlClient implements NekoControlClient {
     }
   }
 
-  async recoverLegacySessionLease(clientSessionId: string, backendSessionId: string): Promise<void> {
+  async recoverLegacySessionLease(clientSessionId: string, backendSessionId: string, requireTaskProof = false): Promise<void> {
     const { invoke } = await import("@tauri-apps/api/core");
     try {
       const result = await invoke("neko_control_legacy_lease_recover", { request: { clientSessionId, backendSessionId } });
-      if (typeof result !== "boolean") throw new Error("Unproven recovery result");
+      // This flag only tightens client success; it is never sent as authority.
+      // Native selects the store and proves ownership from its own saved facts.
+      if (typeof result !== "boolean" || (requireTaskProof && result !== true)) throw new Error("Unproven recovery result");
     } catch (error) {
       throw new LegacyLeaseRecoveryError(error === "neko_legacy_recovery_busy");
     }
