@@ -107,8 +107,13 @@ async function clickEnabled(driver, id, timeoutMs = 30_000) {
 async function typeInto(driver, css, text) {
   // A completion notice can briefly cover the composer's center after a
   // turn. Wait for a real pointer target rather than forcing focus through it.
-  const id = await clickableWithText(driver, css, "", `${css} to be unobstructed`);
-  await driver.click(id);
+  const id = await until(async () => {
+    const target = await clickableWithText(driver, css, "", `${css} to be unobstructed`);
+    // The completion toast can appear between the hit test and WebDriver's
+    // pointer event. Retry the unaccepted click only; never repeat typing.
+    await driver.click(target);
+    return target;
+  }, `${css} to accept a real pointer click`);
   await driver.type(id, text);
   return id;
 }
@@ -288,6 +293,38 @@ async function main() {
     if (readFileSync(written, "utf8") !== APPROVED_CONTENT) throw new Error("approved file has unexpected content");
     await capture(driver, "permission-approved");
 
+    // Exercise explicit recovery before queueing: a paused outbox deliberately
+    // routes subsequent drafts to queue/review rather than bypassing old items.
+    await until(async () => !(await driver.findAll('[data-testid="neko-cancel"]')).length, "permission turn to finish");
+    log("recovering the same chat after a live WebView reload");
+    const recoveryDraft = "E2E_RECOVERY_DRAFT: respond briefly without changing files";
+    const composer = await element(driver, '[data-testid="neko-composer-input"]');
+    await driver.clear(composer);
+    await driver.type(composer, recoveryDraft);
+    await driver.call("POST", "/refresh", {});
+    // Reload can restore home instead of the selected conversation. Reopen
+    // the existing chat through the UI, never create a new conversation.
+    await focusMainWindow(driver);
+    await element(driver, '[data-testid="neko-recover-session"], [data-testid="neko-overview"]', "reloaded chat or home", 60_000);
+    if (await driver.execute('return Boolean(document.querySelector(\'[data-testid="neko-overview"]\'));')) {
+      await driver.click(await clickableWithText(driver, '[data-testid="neko-overview"] button', MARKERS.permission, "same saved chat after reload"));
+    }
+    const recover = await element(driver, '[data-testid="neko-recover-session"]', "same-chat recovery action", 60_000);
+    const lockedSend = await element(driver, '[data-testid="neko-send"]');
+    if (await driver.enabled(lockedSend)) throw new Error("reload enabled Send before orphan stop proof");
+    await driver.click(recover);
+    await until(() => driver.execute(`
+      const input = document.querySelector('[data-testid="neko-composer-input"]');
+      const send = document.querySelector('[data-testid="neko-send"]');
+      return input && !input.readOnly && input.value === arguments[0] && send && !send.disabled;`, [recoveryDraft]), "same chat usable with retained draft", 60_000);
+    if (model.requests.some(request => request.user.includes("E2E_RECOVERY_DRAFT"))) {
+      throw new Error("recovery automatically sent the retained draft");
+    }
+    await capture(driver, "same-chat-recovered-with-draft");
+    await driver.click(await element(driver, '[data-testid="neko-send"]'));
+    await waitText(driver, MARKERS.generic, "explicit follow-up after recovery", 60_000);
+    await until(async () => !(await driver.findAll('[data-testid="neko-cancel"]')).length, "recovered turn finished", 60_000);
+
     log("starting a slow turn, queueing a follow-up and cancelling");
     await until(async () => !(await driver.findAll('[data-testid="neko-cancel"]')).length, "first turn to finish");
     await typeInto(driver, '[data-testid="neko-composer-input"]', SLOW_PROMPT);
@@ -321,7 +358,10 @@ async function main() {
       return [...document.querySelectorAll('[data-testid="neko-outbox-row"] button[title]')]
         .some((node) => node.getAttribute("title") === arguments[0]);`, [QUEUED_TEXT]), "queued text after restart");
     // WebDriver ends the app without its graceful exit, so recovery must fail closed rather than resume.
-    await waitText(driver, "Lần chạy native có kết quả chưa xác định", "fail-closed recovery notice");
+    await element(driver, '[data-testid="neko-recover-session"]', "fail-closed recovery action");
+    if (await driver.enabled(await element(driver, '[data-testid="neko-send"]'))) {
+      throw new Error("hard restart enabled Send without native termination proof");
+    }
     const outboxText = await driver.execute("return document.querySelector('[data-testid=\"neko-outbox\"]').innerText;");
     await capture(driver, "restored-session-and-outbox");
     if (model.requests.some((request) => request.user.includes("E2E_QUEUED"))) {

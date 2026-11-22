@@ -25,6 +25,19 @@ function setup() {
 }
 
 describe("ACP diagnostic correlation and error boundaries", () => {
+  it.each(["session/load", "session/resume"])("makes rejected %s actionable without exposing writer or backend internals", async method => {
+    const { client, transport } = setup();
+    const pending = client.request(method, {}).catch(error => error);
+    transport.inject({ id: 1, error: { code: -32000, message: "Session 'private-backend' already has an active writer" } });
+    const error = await pending;
+    expect(error.sessionRecovery).toBe("writer-locked");
+    expect(error.message).toBe("Cuộc trò chuyện cần nối lại. Lịch sử và bản nháp được giữ lại.");
+    expect(error.message).not.toMatch(/private-backend|writer|RPC/);
+    expect(new AcpRpcError(2, "session/prompt", { code: -32000, message: "already has an active writer" }).sessionRecovery).toBeUndefined();
+    expect(new AcpRpcError(3, "session/load", { code: -32602, message: "already has an active writer" }).sessionRecovery).toBeUndefined();
+    expect(new AcpRpcError(4, method, { code: -32000, message: "Session 'private-backend' is already active or has an unsafe lock" }).sessionRecovery).toBe("writer-locked");
+  });
+
   it.each([-32700, -32600, -32601, -32602, -32603, -32055, 42])("retains code %s and a bounded structured provider response", async (code) => {
     const { client, transport } = setup();
     const result = client.request("session/prompt", {}).catch(error => error);

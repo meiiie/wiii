@@ -5,6 +5,85 @@
 
 ## Summary
 
+### Same-conversation recovery follow-up (#1050)
+
+Renderer hydration still cannot reattach an existing ACP transport. Rather than
+hand debugging work to the user, offer **Dừng phiên cũ và tiếp tục**. Reuse native
+`session/cancel` with its existing idempotency key, owned process-tree teardown
+and terminal journal transaction; do not add PID-based control or another RPC.
+
+- The control-client wrapper accepts an optional Task + exact AgentSession
+  allowlist. Unscoped bootstrap/close behavior stays unchanged. Snapshot this
+  allowlist before stopping; do not sweep unrelated or newly appeared sessions.
+- Serialize recovery with the existing per-session close operation. Wait for
+  dispatch/runtime holds, reject visible live ownership, stop selected orphans,
+  then re-list and replay **all** authoritative executions of this Task. A
+  cancellation receipt or missing record alone does not clear uncertainty.
+- Keep `closePending` through a strict checkpoint save. The ephemeral
+  `nativeRecoveryRequired` flag allows retry after a failed write; it is not
+  stored as native truth and never authorizes dispatch. Retain replay cursors in
+  memory across a partial write, preventing duplicated checkpoint sequences.
+- Only then expose `exited`/ready-to-send in the same local session. Keep
+  `backendSessionId`, task mapping, transcript and composer draft unchanged.
+  The next explicit user send loads the saved conversation in a fresh process;
+  recovery itself never starts a model turn or resumes the paused outbox.
+- Native unavailability, unknown ownership, failed termination, missing active
+  projections and invalid task admission fail closed with a retry action,
+  without asking the user to inspect journals. No false stopped/reattached claim.
+
+**Verification:** deferred native-stop + persistence gates, repeated clicks,
+strict-write retry, stale/missing/uncertain catalogs, exact-scope cancellation,
+UI action/progress, real native reload -> recover -> explicit same-chat reply.
+Keep hard-restart/outbox-review safety coverage as a separate failure path.
+
+**ACP and legacy lease follow-up:**
+
+- Subscribe temporarily to the exact native AgentSession output, then send a
+  UUID-correlated `session/close` for the saved ACP backend, with task echo
+  where applicable. Bound subscription/write/response by 1.5 seconds and
+  detach on every outcome. This is cleanup, never transport reattachment or
+  authority to send. The original exact native cancel/replay fence still runs.
+- Neko 1.9.3 wrote PID 1 into legacy leases inside Wiii's Linux namespaces.
+  The native `neko_control_legacy_lease_recover` command accepts only local
+  session/backend IDs, not filenames, tokens or PIDs. It holds the runtime
+  operation mutex so a new managed writer cannot start during cleanup.
+- Missing leases need no mutation; additional/new-format fields and non-PID-1
+  leases remain Core-owned. Before deleting a strict three-field legacy lease,
+  flush pending terminal facts, finish exit supervision, require no owned Neko
+  process, then inspect read-only kernel `/proc` facts for the Linux PID-namespace
+  supervisor contract used by Wiii. A live or unreadable same-user sandbox
+  refuses cleanup. This proves physical absence without reclassifying historical
+  task outcomes: an unrelated old `unknown_outcome` stays unchanged/blocked, not
+  silently rewritten to successful termination.
+- Join the native journal to the saved successful `runtime-attached` record:
+  exact local/backend/Task/AgentSession/Run IDs and canonical workspace must
+  match, with no task-scope mapping, and the bound execution itself must have
+  authoritative terminal/settled truth. The lease acquisition must fall between
+  native start and successful backend admission, not merely before native exit;
+  a later foreign writer is not an owned stale lease.
+- Resolve the one candidate beneath native HOME, reject links/nonregular or
+  oversized files, bound metadata reads, recheck bytes and inode before unlink,
+  then sync the directory. Preserve every transcript and unrelated lease.
+  Native mutation is naturally idempotent: a subsequent missing file is a no-op.
+- Keep the recovery/send lock through this check and strict checkpoint save.
+  Refusal exposes concise retry/stop-other-conversation copy, never filesystem
+  instructions. A failed `session/resume` (or legacy `session/load`) can enter recovery even when native
+  termination was already proven. Recovery still never sends the retained draft.
+
+**Risk / rollback:** the new command is a narrowly scoped Linux legacy-file
+migration, not a new SQLite schema, process/PID capability or credential path.
+Ambiguous ownership/liveness refuses deletion; newer Core heartbeat leases
+are never removed. Revert the action/command together to conservative read-only
+restore. Already removed, proven-dead legacy leases need not be recreated; Core
+will acquire a fresh lease on an explicit next send. Do not clear uncertain
+journal rows, rewrite history, or restore a removed stale lock during rollback.
+
+This is an incremental update of the existing feature plan/contracts, not a new
+Spec Kit feature. The setup-plan template copy would overwrite this established
+plan; its PowerShell wrapper is also unavailable on the Linux workstation.
+
+### Original runtime slice
+
 Replace the raw Tauri process utility exposed to `main` with an in-process
 Rust `NekoRuntime`. Rust owns approved provider resolution, process/session
 lifecycle, idempotency records and a replayable SQLite WAL lifecycle journal.

@@ -11,6 +11,7 @@
     "allow-neko-control-session-start",
     "allow-neko-control-session-write",
     "allow-neko-control-session-cancel",
+    "allow-neko-control-legacy-lease-recover",
     "allow-neko-control-events-read"
   ]
 }

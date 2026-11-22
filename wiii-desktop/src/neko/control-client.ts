@@ -15,6 +15,7 @@ import {
   requireProviderDefinition,
 } from "./provider-registry";
 import { isNekoControlReplayPage } from "./control-protocol";
+import { LegacyLeaseRecoveryError, tryCloseOrphanAcpSession, type OrphanAcpSession } from "./control-recovery";
 
 export interface NekoExecutionBinding {
   taskId: string;
@@ -128,8 +129,16 @@ export interface NekoControlClient {
   readEvents(streamId: string, afterSeq?: number, limit?: number): Promise<NekoControlReplayPage>;
   unresolvedStartSessionIds(): string[];
   reconcilableStartSessionIds(): Promise<string[]>;
-  cancelUnresolvedStarts(clientSessionId: string): Promise<number>;
+  cancelUnresolvedStarts(clientSessionId: string, scope?: NativeRecoveryScope): Promise<number>;
+  recoverLegacySessionLease(clientSessionId: string, backendSessionId: string): Promise<void>;
   spawnProvider(request: NekoProviderSpawnRequest): Promise<NekoSpawnedProvider>;
+}
+
+/** Exact orphan identities selected from the authoritative catalog by a user action. */
+export interface NativeRecoveryScope {
+  taskId: string;
+  agentSessionIds: readonly string[];
+  acpSession?: OrphanAcpSession;
 }
 
 const MAX_PENDING_BOOTSTRAP_FRAMES = 256;
@@ -295,9 +304,20 @@ class TauriNekoControlClient implements NekoControlClient {
     }
   }
 
-  async cancelUnresolvedStarts(clientSessionId: string): Promise<number> {
+  async recoverLegacySessionLease(clientSessionId: string, backendSessionId: string): Promise<void> {
+    const { invoke } = await import("@tauri-apps/api/core");
+    try {
+      const result = await invoke("neko_control_legacy_lease_recover", { request: { clientSessionId, backendSessionId } });
+      if (typeof result !== "boolean") throw new Error("Unproven recovery result");
+    } catch (error) {
+      throw new LegacyLeaseRecoveryError(error === "neko_legacy_recovery_busy");
+    }
+  }
+
+  async cancelUnresolvedStarts(clientSessionId: string, scope?: NativeRecoveryScope): Promise<number> {
     const retained = [...this.unresolvedStarts.entries()].filter(
-      ([, identity]) => identity.clientSessionId === clientSessionId,
+      ([, identity]) => identity.clientSessionId === clientSessionId &&
+        (!scope || (identity.execution.taskId === scope.taskId && scope.agentSessionIds.includes(identity.agentSessionId))),
     );
     const representedNativeSessions = new Set(
       retained.map(([, identity]) => identity.agentSessionId),
@@ -306,6 +326,9 @@ class TauriNekoControlClient implements NekoControlClient {
     let cancelled = 0;
     for (const [startKey, identity] of retained) {
       try {
+        if (scope?.acpSession && identity.providerId === "neko") {
+          await tryCloseOrphanAcpSession(identity.agentSessionId, scope.acpSession);
+        }
         await this.cancelRetainedStart(startKey, identity);
         cancelled += 1;
       } catch (error) {
@@ -319,7 +342,8 @@ class TauriNekoControlClient implements NekoControlClient {
         : null;
       const durable = (await this.listSessions())
         .filter((session) => (
-          session.taskId === legacyExecution(clientSessionId).taskId &&
+          session.taskId === (scope?.taskId ?? legacyExecution(clientSessionId).taskId) &&
+          (!scope || scope.agentSessionIds.includes(session.agentSessionId)) &&
           (!expectedProviderId || session.providerId === expectedProviderId) &&
           !representedNativeSessions.has(session.agentSessionId) &&
           !NATIVE_TERMINAL_STATES.has(session.state)
@@ -329,6 +353,9 @@ class TauriNekoControlClient implements NekoControlClient {
         const { invoke } = await import("@tauri-apps/api/core");
         for (const session of durable) {
           try {
+            if (scope?.acpSession && session.providerId === "neko") {
+              await tryCloseOrphanAcpSession(session.agentSessionId, scope.acpSession);
+            }
             const result = await invokeIdempotently<unknown>(
               invoke,
               "neko_control_session_cancel",

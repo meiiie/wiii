@@ -4,6 +4,7 @@ import type { NekoTopLevelSessionKind } from "@/neko/session-ownership";
 import type { NekoNativeSessionRecord } from "@/neko/control-client";
 import type { RuntimeProviderSnapshot } from "../runtime-manager";
 import { appendOwnedSessionEvent } from "./session-projections";
+import { isNekoTaskScopeMapping } from "../task-scope-mapping";
 export const NATIVE_REPLAY_PAGE_SIZE = 500;
 export const MAX_NATIVE_REPLAY_EVENTS = 10000;
 export const NATIVE_TERMINAL_STATES = new Set(["completed", "failed", "cancelled"]);
@@ -84,6 +85,13 @@ export function nativeRunBlocksRespawn(session: NekoSession): boolean {
   }
   return false;
 }
+/** UI affordance only: the recovery action still verifies native truth and persistence. */
+export function nativeSessionNeedsRecovery(session: NekoSession): boolean {
+  return !session.runtime &&
+    (!session.taskScope || (isNekoTaskScopeMapping(session.taskScope) && session.taskScope.state !== "recovery-required")) &&
+    (session.status === "error" || (session.status === "stopping" && session.closePending)) &&
+    (Boolean(session.nativeRecoveryRequired) || nativeRunBlocksRespawn(session));
+}
 export function retireAbsentNativeCheckpoints(session: NekoSession, natives: NekoNativeSessionRecord[]): boolean {
   const present = new Set(natives.map((native) => native.agentSessionId));
   const resolved = new Set<string>();
@@ -123,7 +131,7 @@ export function reconcileNativeStatus(session: NekoSession, natives: NekoNativeS
   if (uncertain) {
     session.status = "error";
     session.statusDetail =
-      "Lần chạy native có kết quả chưa xác định. Neko không tự chạy lại; hãy kiểm tra trước khi tạo lần chạy mới.";
+      "Chưa rõ kết quả lượt trước. Wiii không tự gửi lại.";
     return;
   }
   const nonterminal = natives.find((native) => !NATIVE_TERMINAL_STATES.has(native.state));
@@ -133,8 +141,7 @@ export function reconcileNativeStatus(session: NekoSession, natives: NekoNativeS
     // Task even when a newer execution has already reached a terminal state.
     session.status = "error";
     session.statusDetail =
-      `Native journal vẫn ghi nhận agent ở trạng thái ${nonterminal.state}, nhưng UI đã mất kênh live. ` +
-      "Phiên được khóa để tránh khởi động trùng.";
+      "Chưa nối lại được cuộc trò chuyện. Tạm khóa gửi để tránh chạy trùng.";
     return;
   }
   const native = natives[0];
@@ -143,10 +150,10 @@ export function reconcileNativeStatus(session: NekoSession, natives: NekoNativeS
   if (NATIVE_TERMINAL_STATES.has(native.state)) {
     session.status = "exited";
     session.statusDetail = native.state === "completed"
-      ? "Lần chạy native gần nhất đã hoàn tất. Nhắn tiếp để tạo một lần chạy mới."
+      ? "Phiên trước đã kết thúc. Nhắn tiếp để mở lại."
       : native.state === "cancelled"
-        ? "Lần chạy native gần nhất đã được hủy. Nhắn tiếp để tạo một lần chạy mới."
-        : "Lần chạy native gần nhất đã thất bại. Nhắn tiếp để tạo một lần chạy mới.";
+        ? "Phiên trước đã dừng. Nhắn tiếp để mở lại."
+        : "Phiên trước gặp lỗi. Nhắn tiếp để thử lại.";
     return;
   }
 }

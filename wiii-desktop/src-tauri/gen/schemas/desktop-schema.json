@@ -699,6 +699,12 @@
           "markdownDescription": "Enables the neko_control_events_read command without any pre-configured scope."
         },
         {
+          "description": "Enables the neko_control_legacy_lease_recover command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-neko-control-legacy-lease-recover",
+          "markdownDescription": "Enables the neko_control_legacy_lease_recover command without any pre-configured scope."
+        },
+        {
           "description": "Enables the neko_control_provider_list command without any pre-configured scope.",
           "type": "string",
           "const": "allow-neko-control-provider-list",
@@ -985,6 +991,12 @@
           "type": "string",
           "const": "deny-neko-control-events-read",
           "markdownDescription": "Denies the neko_control_events_read command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the neko_control_legacy_lease_recover command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-neko-control-legacy-lease-recover",
+          "markdownDescription": "Denies the neko_control_legacy_lease_recover command without any pre-configured scope."
         },
         {
           "description": "Denies the neko_control_provider_list command without any pre-configured scope.",

@@ -394,3 +394,23 @@ side-effect/committed phases become `unknown_outcome`.
   provider discovery propagates every post-spawn failure disposition.
 - **SC-016**: Tests prove provider discovery messages distinguish proven
   process-tree cleanup from cleanup whose outcome remains uncertain.
+- **SC-017**: After a renderer reload, a chat without live ownership offers
+  one explicit action to stop its orphaned native execution and continue the
+  same conversation. Transcript, backend/task identity and unsent draft stay
+  intact. The action never sends or replays a prompt.
+- **SC-018**: Recovery keeps sending locked until exact native cancellation,
+  authoritative terminal replay and a strict checkpoint save succeed. Repeat
+  clicks join one operation. Missing/unknown/nonterminal native truth or a
+  failed save leaves a retryable UI, never permission to launch a replacement.
+- **SC-019**: Scoped recovery never cancels unselected native identities,
+  another Task or an execution still owned by a visible live session. Existing
+  malformed task-admission and outbox-review fences remain in force.
+- **SC-020**: Reload recovery first attempts a bounded ACP `session/close`
+  through the selected existing native transport, without initializing,
+  loading or prompting a replacement. Native termination remains mandatory
+  even after an ACP close acknowledgement.
+- **SC-021**: A rejected legacy backend load exposes the same recovery action,
+  not raw writer diagnostics. Linux may remove only that backend's original
+  PID-1 legacy lease after native Neko quiescence and persisted successful
+  admission are proven. Unknown/new-format leases, foreign identities,
+  changed files and unsafe metadata remain untouched; refusal stays retryable.

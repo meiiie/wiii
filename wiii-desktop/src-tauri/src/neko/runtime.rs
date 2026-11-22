@@ -18,7 +18,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{channel, sync_channel, Receiver, SyncSender, TrySendError};
 use std::sync::{Arc, Condvar, Mutex, MutexGuard};
 use std::time::Duration;
-use tauri::{AppHandle, Emitter};
+use tauri::{AppHandle, Emitter, Manager};
 
 const WRITER_QUEUE_CAPACITY: usize = 32;
 const WRITE_RESULT_TIMEOUT: Duration = Duration::from_secs(5);
@@ -241,6 +241,32 @@ impl NekoRuntime {
         }
         self.ensure_exit_supervision_complete(None, "session hydration")?;
         self.inner.journal.sessions(run_id)
+    }
+
+    pub fn recover_legacy_lease(
+        &self,
+        app: &AppHandle,
+        request: super::legacy_lease::LegacyLeaseRequest,
+    ) -> Result<bool, String> {
+        validate_identity("clientSessionId", &request.client_session_id)?;
+        let _operation = lock(&self.inner.operations);
+        let home = app.path().home_dir().map_err(|_| "Cannot resolve native home")?;
+        let data = app.path().app_data_dir().map_err(|_| "Cannot resolve native app data")?;
+        super::legacy_lease::recover(&home, &data, &request, || {
+            let pending = lock(&self.inner.pending_terminal_facts)
+                .keys().cloned().collect::<Vec<_>>();
+            for id in pending {
+                self.flush_pending_terminal_fact(app, &id)?;
+            }
+            self.ensure_exit_supervision_complete(None, "legacy lease recovery")?;
+            let records = self.inner.journal.sessions(None)?;
+            let processes = lock(&self.inner.processes);
+            // An unrelated historical unknown_outcome is not a live-process
+            // fact. Keep it unchanged and verify physical namespace absence;
+            // lease ownership still requires a proven-terminal bound execution.
+            let active_ids = processes.keys().cloned().collect::<Vec<_>>();
+            super::legacy_lease::prove_quiescent(records, &active_ids)
+        })
     }
 
     pub fn replay_events(

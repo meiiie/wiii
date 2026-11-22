@@ -58,6 +58,22 @@ function nativeCancellationEvents(before: string, afterRun = "run"): NekoSession
 }
 
 describe("session control presentation facts", () => {
+  it("offers one recovery action instead of asking a restored chat user to debug logs", () => {
+    const onRecover = vi.fn();
+    const session = makeSession({ runtime: null, status: "error", events: [native(1, "running")] });
+    const view = render(<SessionControlStatus session={session} onRecover={onRecover} />);
+    const action = screen.getByRole("button", { name: "Dừng phiên cũ và tiếp tục" });
+    fireEvent.click(action);
+    expect(onRecover).toHaveBeenCalledOnce();
+    expect(screen.queryByText(/nhật ký|journal|kênh live/)).toBeNull();
+    view.rerender(<SessionControlStatus session={{ ...session, status: "stopping", closePending: true }} onRecover={onRecover} />);
+    const pending = screen.getByRole("button", { name: "Đang nối lại…" }) as HTMLButtonElement;
+    expect(pending.disabled).toBe(true);
+    fireEvent.click(pending);
+    expect(onRecover).toHaveBeenCalledOnce();
+    view.rerender(<SessionControlStatus session={{ ...session, status: "exited", events: [native(2, "cancelled")] }} onRecover={onRecover} />);
+    expect(screen.queryByRole("button")).toBeNull();
+  });
   it.each([
     { name: "normal idle", session: makeSession({ status: "idle" }), stage: undefined, detail: undefined, unknown: false },
     { name: "intent without marker", session: makeSession({ cancelPending: true }), stage: "saving", detail: undefined, unknown: false },
@@ -201,7 +217,8 @@ describe("transcript status visibility and capability copy", () => {
     expect(notice.textContent).toBe(detail);
     expect(container.querySelector("img")).toBeNull();
     expect(screen.queryByRole("button")).toBeNull();
-    expect(screen.getByTestId("session-control-unknown").textContent).toContain("Giữ nguyên phiên và bản nháp");
+    expect(screen.getByTestId("session-control-unknown").textContent).toContain("Cuộc trò chuyện và bản nháp vẫn được giữ lại.");
+    expect(container.textContent).not.toMatch(/nhật ký|journal/);
     expect(JSON.stringify(session)).toBe(before);
   });
 

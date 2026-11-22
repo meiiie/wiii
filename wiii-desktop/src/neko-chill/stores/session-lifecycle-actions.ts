@@ -17,15 +17,7 @@ export function createSessionLifecycleActions(set: SessionSet, get: SessionGet, 
         !runtimes.get(sessionId) &&
         !runtimes.hasRetainedCleanup(sessionId) &&
         nativeRunBlocksRespawn(current)) {
-        set((state) => {
-          const session = state.sessions[sessionId];
-          if (!session)
-            return;
-          session.status = "error";
-          session.statusDetail =
-            "Neko chưa thể xác nhận runtime native đã dừng; thao tác đóng bị chặn để không ghi sai sự thật lifecycle.";
-        });
-        return Promise.resolve();
+        return get().recoverSession(sessionId);
       }
       if (current.closePending) {
         return closeOperations.get(sessionId) ?? Promise.resolve();

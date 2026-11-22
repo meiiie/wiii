@@ -90,6 +90,24 @@ describe("composer context and keyboard UX", () => {
     expect(input.getAttribute("aria-describedby")).toBe(status.id);
     expect((screen.getByRole("button", { name: "Chế độ" }) as HTMLButtonElement).disabled).toBe(true);
   });
+
+  it("points to the error notice without dropping the draft or allowing another send", () => {
+    const view = mount();
+    const input = screen.getByTestId("neko-composer-input") as HTMLTextAreaElement;
+    fireEvent.change(input, { target: { value: "Bản nháp chưa gửi" } });
+    view.rerender(<NekoComposer {...view.props} session={{ ...session, status: "error" }} />);
+    const notice = screen.getByRole("status");
+    expect(notice.textContent).toBe("Chưa thể gửi. Xem thông báo phía trên.");
+    expect(input.getAttribute("aria-describedby")).toBe(notice.id);
+    expect(input.value).toBe("Bản nháp chưa gửi");
+    expect(input.readOnly).toBe(true);
+    const send = screen.getByTestId("neko-send") as HTMLButtonElement;
+    expect(send.disabled).toBe(true);
+    fireEvent.keyDown(input, { key: "Enter" });
+    fireEvent.click(send);
+    expect(view.props.onSend).not.toHaveBeenCalled();
+    expect(view.props.onCancel).not.toHaveBeenCalled();
+  });
   it.each(["streaming", "dispatching"] as const)("allows drafting during %s without submitting or cancelling", status => {
     const props = { session: { ...session, status }, disabled: true, streaming: true,
       onSend: vi.fn(), onCancel: vi.fn(), onSetConfigOption: vi.fn(), onClientCommand: vi.fn() };

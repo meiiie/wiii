@@ -45,6 +45,7 @@ pub fn run() {
             commands::neko_agent::neko_control_session_start,
             commands::neko_agent::neko_control_session_write,
             commands::neko_agent::neko_control_session_cancel,
+            commands::neko_agent::neko_control_legacy_lease_recover,
             commands::neko_agent::neko_control_events_read,
             commands::neko_computer::neko_computer_doctor,
             commands::neko_computer::neko_computer_coworker_status,
