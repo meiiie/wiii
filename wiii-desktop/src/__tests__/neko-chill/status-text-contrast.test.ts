@@ -29,5 +29,8 @@ describe("Neko small-text token pairs (not whole-app accessibility certification
     it(`${mode}: inverse button text is at least 4.5:1`, () => {
       expect(contrast(tokens["on-inverse"], tokens.inverse)).toBeGreaterThanOrEqual(4.5);
     });
+    it(`${mode}: destructive button text is at least 4.5:1`, () => {
+      expect(contrast(tokens["on-danger"], tokens.danger)).toBeGreaterThanOrEqual(4.5);
+    });
   });
 });

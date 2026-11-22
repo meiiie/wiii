@@ -34,6 +34,16 @@
   --nk-warning: #865617;
   --nk-danger: #b03d36;
   --nk-danger-soft: rgba(198, 74, 66, 0.1);
+  --nk-on-danger: #ffffff;
+  --nk-backdrop: rgba(29, 27, 24, 0.3);
+  --nk-shadow-dialog: 0 24px 80px rgba(29, 27, 24, 0.2);
+
+  --nk-control-sm: 32px;
+  --nk-control-md: 36px;
+  --nk-radius-control: 8px;
+  --nk-radius-card: 12px;
+  --nk-radius-dialog: 16px;
+  --nk-duration-control: 120ms;
 
   --nk-item-active: rgba(20, 20, 20, 0.06);
 }
@@ -64,8 +74,69 @@
   --nk-warning: #e0b36a;
   --nk-danger: #e2726a;
   --nk-danger-soft: rgba(226, 114, 106, 0.1);
+  --nk-on-danger: #201816;
+  --nk-backdrop: rgba(0, 0, 0, 0.5);
+  --nk-shadow-dialog: 0 24px 80px rgba(0, 0, 0, 0.4);
 
   --nk-item-active: rgba(240, 240, 240, 0.06);
+}
+
+/* Shared desktop primitives. Utilities can adapt layout without cloning states. */
+@layer components {
+  .nk-button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    min-width: 0;
+    min-height: var(--nk-control-md);
+    padding: 7px 12px;
+    border: 1px solid var(--nk-border-strong);
+    border-radius: var(--nk-radius-control);
+    background: var(--nk-composer);
+    color: var(--nk-text);
+    font-size: 13px;
+    font-weight: 500;
+    line-height: 20px;
+    overflow-wrap: anywhere;
+    transition: background-color var(--nk-duration-control) ease, border-color var(--nk-duration-control) ease;
+  }
+  .nk-button > svg { flex-shrink: 0; }
+  .nk-button[data-size="sm"] { min-height: var(--nk-control-sm); padding: 5px 10px; font-size: 12px; }
+  .nk-button[data-variant="primary"] { background: var(--nk-inverse); color: var(--nk-on-inverse); border-color: transparent; }
+  .nk-button[data-variant="danger"] { background: var(--nk-danger); color: var(--nk-on-danger); border-color: transparent; }
+  .nk-button[data-variant="ghost"] { background: transparent; border-color: transparent; color: var(--nk-text-2); }
+  .nk-button:not(:disabled):not([aria-disabled="true"]):hover { background: var(--nk-raised); border-color: var(--nk-accent); }
+  .nk-button[data-variant="primary"]:not(:disabled):not([aria-disabled="true"]):hover { background: var(--nk-inverse); color: var(--nk-on-inverse); border-color: var(--nk-accent); }
+  .nk-button[data-variant="danger"]:not(:disabled):not([aria-disabled="true"]):hover { background: var(--nk-danger); color: var(--nk-on-danger); border-color: var(--nk-danger); }
+  .nk-button:not(:disabled):not([aria-disabled="true"]):active { filter: brightness(0.92); }
+  .nk-button:is(:disabled, [aria-disabled="true"]), .nk-control-input:disabled { cursor: not-allowed; opacity: 0.5; }
+  .nk-icon-button { width: var(--nk-control-sm); min-height: var(--nk-control-sm); flex-shrink: 0; padding: 5px; }
+  .nk-control-input {
+    width: 100%; min-width: 0; min-height: var(--nk-control-md);
+    border: 1px solid var(--nk-border-strong); border-radius: var(--nk-radius-control);
+    padding: 7px 10px; background: var(--nk-composer); color: var(--nk-text);
+    font-size: 13px; line-height: 20px;
+  }
+  .nk-control-input::placeholder { color: var(--nk-ghost); opacity: 1; }
+  .nk-input-field { display: flex; align-items: center; border: 1px solid var(--nk-border-strong); border-radius: var(--nk-radius-control); background: var(--nk-composer); }
+  .nk-input-field .nk-control-input { flex: 1; width: 0; border: 0; border-radius: inherit; background: transparent; }
+  .nk-card { min-width: 0; border: 1px solid var(--nk-border); border-radius: var(--nk-radius-card); background: var(--nk-composer); }
+  .nk-card[data-tone="inset"] { background: var(--nk-raised); }
+  .nk-badge { display: inline-flex; align-items: center; flex-shrink: 0; padding: 1px 6px; border-radius: 6px; background: var(--nk-inset); color: var(--nk-text-2); font-size: 11px; font-weight: 500; line-height: 18px; }
+  .nk-list-button { display: flex; align-items: center; gap: 8px; width: 100%; min-width: 0; min-height: var(--nk-control-md); padding: 8px 10px; border-radius: var(--nk-radius-control); color: var(--nk-text); text-align: left; }
+  .nk-list-button:not([aria-disabled="true"]):hover { background: var(--nk-overlay); }
+  .nk-list-button[data-active="true"] { background: var(--nk-item-active); }
+  .nk-list-button:is(:disabled, [aria-disabled="true"]) { cursor: not-allowed; opacity: 0.5; }
+  .nk-dialog { position: fixed; inset: 0; margin: 0; height: 100%; max-height: none; width: 100%; max-width: none; overflow-y: auto; border: 0; background: transparent; padding: 0; color: var(--nk-text); }
+  .nk-dialog::backdrop { background: transparent; }
+  .nk-dialog-layout { display: grid; min-height: 100%; place-items: center; background: var(--nk-backdrop); padding: 16px; }
+  .nk-dialog-panel { min-width: 0; width: 100%; max-width: 520px; border: 1px solid var(--nk-border-strong); border-radius: var(--nk-radius-dialog); background: var(--nk-composer); padding: 20px; color: var(--nk-text); box-shadow: var(--nk-shadow-dialog); overflow-wrap: anywhere; }
+  .nk-dialog-panel[data-size="compact"] { max-width: 440px; }
+  .nk-dialog-actions { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 8px; margin-top: 20px; }
+  @media (prefers-reduced-motion: reduce) {
+    .nk-button { transition: none; }
+  }
 }
 
 /* Session-card hover affordance: kebab reveals like waku's row actions. */
