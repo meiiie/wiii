@@ -19,6 +19,7 @@ import type {
 } from "../types";
 import { APP_VERSION } from "../../../lib/constants";
 import { projectAcpFailure } from "./errors";
+import { acpPermissionPreview } from "./permission-preview";
 import { executionCapability, projectNekoExecutionReceipt } from "./execution-projection";
 import {
   assertNekoTaskCapability,
@@ -1141,6 +1142,7 @@ export class AcpDriver implements Driver {
                 : "Agent requests permission",
             activityId:
               typeof p?.toolCall?.toolCallId === "string" ? p.toolCall.toolCallId : undefined,
+            toolPreview: acpPermissionPreview(p?.toolCall),
             options,
           },
         });

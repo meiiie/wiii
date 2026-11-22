@@ -731,6 +731,12 @@ describe("AcpDriver golden replay (real neko-core v0.24.0 fixture)", () => {
     expect(byType("answer-delta")).toHaveLength(count("agent_message_chunk"));
     expect(byType("activity")).toHaveLength(count("tool_call") + count("tool_call_update"));
     expect(byType("permission-request")).toHaveLength(1);
+    const permission = byType("permission-request")[0];
+    if (permission.type !== "permission-request") throw new Error("missing permission");
+    expect(permission.request.toolPreview).toMatchObject({
+      toolName: "write_file", changes: [{ after: "hi" }], truncated: false,
+    });
+    expect(permission.request.toolPreview?.locations[0].path).toContain("hello.txt");
     expect(byType("turn-finished")).toEqual([
       { type: "turn-finished", sessionId: "local-1", stopReason: "end_turn" },
     ]);
