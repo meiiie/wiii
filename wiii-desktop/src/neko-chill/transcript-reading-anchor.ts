@@ -1,3 +1,5 @@
+import type { VirtualItem } from "@tanstack/react-virtual";
+
 interface ReadingAnchor {
   node: Node;
   offset: number;
@@ -20,6 +22,8 @@ export interface TranscriptReadingPosition {
   followingTail: boolean;
   scrollTop: number;
   bookmark: ReadingBookmark | null;
+  /** Numeric row geometry only; never retain the virtualizer or DOM nodes. */
+  virtualMeasurements?: VirtualItem[];
 }
 
 /** Keep a text position, not a scroll percentage: wrapping changes earlier rows. */

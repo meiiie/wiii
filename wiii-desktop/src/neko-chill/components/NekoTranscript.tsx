@@ -455,6 +455,7 @@ export function NekoTranscript({
     gap: 4,
     enabled: useVirtual,
     initialOffset: readingPositions?.get(session.id)?.scrollTop ?? 0,
+    initialMeasurementsCache: readingPositions?.get(session.id)?.virtualMeasurements,
     scrollToFn: (offset, options, instance) => {
       elementScroll(offset, options, instance);
       // Bootstrap and row measurements also scroll; none is reader intent.
@@ -668,12 +669,16 @@ export function NekoTranscript({
     if (content) observer?.observe(content);
     scheduleFollow();
     return () => {
+      // Pixel offsets and bookmarks must return to the same measured geometry,
+      // not fresh 64/180px guesses that change which row is visible.
+      const saved = readingPositions?.get(session.id);
+      if (saved && useVirtual) readingPositions?.set(session.id, { ...saved, virtualMeasurements: virtualizer.measurementsCache });
       observer?.disconnect();
       viewport.removeEventListener("scroll", onScroll);
       if (followFrameRef.current !== null) cancelAnimationFrame(followFrameRef.current);
       followFrameRef.current = null;
     };
-  }, [session.id, scheduleFollow, updateFollowingTail, readingPositions, restorePendingReadingPosition]);
+  }, [session.id, scheduleFollow, updateFollowingTail, readingPositions, restorePendingReadingPosition, useVirtual, virtualizer]);
 
   // Message updates also cover environments without ResizeObserver. The observer
   // covers delayed Markdown/image layout and composer-induced viewport changes.
