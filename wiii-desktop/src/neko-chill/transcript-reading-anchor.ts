@@ -46,7 +46,9 @@ export function captureTranscriptReadingAnchor(viewport: HTMLElement): ReadingAn
     const rect = probe.getBoundingClientRect();
     const visible = visiblePart(viewport, node, rect, bounds);
     if (!visible) continue;
-    seekReadingCharacter(probe, node, Math.max(visible.top, Math.min(readingLine, visible.bottom - 0.5)), rect);
+    const target = rect.bottom <= readingLine || rect.top >= readingLine
+      ? readingLine : Math.max(visible.top, Math.min(readingLine, visible.bottom - 0.5));
+    seekReadingCharacter(probe, node, target, rect);
     const glyph = visiblePart(viewport, node, probe.getBoundingClientRect(), bounds);
     if (!glyph) continue;
     const nextDistance = Math.max(glyph.top - readingLine, readingLine - glyph.bottom, 0);
