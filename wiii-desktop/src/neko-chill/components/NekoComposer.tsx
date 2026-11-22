@@ -145,8 +145,9 @@ function ComposerSendButton({ disabled, submitting, queueAllowed, busy, tooltip,
   onSend(): void;
 }) {
   const [open, setOpen] = useState(false);
-  // Invalidate cached native descriptions without replacing the focused control.
-  const tooltipId = `${useId()}-${encodeURIComponent(tooltip)}`;
+  const actionLabel = submitting ? "Đang gửi" : queueAllowed ? "Xếp hàng tin nhắn" : "Gửi tin nhắn";
+  // Native readers can retain a stale description; keep current guidance in the name.
+  const accessibleLabel = disabled && !submitting ? `${actionLabel}. ${tooltip}` : actionLabel;
   useEffect(() => setOpen(false), [disabled, tooltip]);
   useEffect(() => {
     if (!open) return;
@@ -173,9 +174,8 @@ function ComposerSendButton({ disabled, submitting, queueAllowed, busy, tooltip,
         if (!event.currentTarget.contains(event.relatedTarget)) setOpen(false);
       }}
     >
-      <span id={tooltipId} className="sr-only">{tooltip}</span>
       {open && (
-        <span role="tooltip" className="absolute bottom-full right-0 z-50 pb-2">
+        <span role="tooltip" aria-hidden="true" className="absolute bottom-full right-0 z-50 pb-2">
           <span className="block w-max max-w-[240px] rounded-lg border border-[var(--nk-border-strong)] bg-[var(--nk-composer)] px-2.5 py-1.5 text-[11px] leading-4 text-[var(--nk-text-2)] shadow-lg">
             {tooltip}
           </span>
@@ -186,8 +186,7 @@ function ComposerSendButton({ disabled, submitting, queueAllowed, busy, tooltip,
         className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[var(--nk-inverse)] text-[var(--nk-on-inverse)] disabled:opacity-30"
         disabled={disabled}
         onClick={() => { setOpen(false); onSend(); }}
-        aria-label={submitting ? "Đang gửi" : queueAllowed ? "Xếp hàng tin nhắn" : "Gửi tin nhắn"}
-        aria-describedby={tooltipId}
+        aria-label={accessibleLabel}
         aria-busy={busy}
         data-testid="neko-send"
       >
