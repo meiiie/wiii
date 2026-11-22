@@ -115,22 +115,23 @@ describe("composer context and keyboard UX", () => {
     fireEvent.change(input, { target: { value: "Chưa gửi" } });
     const send = screen.getByRole("button", { name: "Gửi tin nhắn" });
     act(() => send.focus());
-    const tooltip = screen.getByRole("tooltip");
+    const tooltip = screen.getByRole("tooltip", { hidden: true });
     expect(tooltip.textContent).toBe("Gửi");
-    expect(document.getElementById(send.getAttribute("aria-describedby")!)?.textContent).toBe("Gửi");
+    expect(send.hasAttribute("aria-describedby")).toBe(false);
+    expect(tooltip.getAttribute("aria-hidden")).toBe("true");
     expect(send.hasAttribute("title")).toBe(false);
     fireEvent.mouseLeave(send.parentElement!);
-    expect(screen.getByRole("tooltip")).toBe(tooltip);
+    expect(screen.getByRole("tooltip", { hidden: true })).toBe(tooltip);
     fireEvent.keyDown(send, { key: "Escape" });
-    expect(screen.queryByRole("tooltip")).toBeNull();
+    expect(screen.queryByRole("tooltip", { hidden: true })).toBeNull();
     expect(document.activeElement).toBe(send);
     expect(input.value).toBe("Chưa gửi");
     expect(props.onSend).not.toHaveBeenCalled();
     act(() => input.focus());
     fireEvent.mouseEnter(send.parentElement!);
-    expect(screen.getByRole("tooltip").textContent).toBe("Gửi");
+    expect(screen.getByRole("tooltip", { hidden: true }).textContent).toBe("Gửi");
     fireEvent.mouseLeave(send.parentElement!);
-    expect(screen.queryByRole("tooltip")).toBeNull();
+    expect(screen.queryByRole("tooltip", { hidden: true })).toBeNull();
   });
 
   it("clears the Send popup on explicit send and retains the disabled explanation", async () => {
@@ -142,11 +143,11 @@ describe("composer context and keyboard UX", () => {
     fireEvent.mouseEnter(send.parentElement!);
     await act(async () => fireEvent.click(send));
     expect(view.props.onSend).toHaveBeenCalledOnce();
-    expect(screen.queryByRole("tooltip")).toBeNull();
+    expect(screen.queryByRole("tooltip", { hidden: true })).toBeNull();
     expect(send.disabled).toBe(true);
     fireEvent.mouseLeave(send.parentElement!);
     fireEvent.mouseEnter(send.parentElement!);
-    expect(screen.getByRole("tooltip").textContent).toBe("Nhập nội dung trước khi gửi.");
+    expect(screen.getByRole("tooltip", { hidden: true }).textContent).toBe("Nhập nội dung trước khi gửi.");
     fireEvent.click(send);
     expect(view.props.onSend).toHaveBeenCalledOnce();
   });
@@ -157,9 +158,9 @@ describe("composer context and keyboard UX", () => {
     act(() => input.focus());
     const send = screen.getByTestId("neko-send");
     fireEvent.mouseEnter(send.parentElement!);
-    expect(screen.getByRole("tooltip")).toBeTruthy();
+    expect(screen.getByRole("tooltip", { hidden: true })).toBeTruthy();
     fireEvent.keyDown(input, { key: "Escape" });
-    expect(screen.queryByRole("tooltip")).toBeNull();
+    expect(screen.queryByRole("tooltip", { hidden: true })).toBeNull();
     expect(document.activeElement).toBe(input);
     expect(props.onSend).not.toHaveBeenCalled();
   });
@@ -168,11 +169,36 @@ describe("composer context and keyboard UX", () => {
     const { props } = mount();
     const send = screen.getByTestId("neko-send") as HTMLButtonElement;
     expect(send.disabled).toBe(true);
-    expect(screen.queryByRole("tooltip")).toBeNull();
-    expect(document.getElementById(send.getAttribute("aria-describedby")!)?.textContent)
-      .toBe("Nhập nội dung trước khi gửi.");
+    expect(screen.queryByRole("tooltip", { hidden: true })).toBeNull();
+    expect(send.getAttribute("aria-label")).toBe("Gửi tin nhắn. Nhập nội dung trước khi gửi.");
+    expect(send.hasAttribute("aria-describedby")).toBe(false);
     fireEvent.click(send);
     expect(props.onSend).not.toHaveBeenCalled();
+  });
+
+  it("keeps Send guidance current in its name without replacing the control or keeping stale descriptions", () => {
+    const { props } = mount();
+    const input = screen.getByTestId("neko-composer-input") as HTMLTextAreaElement;
+    const send = screen.getByTestId("neko-send") as HTMLButtonElement;
+    expect(send.getAttribute("aria-label")).toBe("Gửi tin nhắn. Nhập nội dung trước khi gửi.");
+
+    fireEvent.change(input, { target: { value: "Giữ bản nháp" } });
+    expect(send.getAttribute("aria-label")).toBe("Gửi tin nhắn");
+    expect(send.hasAttribute("aria-describedby")).toBe(false);
+    expect(send.disabled).toBe(false);
+    expect(screen.getByTestId("neko-send")).toBe(send);
+    act(() => send.focus());
+    expect(document.activeElement).toBe(send);
+    expect(input.value).toBe("Giữ bản nháp");
+
+    act(() => input.focus());
+    fireEvent.change(input, { target: { value: "" } });
+    expect(send.getAttribute("aria-label")).toBe("Gửi tin nhắn. Nhập nội dung trước khi gửi.");
+    expect(send.hasAttribute("aria-describedby")).toBe(false);
+    expect(send.disabled).toBe(true);
+    expect(screen.getByTestId("neko-send")).toBe(send);
+    expect(props.onSend).not.toHaveBeenCalled();
+    expect(props.onCancel).not.toHaveBeenCalled();
   });
   it.each(["streaming", "dispatching"] as const)("allows drafting during %s without submitting or cancelling", status => {
     const props = { session: { ...session, status }, disabled: true, streaming: true,
