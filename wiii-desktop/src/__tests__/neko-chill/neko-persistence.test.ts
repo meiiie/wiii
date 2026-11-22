@@ -487,7 +487,7 @@ describe("neko-chill persistence", () => {
     const restored = useNekoSessionStore.getState().sessions[id];
     expect(useNekoSessionStore.getState().hydrated).toBe(true);
     expect(restored.status).toBe("error");
-    expect(restored.statusDetail).toContain("kết quả chưa xác định");
+    expect(restored.statusDetail).toBe("Chưa rõ kết quả lượt trước. Wiii không tự gửi lại.");
     expect(nativeControl.readEvents).toHaveBeenCalledWith(runId, 0, 500);
     expect(restored.events).toEqual(expect.arrayContaining([
       expect.objectContaining({
@@ -592,7 +592,7 @@ describe("neko-chill persistence", () => {
 
     const restored = useNekoSessionStore.getState().sessions[id];
     expect(restored.status).toBe("exited");
-    expect(restored.statusDetail).toContain("đã hoàn tất");
+    expect(restored.statusDetail).toBe("Phiên trước đã kết thúc. Nhắn tiếp để mở lại.");
     expect(nativeControl.listSessions).toHaveBeenCalledTimes(2);
     expect(restored.events.at(-1)?.data).toMatchObject({
       type: "native-runtime-reconciled",
@@ -600,6 +600,32 @@ describe("neko-chill persistence", () => {
       operationPhase: "completed",
       replayedThroughSeq: 3,
     });
+  });
+
+  it("keeps an active restored process locked without claiming why its transport was lost", async () => {
+    const id = await useNekoSessionStore.getState().createSession(AGENT, WORKSPACE);
+    await useNekoSessionStore.getState().sendPrompt("read-only first turn");
+    await flushDebounce();
+    useNekoSessionStore.setState({ sessions: {}, activeSessionId: null, hydrated: false });
+    _clearLiveDriversForTests();
+    nativeControl.listSessions.mockResolvedValue([{
+      agentSessionId: "native-still-running", taskId: `legacy-local/task/${id}`,
+      runId: "legacy-local/run/still-running", environmentId: "legacy-local/environment/still-running",
+      providerId: "neko", providerVersion: "0.25.0", workspacePath: WORKSPACE.path,
+      state: "running", operationPhase: "running", continuity: "active", pid: 1234,
+      createdAt: "2026-08-23T00:00:00.000Z", updatedAt: "2026-08-23T00:01:00.000Z",
+    }]);
+
+    await useNekoSessionStore.getState().hydrate();
+
+    const restored = useNekoSessionStore.getState().sessions[id];
+    expect(restored.status).toBe("error");
+    expect(restored.runtime).toBeNull();
+    expect(restored.statusDetail).toBe("Chưa nối lại được cuộc trò chuyện. Tạm khóa gửi để tránh chạy trùng.");
+    useNekoSessionStore.getState().setActiveSession(id);
+    await useNekoSessionStore.getState().sendPrompt("must not launch a duplicate");
+    expect(spawned).toHaveLength(1);
+    expect(useNekoSessionStore.getState().sessions[id].status).toBe("error");
   });
 
   it("reconciles every native run so a newer terminal run cannot hide an older uncertain process", async () => {
@@ -644,7 +670,7 @@ describe("neko-chill persistence", () => {
 
     const restored = useNekoSessionStore.getState().sessions[id];
     expect(restored.status).toBe("error");
-    expect(restored.statusDetail).toContain("kết quả chưa xác định");
+    expect(restored.statusDetail).toBe("Chưa rõ kết quả lượt trước. Wiii không tự gửi lại.");
     expect(restored.events.filter(
       (event) => event.data.type === "native-runtime-reconciled",
     )).toHaveLength(2);

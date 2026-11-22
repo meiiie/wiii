@@ -71,13 +71,19 @@ export function nekoComposerSendTitle(args: {
   hasDraft: boolean;
   pendingPermission: boolean;
   pendingControl: boolean;
+  status?: NekoSession["status"];
 }): string {
   if (args.streaming) return "Dừng";
   if (!args.hasWorkspace) return "Gắn dự án trước khi gửi.";
   if (args.pendingPermission) return "Đang chờ bạn xác nhận quyền.";
   if (args.pendingControl) return "Đang đổi cấu hình phiên…";
   if (args.submitting) return "Đang gửi…";
-  if (args.composerDisabled) return "Phiên chưa sẵn sàng để nhận tin nhắn.";
+  if (args.composerDisabled) {
+    if (args.status === "error") return "Chưa thể gửi. Xem thông báo phía trên.";
+    if (args.status === "connecting") return "Đang kết nối…";
+    if (args.status === "stopping") return "Đang dừng…";
+    return "Tạm dừng gửi tin nhắn.";
+  }
   if (!args.hasDraft) return "Nhập nội dung trước khi gửi.";
   return "Gửi";
 }
@@ -201,6 +207,7 @@ function NekoComposerComponent({
     hasDraft: Boolean(draft.trim()),
     pendingPermission: Boolean(session.pendingPermission),
     pendingControl: Boolean(session.pendingControlId),
+    status: session.status,
   });
   const cancelBlocked = Boolean(
     session.cancelPending
