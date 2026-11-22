@@ -56,8 +56,8 @@ describe("coworker project honesty", () => {
 
   it("explains 0 coworker grants without erasing Wiii project presence", () => {
     const card = coworkerGrantsCard({ grantCount: 0, wiiiProjectCount: 1 });
-    expect(card.value).toBe("0 quyền máy Neko");
-    expect(card.detail).toMatch(/1 Project Wiii/);
+    expect(card.value).toBe("Chưa cấp quyền");
+    expect(card.detail).toMatch(/1 dự án/);
     expect(card.detail).toMatch(/chưa cấp quyền/);
     expect(card.needsCoworkerGrant).toBe(true);
   });

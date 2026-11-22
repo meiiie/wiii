@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { CoworkerComputerStatus } from "@/neko-computer/contracts";
 
@@ -112,6 +112,48 @@ describe("Neko coworker Signal Inbox", () => {
     await waitFor(() => expect(mocks.consultSignalInbox).toHaveBeenCalledTimes(2));
   });
 
+  it.each([false, true])("hides private-chat choices but retains explicit scratch grants (%s)", async (alreadyGranted) => {
+    const scratch = { id: "chat-scratch", name: "Chat riêng",
+      roots: [{ name: "Chat riêng", path: "/app/quick-chats/opaque-id", kind: "scratch" as const }],
+      preferredHarnessId: "neko", createdAt: 1, updatedAt: 1 };
+    const real = { ...scratch, id: "real-project",
+      roots: [{ name: "User folder", path: "/workspace/user-folder" }] };
+    if (alreadyGranted) mocks.status = { ...mocks.status, grants: [{
+      coworkerId: "neko", projectId: scratch.id, projectName: scratch.name,
+      projectPath: scratch.roots[0].path, accessMode: "read_write", createdAt: "fixture", updatedAt: "fixture",
+    }] };
+    render(<NekoCoworkerHome projects={[scratch, real]} />);
+    await waitFor(() => expect(mocks.doctorComputer).toHaveBeenCalledOnce());
+    expect(screen.queryByText(scratch.roots[0].path)).toBeNull();
+    expect(screen.getByText(real.roots[0].path)).toBeTruthy();
+    expect(screen.getAllByRole("button", { name: /Cấp quyền/ })).toHaveLength(1);
+    expect(screen.getByTestId("neko-coworker-open-project").textContent).toContain(real.roots[0].path);
+    if (alreadyGranted) {
+      fireEvent.click(screen.getByRole("button", { name: /Thu hồi/ }));
+      await waitFor(() => expect(mocks.revoke).toHaveBeenCalledWith({
+        projectId: scratch.id, projectName: scratch.name, projectPath: scratch.roots[0].path,
+      }));
+    } else {
+      expect(screen.queryByRole("button", { name: /Thu hồi/ })).toBeNull();
+      expect(screen.getByTestId("neko-coworker-grants").textContent).toContain("1 dự án chưa cấp quyền");
+      expect(mocks.revoke).not.toHaveBeenCalled();
+    }
+    expect(mocks.grant).not.toHaveBeenCalled();
+    expect(mocks.ensure).not.toHaveBeenCalled();
+    expect(scratch.roots[0].kind).toBe("scratch");
+  });
+
+  it("does not count private chats as projects needing a computer grant", async () => {
+    render(<NekoCoworkerHome projects={[{ id: "scratch", name: "Chat riêng",
+      roots: [{ name: "Chat riêng", path: "/app/quick-chats/opaque", kind: "scratch" }],
+      preferredHarnessId: "neko", createdAt: 1, updatedAt: 1 }]} />);
+    await waitFor(() => expect(mocks.doctorComputer).toHaveBeenCalledOnce());
+    expect(screen.getByTestId("neko-coworker-grants").textContent).toContain("0 dự án");
+    expect(screen.queryByRole("button", { name: /Cấp quyền/ })).toBeNull();
+    expect(screen.queryByText("Chat riêng")).toBeNull();
+    expect(mocks.grant).not.toHaveBeenCalled();
+  });
+
   it("keeps workstation management available when inbox consultation fails", async () => {
     mocks.consultSignalInbox.mockRejectedValueOnce(new Error("inbox unavailable"));
 
@@ -130,11 +172,14 @@ describe("Neko coworker Signal Inbox", () => {
     render(<NekoCoworkerHome projects={[]} />);
 
     const alert = await screen.findByRole("alert");
-    expect(alert.textContent).toBe("Máy tính chưa sẵn sàng");
+    expect(alert.textContent).toContain("Máy tính chưa sẵn sàng");
     expect(screen.queryByText(detail)).toBeNull();
-    fireEvent.click(screen.getByRole("button", { name: "Kiểm tra" }));
+    fireEvent.click(within(alert).getByRole("button", { name: "Kiểm tra lại" }));
     await waitFor(() => expect(screen.queryByRole("alert")).toBeNull());
     expect(mocks.refresh).toHaveBeenCalledTimes(2);
+    expect(mocks.ensure).not.toHaveBeenCalled();
+    expect(mocks.grant).not.toHaveBeenCalled();
+    expect(mocks.removeComputer).not.toHaveBeenCalled();
   });
 
   it("keeps an empty successful workstation free of failure states", async () => {
@@ -160,8 +205,8 @@ describe("Neko coworker Signal Inbox", () => {
     expect(openCard.textContent).not.toContain("Không có");
 
     const grantsCard = screen.getByTestId("neko-coworker-grants");
-    expect(grantsCard.textContent).toContain("0 quyền máy Neko");
-    expect(grantsCard.textContent).toMatch(/Project Wiii/);
+    expect(grantsCard.textContent).toContain("Chưa cấp quyền");
+    expect(grantsCard.textContent).toMatch(/dự án chưa cấp quyền/);
 
     const banner = await screen.findByTestId("coworker-chill-separation-honesty");
     expect(banner.textContent).toMatch(/cần quyền riêng/i);
@@ -175,7 +220,7 @@ describe("Neko coworker Signal Inbox", () => {
       gapCount: 0,
     })).toEqual({
       value: "Không có việc mới",
-      detail: "5 tín hiệu đã được xử lý hoặc hoãn",
+      detail: "5 mục đã xử lý hoặc hoãn",
       attention: false,
     });
   });

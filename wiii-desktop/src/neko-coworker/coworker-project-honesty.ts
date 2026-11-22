@@ -16,7 +16,7 @@ function primaryWiiiRoot(projects: NekoProject[]): { name: string; path: string 
 }
 
 /**
- * Honest summary for "Project đang mở" — never claim "Không có" when Wiii
+ * Honest summary for the open project — never claim "Không có" when Wiii
  * already has an open workspace/session folder. Coworker grants stay separate
  * from Chill (no auto-grant).
  */
@@ -41,7 +41,7 @@ export function coworkerOpenProjectCard(args: {
       value: primary.name,
       detail: primary.path
         ? `${primary.path} · chưa gắn vào máy Neko`
-        : "Project Wiii · chưa gắn vào máy Neko",
+        : "Dự án chưa gắn vào máy Neko",
       needsCoworkerGrant: true,
     };
   }
@@ -54,7 +54,7 @@ export function coworkerOpenProjectCard(args: {
 }
 
 /**
- * Honest summary for "Quyền Project" — distinguish Chill workspace presence
+ * Honest grant summary — distinguish Chill workspace presence
  * from coworker workstation grants.
  */
 export function coworkerGrantsCard(args: {
@@ -64,7 +64,7 @@ export function coworkerGrantsCard(args: {
   const grants = Math.max(0, args.grantCount);
   if (grants > 0) {
     return {
-      value: `${grants} Project`,
+      value: `${grants} dự án`,
       detail: "Chỉ thư mục được cấp quyền mới được gắn vào",
       needsCoworkerGrant: false,
     };
@@ -72,14 +72,14 @@ export function coworkerGrantsCard(args: {
 
   if (args.wiiiProjectCount > 0) {
     return {
-      value: "0 quyền máy Neko",
-      detail: `${args.wiiiProjectCount} Project Wiii chưa cấp quyền`,
+      value: "Chưa cấp quyền",
+      detail: `${args.wiiiProjectCount} dự án chưa cấp quyền`,
       needsCoworkerGrant: true,
     };
   }
 
   return {
-    value: "0 Project",
+    value: "0 dự án",
     detail: "Chỉ thư mục được cấp quyền mới được gắn vào",
     needsCoworkerGrant: false,
   };
