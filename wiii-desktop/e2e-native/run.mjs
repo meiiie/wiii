@@ -107,8 +107,13 @@ async function clickEnabled(driver, id, timeoutMs = 30_000) {
 async function typeInto(driver, css, text) {
   // A completion notice can briefly cover the composer's center after a
   // turn. Wait for a real pointer target rather than forcing focus through it.
-  const id = await clickableWithText(driver, css, "", `${css} to be unobstructed`);
-  await driver.click(id);
+  const id = await until(async () => {
+    const target = await clickableWithText(driver, css, "", `${css} to be unobstructed`);
+    // The completion toast can appear between the hit test and WebDriver's
+    // pointer event. Retry the unaccepted click only; never repeat typing.
+    await driver.click(target);
+    return target;
+  }, `${css} to accept a real pointer click`);
   await driver.type(id, text);
   return id;
 }
