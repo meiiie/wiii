@@ -1,5 +1,5 @@
 import { useEffect, useId, useRef, useState, type RefObject } from "react";
-import { AlertTriangle, FolderCheck, LoaderCircle, Square } from "lucide-react";
+import { AlertTriangle, FolderCheck, LoaderCircle, Power } from "lucide-react";
 import { useNekoSessionStore } from "../stores/neko-session-store";
 import { NekoButton, NekoCard, NekoDialogPanel } from "./ui";
 
@@ -116,7 +116,7 @@ export function SessionDeleteDialog({ target, opener, fallbackFocusRef, onCancel
           </NekoCard>
           <ul className="mt-3 v3-space-y-2 text-[12px] leading-5 text-[var(--nk-text-2)]">
             <li className="flex items-center gap-2"><FolderCheck aria-hidden="true" className="h-4 w-4 shrink-0 text-[var(--nk-success)]" />Tệp dự án được giữ nguyên.</li>
-            {session?.runtime ? <li className="flex items-center gap-2"><Square aria-hidden="true" className="h-3.5 w-3.5 shrink-0" />Phiên đang chạy sẽ dừng.</li> : null}
+            {session?.runtime ? <li className="flex items-center gap-2"><Power aria-hidden="true" className="h-4 w-4 shrink-0" />Phiên đang chạy sẽ dừng.</li> : null}
           </ul>
           {hasTaskScope ? (
             <div className="mt-3 text-[12px] leading-5 text-[var(--nk-text-2)]">
