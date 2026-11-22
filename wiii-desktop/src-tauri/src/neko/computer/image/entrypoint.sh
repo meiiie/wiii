@@ -2,11 +2,19 @@
 set -eu
 
 if [ "$(id -u)" -eq 0 ]; then
+  source_secret=/run/secrets/wiii-vnc-password
+  secret="$(setpriv --reuid="$(stat -c %u "$source_secret")" --regid="$(stat -c %g "$source_secret")" --clear-groups cat "$source_secret")"
+  printf '%s' "$secret" | setpriv --reuid=10001 --regid=10001 --clear-groups sh -c '
+    umask 077
+    mkdir -p /tmp/wiii-secrets
+    cat > /tmp/wiii-secrets/vnc-password
+  '
+  unset secret
   python3 /usr/local/lib/wiii-computer/semantic_bridge.py serve &
   exec setpriv --reuid=10001 --regid=10001 --clear-groups /usr/bin/tini -- "$0"
 fi
 
-if [ ! -r /run/secrets/wiii-vnc-password ]; then
+if [ ! -s /tmp/wiii-secrets/vnc-password ] || [ ! -r /tmp/wiii-secrets/vnc-password ]; then
   echo "Wiii computer display credential is unavailable" >&2
   exit 70
 fi
@@ -42,7 +50,7 @@ for launcher in /usr/share/wiii-computer/desktop/*.desktop; do
   cp "$launcher" "$destination"
   chmod 0755 "$destination"
 done
-printf '%s\n' "$(cat /run/secrets/wiii-vnc-password)" | tigervncpasswd -f >"$HOME/.vnc/passwd"
+printf '%s\n' "$(cat /tmp/wiii-secrets/vnc-password)" | tigervncpasswd -f >"$HOME/.vnc/passwd"
 chmod 600 "$HOME/.vnc/passwd"
 
 # The accessibility bus belongs to the durable Computer session, not to an

@@ -124,6 +124,25 @@ describe("Neko coworker Signal Inbox", () => {
     expect(screen.queryByText("inbox unavailable")).toBeNull();
   });
 
+  it("shows a short failure state and allows checking again without raw diagnostics", async () => {
+    const detail = "unknown_outcome: Wiii computer failed to become ready: unhealthy";
+    mocks.refresh.mockRejectedValueOnce(new Error(detail));
+    render(<NekoCoworkerHome projects={[]} />);
+
+    const alert = await screen.findByRole("alert");
+    expect(alert.textContent).toBe("Máy tính chưa sẵn sàng");
+    expect(screen.queryByText(detail)).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Kiểm tra" }));
+    await waitFor(() => expect(screen.queryByRole("alert")).toBeNull());
+    expect(mocks.refresh).toHaveBeenCalledTimes(2);
+  });
+
+  it("keeps an empty successful workstation free of failure states", async () => {
+    render(<NekoCoworkerHome projects={[]} />);
+    await waitFor(() => expect(mocks.doctorComputer).toHaveBeenCalledOnce());
+    expect(screen.queryByRole("alert")).toBeNull();
+  });
+
 
   it("shows Chill vs Coworker honesty when Wiii has a project but 0 coworker grants", async () => {
     render(<NekoCoworkerHome projects={[{

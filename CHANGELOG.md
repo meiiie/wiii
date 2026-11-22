@@ -11,7 +11,8 @@ always `wiii-v<version>` and requires a dated matching section below.
 
 ### Fixed
 
-- (none yet)
+- Bundle Neko Core 1.9.4 with verified per-platform release hashes, including
+  tool-free turn verification and cross-PID-namespace writer-lock recovery fixes.
 
 ## [1.3.0] - 2026-10-02
 
