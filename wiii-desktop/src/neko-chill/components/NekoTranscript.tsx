@@ -19,6 +19,7 @@ import { getSessionControlNotices, workspaceIsolationLabel, type SessionControlN
 import { PermissionCard } from "./PermissionCard";
 import { NekoPromptRail, type NekoPromptLandmark } from "./NekoPromptRail";
 import { nativeSessionNeedsRecovery } from "../stores/session-native-recovery";
+import { captureTranscriptReadingAnchor, restoreTranscriptReadingAnchor } from "../transcript-reading-anchor";
 
 export const NEKO_TRANSCRIPT_VIRTUALIZATION_THRESHOLD = 50;
 
@@ -479,16 +480,46 @@ export function NekoTranscript({
   useEffect(() => {
     const viewport = scrollRef.current;
     const content = contentRef.current;
-    const observer = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(scheduleFollow);
+    if (!viewport || !content) return;
+    let width = viewport.clientWidth;
+    let anchor: ReturnType<typeof captureTranscriptReadingAnchor> = null;
+    let restoredScrollTop: number | null = null;
+    const rememberReadingPosition = () => {
+      if (followingTailRef.current) anchor = null;
+      // A reflow can emit scroll before ResizeObserver. Keep the pre-resize
+      // text position until it has been restored, rather than caching the jump.
+      else if (width === viewport.clientWidth) anchor = captureTranscriptReadingAnchor(viewport);
+    };
+    const onScroll = () => {
+      // Reflow may clamp scrollTop to the new bottom. That is not the reader
+      // choosing to resume tail-following; restore their text position first.
+      if (width !== viewport.clientWidth) return;
+      if (restoredScrollTop !== null && Math.abs(viewport.scrollTop - restoredScrollTop) < 1) return;
+      restoredScrollTop = null;
+      updateFollowingTail(viewport.scrollHeight - viewport.scrollTop - viewport.clientHeight < 96);
+      rememberReadingPosition();
+    };
+    const onResize = () => {
+      const restored = !followingTailRef.current && restoreTranscriptReadingAnchor(viewport, anchor);
+      width = viewport.clientWidth;
+      // Keep the same character across every frame of an animated resize.
+      // Only an actual reading scroll should choose a different text anchor.
+      if (restored) restoredScrollTop = viewport.scrollTop;
+      else rememberReadingPosition();
+      scheduleFollow();
+    };
+    const observer = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(onResize);
+    viewport.addEventListener("scroll", onScroll, { passive: true });
     if (viewport) observer?.observe(viewport);
     if (content) observer?.observe(content);
     scheduleFollow();
     return () => {
       observer?.disconnect();
+      viewport.removeEventListener("scroll", onScroll);
       if (followFrameRef.current !== null) cancelAnimationFrame(followFrameRef.current);
       followFrameRef.current = null;
     };
-  }, [session.id, scheduleFollow]);
+  }, [session.id, scheduleFollow, updateFollowingTail]);
 
   // Message updates also cover environments without ResizeObserver. The observer
   // covers delayed Markdown/image layout and composer-induced viewport changes.
@@ -510,12 +541,6 @@ export function NekoTranscript({
         role="log"
         aria-label="Lịch sử phiên Neko Chill"
         aria-live={session.status === "streaming" ? "off" : "polite"}
-        onScroll={(event) => {
-          const viewport = event.currentTarget;
-          const distanceFromTail =
-            viewport.scrollHeight - viewport.scrollTop - viewport.clientHeight;
-          updateFollowingTail(distanceFromTail < 96);
-        }}
       >
       <div ref={contentRef} className="mx-auto min-w-0 w-full max-w-[780px] overflow-hidden px-5 py-4 min-[900px]:px-6">
         {session.messages.length === 0 && session.status === "idle" ? (

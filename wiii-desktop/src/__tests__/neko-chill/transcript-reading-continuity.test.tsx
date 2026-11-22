@@ -87,6 +87,89 @@ beforeEach(() => {
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
 
 describe("Neko transcript reading continuity", () => {
+  function readingFixture() {
+    const view = mount();
+    let width = 500;
+    let paragraphTop = 320;
+    const paragraph = document.createElement("p");
+    paragraph.textContent = "7. Đoạn đang đọc trong câu trả lời dài";
+    view.content.append(paragraph);
+    Object.defineProperty(view.viewport, "clientWidth", { configurable: true, get: () => width });
+    view.viewport.getBoundingClientRect = () => ({ top: 100, bottom: 500, left: 0, width, height: 400 }) as DOMRect;
+    paragraph.getBoundingClientRect = () => {
+      const top = 100 + paragraphTop - view.viewport.scrollTop;
+      return { top, bottom: top + 30, height: 30 } as DOMRect;
+    };
+    view.viewport.scrollTop = 300;
+    fireEvent.scroll(view.viewport);
+    return { ...view, paragraph, reflow: (nextWidth: number, nextTop: number) => { width = nextWidth; paragraphTop = nextTop; } };
+  }
+  it("keeps the visible paragraph through wider and narrower transcript reflow", () => {
+    const { viewport, paragraph, reflow } = readingFixture();
+    // Initial observer delivery establishes measured width before manual scroll.
+    resize(viewport); fireEvent.scroll(viewport);
+    reflow(750, 240); resize(viewport); paint();
+    expect(viewport.scrollTop).toBe(220);
+    expect(paragraph.getBoundingClientRect().top).toBe(120);
+    reflow(500, 320); resize(viewport); paint();
+    expect(viewport.scrollTop).toBe(300);
+    expect(paragraph.getBoundingClientRect().top).toBe(120);
+    expect(scroll).not.toHaveBeenCalled();
+  });
+  it("does not replace the anchor with a scroll event emitted by the reflow", () => {
+    const { viewport, reflow } = readingFixture();
+    resize(viewport); fireEvent.scroll(viewport);
+    reflow(750, 240); fireEvent.scroll(viewport); resize(viewport);
+    expect(viewport.scrollTop).toBe(220);
+  });
+  it("does not restore a reading node removed by replacement or virtualization", () => {
+    const { viewport, paragraph, reflow } = readingFixture();
+    resize(viewport); fireEvent.scroll(viewport);
+    paragraph.remove(); reflow(750, 240); resize(viewport);
+    expect(viewport.scrollTop).toBe(300);
+  });
+  it("does not mistake reflow clamping for choosing to follow the tail", () => {
+    const { viewport, paragraph, reflow } = readingFixture();
+    resize(viewport); fireEvent.scroll(viewport);
+    reflow(750, 240);
+    viewport.scrollTop = 1200; // browser clamped to the new bottom during reflow
+    fireEvent.scroll(viewport); resize(viewport); paint();
+    expect(paragraph.getBoundingClientRect().top).toBe(120);
+    expect(screen.getByRole("button", { name: "Đi tới tin nhắn mới nhất" })).toBeTruthy();
+    expect(scroll).not.toHaveBeenCalled();
+  });
+  it("anchors the same character within a tall paragraph when point-to-text ranges exist", () => {
+    const { viewport, paragraph, reflow } = readingFixture();
+    const original = Object.getOwnPropertyDescriptor(document, "caretRangeFromPoint");
+    const range = document.createRange();
+    range.setStart(paragraph.firstChild!, 12); range.collapse(true);
+    let lineTop = 360;
+    range.getBoundingClientRect = () => {
+      const top = 100 + lineTop - viewport.scrollTop;
+      return { top, bottom: top + 20, height: 20 } as DOMRect;
+    };
+    const otherCharacter = document.createRange();
+    otherCharacter.setStart(paragraph.firstChild!, 22); otherCharacter.collapse(true);
+    let otherLineTop = 380;
+    otherCharacter.getBoundingClientRect = () => {
+      const top = 100 + otherLineTop - viewport.scrollTop;
+      return { top, bottom: top + 20, height: 20 } as DOMRect;
+    };
+    let probes = 0;
+    Object.defineProperty(document, "caretRangeFromPoint", { configurable: true, value: () => ++probes === 1 ? range : otherCharacter });
+    try {
+      resize(viewport); fireEvent.scroll(viewport);
+      reflow(750, 240); lineTop = 260; otherLineTop = 300; resize(viewport);
+      expect(viewport.scrollTop).toBe(200); // character moved 100px, paragraph only 80px
+      fireEvent.scroll(viewport); // own restore notification must not choose another character
+      reflow(650, 260); lineTop = 280; otherLineTop = 340; resize(viewport);
+      expect(viewport.scrollTop).toBe(220);
+      expect(range.startOffset).toBe(12);
+    } finally {
+      if (original) Object.defineProperty(document, "caretRangeFromPoint", original);
+      else Reflect.deleteProperty(document, "caretRangeFromPoint");
+    }
+  });
   it("follows rendered growth without another message or block", () => {
     const { content } = mount();
     resize(content); resize(content); paint();
