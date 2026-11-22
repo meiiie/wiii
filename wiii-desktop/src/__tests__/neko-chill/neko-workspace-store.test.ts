@@ -72,6 +72,8 @@ describe("neko workspace store", () => {
   });
 
   it("follows a completed structured ACP file activity", async () => {
+    useNekoWorkspaceStore.getState().ensureSession("session-1", WORKSPACE);
+    useNekoWorkspaceStore.getState().toggle("session-1");
     useNekoWorkspaceStore.getState().observeActivity("session-1", WORKSPACE, {
       id: "tool-1",
       title: "Write(src/App.tsx)",
@@ -90,6 +92,35 @@ describe("neko workspace store", () => {
       activeTab: "files",
       selectedPath: "src/App.tsx",
     });
+  });
+
+  describe.each(["read", "delete"] as const)("%s activity with tools closed", (operation) => {
+    it.each(["pending", "completed"] as const)("records %s activity without revealing or loading a preview", (status) => {
+      useNekoWorkspaceStore.getState().observeActivity("session-1", WORKSPACE, {
+        id: "background-tool", title: "src/Other.ts", kind: "file", operation, status,
+        locations: [{ path: "C:/work/project/src/Other.ts" }],
+      });
+      const pane = useNekoWorkspaceStore.getState().sessions["session-1"];
+      expect(pane).toMatchObject({ open: false, unseenChanges: 1, selectedPath: null });
+      expect(pane.activities["src/Other.ts"]).toMatchObject({ activityId: "background-tool", status });
+      expect(readWorkspaceFile).not.toHaveBeenCalled();
+      expect(readWorkspaceDiff).not.toHaveBeenCalled();
+    });
+  });
+
+  it.each(["close", "toggle"] as const)("respects %s between pending and completed file activity", (hide) => {
+    const store = useNekoWorkspaceStore.getState();
+    store.ensureSession("session-1", WORKSPACE);
+    store.toggle("session-1");
+    const activity = {
+      id: "tool-progress", title: "Read(src/Other.ts)", kind: "file" as const, operation: "read" as const,
+      locations: [{ path: "C:/work/project/src/Other.ts" }],
+    };
+    store.observeActivity("session-1", WORKSPACE, { ...activity, status: "pending" });
+    store[hide]("session-1");
+    store.observeActivity("session-1", WORKSPACE, { ...activity, status: "completed" });
+    expect(useNekoWorkspaceStore.getState().sessions["session-1"]).toMatchObject({ open: false, unseenChanges: 1 });
+    expect(readWorkspaceFile).not.toHaveBeenCalled();
   });
 
   it("keeps a pinned file selected and records unseen activity", async () => {
