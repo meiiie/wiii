@@ -61,8 +61,11 @@ describe("pending request content", () => {
     expect(screen.getByLabelText("Nội dung mới").textContent).toBe("First line\n  indented\n");
     expect(screen.getByTestId("permission-preview").textContent).not.toContain("config.json");
     expect(screen.getByTestId("permission-preview").textContent).not.toContain("NOT_DISPLAYED");
+    expect(within(screen.getByRole("group", { name: "Quyết định" })).getAllByRole("button").map(button => button.textContent)).toEqual(["Cho phép", "Từ chối"]);
+    expect(screen.getByText("Thêm lựa chọn").closest("details")!.open).toBe(false);
+    fireEvent.click(screen.getByText("Thêm lựa chọn"));
     expect(screen.getAllByRole("button").map(button => button.textContent)).toEqual([
-      "Từ chối", "Chặn ghi tệp cả phiên", "Cho phép", "Cho phép ghi tệp cả phiên",
+      "Cho phép", "Từ chối", "Cho phép ghi tệp cả phiên", "Chặn ghi tệp cả phiên",
     ]);
     fireEvent.click(screen.getByRole("button", { name: "Cho phép ghi tệp cả phiên" }));
     expect(onResolve).toHaveBeenCalledWith("opaque-session");
@@ -126,7 +129,7 @@ describe("permission preview evidence", () => {
   it("keeps an unlinked request honest instead of inferring command or target from its title", () => {
     render(<PermissionCard request={{ ...request, activityId: undefined, title: "rm C:/private/secrets.json" }} onResolve={vi.fn()} session={session()} />);
     expect(screen.getByTestId("permission-preview").textContent).toBe(noData);
-    expect(screen.getAllByRole("button").map((button) => button.textContent)).toEqual(["Từ chối", "Cho phép"]);
+    expect(screen.getAllByRole("button").map((button) => button.textContent)).toEqual(["Cho phép", "Từ chối"]);
   });
 
   it("shows only structured facts from the exact current activity", () => {
@@ -296,8 +299,8 @@ describe("permission preview evidence", () => {
     expect(screen.getByText(noData)).toBeTruthy();
     expect(screen.getByText("Bản xem trước đã rút gọn.")).toBeTruthy();
     const buttons = screen.getAllByRole("button");
-    expect(buttons.map((button) => button.textContent!.length)).toEqual([7, 161]);
-    fireEvent.click(buttons[1]);
+    expect(buttons.map((button) => button.textContent!.length)).toEqual([161, 7]);
+    fireEvent.click(buttons[0]);
     expect(onResolve).toHaveBeenCalledWith("opaque-allow");
   });
 
@@ -335,7 +338,7 @@ describe("permission preview evidence", () => {
 });
 
 describe("permission option scope and dispatch compatibility", () => {
-  it("describes once versus persistent choices from kind, preserves opaque IDs and deny-first order", () => {
+  it("discloses persistent choices separately while preserving opaque IDs and scope", () => {
     const onResolve = vi.fn();
     const scopedRequest: PermissionRequest = { ...request, options: [
       { optionId: "allow-persistent-id", label: "Một lần", kind: "allow_always" },
@@ -345,14 +348,27 @@ describe("permission option scope and dispatch compatibility", () => {
       { optionId: "unknown-option-id", label: "Khác", kind: "other" },
     ] };
     render(<PermissionCard request={scopedRequest} onResolve={onResolve} />);
+    expect(within(screen.getByRole("group", { name: "Quyết định" })).getAllByRole("button").map(button => button.textContent)).toEqual(["Cho phép lâu dài", "Từ chối"]);
+    fireEvent.click(screen.getByText("Thêm lựa chọn"));
     const buttons = screen.getAllByRole("button");
-    expect(buttons.map((button) => button.textContent)).toEqual(["Từ chối", "Không cho phép nữa", "Khác", "Một lần", "Cho phép lâu dài"]);
+    expect(buttons.map((button) => button.textContent)).toEqual(["Cho phép lâu dài", "Từ chối", "Một lần", "Không cho phép nữa", "Khác"]);
     const description = (button: HTMLElement) => document.getElementById(button.getAttribute("aria-describedby")!)?.textContent;
     expect(description(screen.getByRole("button", { name: "Cho phép lâu dài" }))).toBe("Chỉ lần này");
     expect(description(screen.getByRole("button", { name: "Một lần" }))).toBe("Phạm vi do agent quyết định");
     expect(description(screen.getByRole("button", { name: "Khác" }))).toBe("Chưa rõ phạm vi");
     fireEvent.click(screen.getByRole("button", { name: "Một lần" }));
     expect(onResolve).toHaveBeenCalledWith("allow-persistent-id");
+  });
+
+  it("keeps a new request's persistent choices collapsed and never auto-selects", () => {
+    const onResolve = vi.fn();
+    const options: PermissionRequest["options"] = [...request.options, { optionId: "session", label: "Always allow write_file in this session", kind: "allow_always" }];
+    const { rerender } = render(<PermissionCard request={{ ...request, options }} onResolve={onResolve} />);
+    fireEvent.click(screen.getByText("Thêm lựa chọn"));
+    expect(screen.getByRole("button", { name: "Cho phép ghi tệp cả phiên" })).toBeTruthy();
+    rerender(<PermissionCard request={{ ...request, requestId: "next", options }} onResolve={onResolve} />);
+    expect(screen.getByText("Thêm lựa chọn").closest("details")!.open).toBe(false);
+    expect(onResolve).not.toHaveBeenCalled();
   });
 
   it.each([

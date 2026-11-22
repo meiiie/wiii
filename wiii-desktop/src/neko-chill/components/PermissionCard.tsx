@@ -1,11 +1,11 @@
 /**
  * Inline permission gate (FR-006) — waku-fidelity card: quiet raised surface,
- * reject stays the prominent default (fail-closed by design), allow is
- * the bordered secondary.
+ * single-use decisions are primary; session-wide choices are disclosed.
+ * No selection or dismissal ever implicitly approves.
  */
 import { useId } from "react";
 import { ShieldCheck } from "lucide-react";
-import type { PermissionRequest } from "../drivers/types";
+import type { PermissionOption, PermissionRequest } from "../drivers/types";
 import {
   buildPermissionPreview,
   permissionCodeText,
@@ -35,8 +35,9 @@ export function PermissionCard({
   const preview = buildPermissionPreview(request, session);
   const previewTruncated = preview.truncated || permissionPreviewIsTruncated(request.title)
     || request.options.some((option) => permissionPreviewIsTruncated(option.label, 160));
-  const allows = request.options.filter((o) => o.kind.startsWith("allow"));
-  const rejects = request.options.filter((o) => !o.kind.startsWith("allow"));
+  const once = request.options.filter((option) => option.kind === "allow_once" || option.kind === "reject_once");
+  const mainOptions = once.length ? once : request.options;
+  const moreOptions = once.length ? request.options.filter((option) => !once.includes(option)) : [];
   const busy = resolving || blockedByCancel;
   const fileAction = ({ write_file: "Ghi tệp", edit: "Sửa tệp", multi_edit: "Sửa tệp" } as Record<string, string>)[preview.toolName ?? ""];
   const busyLabel = resolving
@@ -44,6 +45,22 @@ export function PermissionCard({
     : blockedByCancel
       ? "Đang lưu yêu cầu dừng…"
       : "";
+  const choice = (option: PermissionOption) => {
+    const index = request.options.indexOf(option);
+    const primary = option.kind === "allow_once";
+    const scope = permissionOptionScope(option);
+    return <div key={option.optionId} className="min-w-0 max-w-full">
+      <button type="button"
+        className={`max-w-full rounded-lg px-3 py-1.5 text-left text-[12px] transition-opacity hover:opacity-80 aria-disabled:cursor-wait aria-disabled:opacity-50 ${primary
+          ? "bg-[var(--nk-inverse)] font-medium text-[var(--nk-on-inverse)]"
+          : "text-[var(--nk-text-2)] hover:bg-[var(--nk-overlay)]"}`}
+        aria-disabled={busy} aria-describedby={`${scopeId}-option-${index}`}
+        onClick={() => { if (!busy) onResolve(option.optionId); }}>
+        {permissionOptionLabel(option) ?? "Lựa chọn chưa có nhãn."}
+      </button>
+      <p id={`${scopeId}-option-${index}`} className={scope === "Phạm vi do agent quyết định" || scope === "Chưa rõ phạm vi" ? "mt-1 text-[10.5px] text-[var(--nk-text-3)]" : "sr-only"}>{scope}</p>
+    </div>;
+  };
 
   return (
     <div
@@ -104,40 +121,14 @@ export function PermissionCard({
         )}
         {previewTruncated ? <p className="mt-2 text-[var(--nk-text-3)]">Bản xem trước đã rút gọn.</p> : null}
       </div>
-      <div className="flex flex-wrap items-start gap-1.5">
-        {rejects.map((option, index) => (
-          <div key={option.optionId} className="min-w-0 max-w-full">
-            <button
-              type="button"
-              className="max-w-full rounded-lg bg-[var(--nk-inverse)] px-3 py-1.5 text-left text-[12px] font-medium text-[var(--nk-on-inverse)] transition-opacity hover:opacity-90 aria-disabled:cursor-wait aria-disabled:opacity-50 aria-disabled:hover:opacity-50"
-              aria-disabled={busy}
-              aria-describedby={`${scopeId}-reject-${index}`}
-              onClick={() => {
-                if (!busy) onResolve(option.optionId);
-              }}
-            >
-              {permissionOptionLabel(option) ?? "Lựa chọn chưa có nhãn."}
-            </button>
-            <p id={`${scopeId}-reject-${index}`} className="sr-only">{permissionOptionScope(option)}</p>
-          </div>
-        ))}
-        {allows.map((option, index) => (
-          <div key={option.optionId} className="min-w-0 max-w-full">
-            <button
-              type="button"
-              className="max-w-full rounded-lg border border-[var(--nk-border-strong)] px-3 py-1.5 text-left text-[12px] text-[var(--nk-text-2)] transition-colors hover:bg-[var(--nk-overlay)] hover:text-[var(--nk-text)] aria-disabled:cursor-wait aria-disabled:opacity-50 aria-disabled:hover:bg-transparent aria-disabled:hover:text-[var(--nk-text-2)]"
-              aria-disabled={busy}
-              aria-describedby={`${scopeId}-allow-${index}`}
-              onClick={() => {
-                if (!busy) onResolve(option.optionId);
-              }}
-            >
-              {permissionOptionLabel(option) ?? "Lựa chọn chưa có nhãn."}
-            </button>
-            <p id={`${scopeId}-allow-${index}`} className={permissionOptionScope(option) === "Phạm vi do agent quyết định" ? "mt-1 text-[10.5px] text-[var(--nk-text-3)]" : "sr-only"}>{permissionOptionScope(option)}</p>
-          </div>
-        ))}
+      <div role="group" aria-label="Quyết định" className="flex flex-wrap items-center gap-1.5">
+        {mainOptions.filter(option => option.kind === "allow_once").map(choice)}
+        {mainOptions.filter(option => option.kind !== "allow_once").map(choice)}
       </div>
+      {moreOptions.length > 0 && <details key={request.requestId} className="mt-2 text-[11px] text-[var(--nk-text-3)]">
+        <summary className="w-fit cursor-pointer rounded py-1 hover:text-[var(--nk-text-2)]">Thêm lựa chọn</summary>
+        <div className="mt-1 flex flex-wrap gap-1.5 border-t border-[var(--nk-border)] pt-2">{moreOptions.map(choice)}</div>
+      </details>}
       <p
         className={busy
           ? "mt-2 text-[11px] text-[var(--nk-text-3)]"
