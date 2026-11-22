@@ -1,5 +1,6 @@
 /** Single owner for live runtimes, operation holds, durability failures, and mode-exit cleanup. */
 import { RuntimeRegistry } from "../runtime-manager";
+import { original } from "immer";
 import type { NativeControlReader, NekoSession } from "./session-store-types";
 import { getNekoControlClient } from "@/neko/control-client";
 import type { NekoSessionOwnershipFact } from "@/neko/session-ownership";
@@ -286,6 +287,15 @@ export function createSessionRuntime(getStore: () => SessionStoreApi, presentati
       return false;
     try {
       await (options.strict ? persistSessionStrict(session) : persistSessionNow(session));
+      const failure = session.persistenceFailure;
+      if (failure?.context === context) {
+        getStore().setState((state) => {
+          const current = state.sessions[sessionId];
+          if (!current?.persistenceFailure || original(current.persistenceFailure) !== failure) return;
+          if (current.statusDetail === failure.detail) current.statusDetail = undefined;
+          current.persistenceFailure = undefined;
+        });
+      }
       return true;
     }
     catch (error) {
@@ -297,7 +307,9 @@ export function createSessionRuntime(getStore: () => SessionStoreApi, presentati
         if (options.fatal && current.status !== "stopping" && current.status !== "exited") {
           current.status = "error";
         }
-        current.statusDetail = `Không thể lưu ${context}: ${reason}`;
+        const detail = `Không thể lưu ${context}: ${reason}`;
+        current.persistenceFailure = { context, detail };
+        current.statusDetail = detail;
       });
       return false;
     }

@@ -1,12 +1,28 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 
-const { saveGraph } = vi.hoisted(() => ({
+const { saveGraph, saveSession, listNativeSessions } = vi.hoisted(() => ({
+  listNativeSessions: vi.fn(async () => [] as { agentSessionId: string; state: string; operationPhase: string; continuity: string }[]),
+  saveSession: vi.fn(async () => {}),
   saveGraph: vi.fn(async (graph: unknown) => ({
     v: 1,
     updatedAt: new Date().toISOString(),
     graph,
   })),
+}));
+
+vi.mock("@/neko/control-client", async () => {
+  const actual = await vi.importActual<typeof import("@/neko/control-client")>("@/neko/control-client");
+  return { ...actual, getNekoControlClient: () => ({
+    listSessions: listNativeSessions,
+    unresolvedStartSessionIds: () => [], reconcilableStartSessionIds: () => [],
+    cancelUnresolvedStarts: async () => {},
+  }) };
+});
+
+vi.mock("@/neko-chill/persistence", async () => ({
+  ...await vi.importActual<typeof import("@/neko-chill/persistence")>("@/neko-chill/persistence"),
+  persistSessionStrict: saveSession,
 }));
 
 vi.mock("@/ade/persistence", async () => {
@@ -46,10 +62,13 @@ import WiiiAdeApp from "@/ade/WiiiAdeApp";
 import { resetAdeWorkStoreForTests, useAdeWorkStore } from "@/ade/store";
 import { useNekoSessionStore } from "@/neko-chill/stores/neko-session-store";
 import type { NekoSession } from "@/neko-chill/stores/neko-session-store";
+import { appendSessionEvent } from "@/neko-chill/session-events";
 
 describe("Wiii task-first desktop shell", () => {
   beforeEach(() => {
     saveGraph.mockClear();
+    saveSession.mockReset().mockResolvedValue(undefined);
+    listNativeSessions.mockReset().mockResolvedValue([]);
     resetAdeWorkStoreForTests();
     useAdeWorkStore.setState({ hydrated: true, hydrating: false, error: null });
     useNekoSessionStore.setState({ sessions: {}, activeSessionId: null, hydrated: true });
@@ -269,5 +288,168 @@ describe("Wiii task-first desktop shell", () => {
     });
     expect(useAdeWorkStore.getState().graph.tasks[0].state).toBe("review");
     expect(useAdeWorkStore.getState().graph.environments[0].state).toBe("stopped");
+  });
+
+  async function bindCompletedTurn() {
+    const created = await useAdeWorkStore.getState().createTaskRun({
+      workspace: { name: "Wiii", path: "C:\\src\\wiii" }, title: "Review ACP answer",
+    });
+    await useAdeWorkStore.getState().attachAgentSession({
+      id: "native-neko", runId: created.runId, providerId: "neko", providerSessionId: "backend-neko",
+    });
+    const events: NekoSession["events"] = [];
+    const input = appendSessionEvent(events, "model", {
+      type: "model-input", source: "live", messageId: "input-1", text: "Do the work",
+      providerInstanceId: "neko-live", delivery: "staged",
+    });
+    appendSessionEvent(events, "runtime", {
+      type: "dispatch-invoked", action: "prompt", targetEventId: input.eventId!, providerInstanceId: "neko-live",
+    });
+    appendSessionEvent(events, "runtime", {
+      type: "turn-terminal", promptEventId: input.eventId!, providerInstanceId: "neko-live", stopReason: "end_turn",
+    });
+    const session = {
+      id: "visible", execution: created.execution, agentName: "Neko Core", events, status: "idle",
+      runtime: { instanceId: "neko-live", providerId: "neko", kind: "acp" },
+    } as NekoSession;
+    useNekoSessionStore.setState({ sessions: { visible: session } });
+    return session;
+  }
+
+  it("waits for durable ACP results, then shows review while keeping the chat alive", async () => {
+    let saved!: () => void;
+    saveSession.mockImplementationOnce(() => new Promise<void>((resolve) => { saved = resolve; }));
+    const session = await bindCompletedTurn();
+    render(<WiiiAdeApp />);
+    await waitFor(() => expect(saveSession).toHaveBeenCalledTimes(1));
+    expect(useAdeWorkStore.getState().graph.runs[0].state).toBe("running");
+    saved();
+    await screen.findByText("1 cần duyệt");
+    expect(useAdeWorkStore.getState().graph.runs[0].state).toBe("review");
+    expect(useNekoSessionStore.getState().sessions.visible.runtime).toBe(session.runtime);
+    fireEvent.click(screen.getByRole("button", { name: /Review ACP answer/ }));
+    expect(screen.getByText(/Lần chạy: Sẵn sàng duyệt/)).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: /Mở phiên agent/ }));
+    expect(useNekoSessionStore.getState().activeSessionId).toBe("visible");
+  });
+
+  it("recovers a saved result after restart even when the idle host was subsequently closed", async () => {
+    await bindCompletedTurn();
+    useNekoSessionStore.setState((state) => {
+      const session = state.sessions.visible;
+      session.runtime = null;
+      session.status = "exited";
+      appendSessionEvent(session.events, "runtime", {
+        type: "native-runtime-reconciled", agentSessionId: "native-neko", runId: session.execution!.runId,
+        providerId: "neko", state: "cancelled", operationPhase: "completed", continuity: "active",
+        replayedFromSeq: 0, replayedThroughSeq: 1, replayedEventCount: 1,
+      });
+    });
+    render(<WiiiAdeApp />);
+    await screen.findByText("1 cần duyệt");
+    expect(useAdeWorkStore.getState().graph.runs[0].state).toBe("review");
+    expect(useAdeWorkStore.getState().graph.tasks[0].state).toBe("review");
+  });
+
+  it("does not advance Work when the result cannot be persisted", async () => {
+    saveSession.mockRejectedValue(new Error("disk full"));
+    await bindCompletedTurn();
+    render(<WiiiAdeApp />);
+    await screen.findByText("Chưa lưu được kết quả lần chạy.");
+    expect(useAdeWorkStore.getState().graph.runs[0].state).toBe("running");
+    saveSession.mockResolvedValue(undefined);
+    fireEvent.click(screen.getByRole("button", { name: "Thử lại" }));
+    await screen.findByText("1 cần duyệt");
+  });
+
+  it("keeps review while confirmed host cleanup settles and after native reconciliation", async () => {
+    await bindCompletedTurn();
+    listNativeSessions.mockResolvedValue([{
+      agentSessionId: "native-neko", state: "cancelled", operationPhase: "completed", continuity: "active",
+    }]);
+    render(<WiiiAdeApp />);
+    await screen.findByText("1 cần duyệt");
+    await act(async () => {
+      useNekoSessionStore.setState((state) => {
+        const session = state.sessions.visible;
+        session.runtime = null;
+        session.status = "exited";
+        session.closePending = true;
+        appendSessionEvent(session.events, "runtime", {
+          type: "native-runtime-cleanup-resolved", agentSessionId: "native-neko",
+          runId: session.execution!.runId, providerId: "neko",
+        });
+      });
+    });
+    expect(useAdeWorkStore.getState().graph.runs[0].state).toBe("review");
+    expect(listNativeSessions).not.toHaveBeenCalled();
+    await act(async () => {
+      useNekoSessionStore.setState((state) => {
+        const session = state.sessions.visible;
+        session.closePending = false;
+        appendSessionEvent(session.events, "runtime", {
+          type: "native-runtime-reconciled", agentSessionId: "native-neko", runId: session.execution!.runId,
+          providerId: "neko", state: "cancelled", operationPhase: "completed", continuity: "active",
+          replayedFromSeq: 0, replayedThroughSeq: 4, replayedEventCount: 4,
+        });
+      });
+    });
+    expect(useAdeWorkStore.getState().graph.runs[0].state).toBe("review");
+  });
+
+  it("does not let a late native host read overwrite a newly durable turn result", async () => {
+    await bindCompletedTurn();
+    const terminal = useNekoSessionStore.getState().sessions.visible.events.at(-1)!;
+    useNekoSessionStore.setState((state) => {
+      const session = state.sessions.visible;
+      session.events.pop();
+      session.runtime = null;
+      session.status = "exited";
+    });
+    let nativeRead!: (records: Awaited<ReturnType<typeof listNativeSessions>>) => void;
+    listNativeSessions.mockImplementationOnce(() => new Promise((resolve) => { nativeRead = resolve; }));
+    render(<WiiiAdeApp />);
+    await waitFor(() => expect(listNativeSessions).toHaveBeenCalledTimes(1));
+    await act(async () => {
+      useNekoSessionStore.setState((state) => { state.sessions.visible.events.push(terminal); });
+    });
+    await screen.findByText("1 cần duyệt");
+    await act(async () => {
+      nativeRead([{ agentSessionId: "native-neko", state: "cancelled", operationPhase: "completed", continuity: "active" }]);
+    });
+    expect(useAdeWorkStore.getState().graph.runs[0].state).toBe("review");
+  });
+
+  it("rechecks correlation after saving instead of finishing a newer prompt", async () => {
+    let saved!: () => void;
+    saveSession.mockImplementationOnce(() => new Promise<void>((resolve) => { saved = resolve; }));
+    await bindCompletedTurn();
+    render(<WiiiAdeApp />);
+    await waitFor(() => expect(saveSession).toHaveBeenCalledTimes(1));
+    await act(async () => {
+      useNekoSessionStore.setState((state) => {
+        const session = state.sessions.visible;
+        session.status = "streaming";
+        appendSessionEvent(session.events, "model", {
+          type: "model-input", source: "live", messageId: "input-2", text: "Next turn", providerInstanceId: "neko-live",
+        });
+      });
+      saved();
+    });
+    expect(useAdeWorkStore.getState().graph.runs[0].state).toBe("running");
+  });
+
+  it("never hides uncertain native cleanup behind an apparent completed turn", async () => {
+    await bindCompletedTurn();
+    useNekoSessionStore.setState((state) => {
+      const session = state.sessions.visible;
+      appendSessionEvent(session.events, "runtime", {
+        type: "native-runtime-cleanup-uncertain", runId: session.execution!.runId, agentSessionId: "native-neko",
+        providerId: "neko", reason: "termination not proven",
+      });
+    });
+    render(<WiiiAdeApp />);
+    await waitFor(() => expect(useAdeWorkStore.getState().graph.runs[0].state).toBe("unknown_outcome"));
+    expect(saveSession).not.toHaveBeenCalled();
   });
 });
