@@ -8,6 +8,8 @@
  */
 
 .nk-root {
+  /* Keep WebKit's native controls in sync with the scoped app palette. */
+  color-scheme: light;
   --nk-canvas: #f8f7f5;
   --nk-sidebar: #f0eeeb;
   --nk-raised: #eae7e3;
@@ -49,6 +51,7 @@
 }
 
 .dark .nk-root {
+  color-scheme: dark;
   --nk-canvas: #1a1a1a;
   --nk-sidebar: #1d1d1d;
   --nk-raised: #232323;
