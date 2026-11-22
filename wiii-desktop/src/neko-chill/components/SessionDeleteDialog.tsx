@@ -1,5 +1,5 @@
 import { useEffect, useId, useRef, useState, type RefObject } from "react";
-import { AlertTriangle, LoaderCircle } from "lucide-react";
+import { AlertTriangle, FolderCheck, LoaderCircle, Square } from "lucide-react";
 import { useNekoSessionStore } from "../stores/neko-session-store";
 import { NekoButton, NekoCard, NekoDialogPanel } from "./ui";
 
@@ -90,7 +90,7 @@ export function SessionDeleteDialog({ target, opener, fallbackFocusRef, onCancel
           dismiss();
         }
         if (event.key !== "Tab") return;
-        const items = [...event.currentTarget.querySelectorAll<HTMLButtonElement>("button:not(:disabled)")];
+        const items = [...event.currentTarget.querySelectorAll<HTMLElement>('button:not(:disabled), summary:not([tabindex="-1"])')];
         const first = items[0];
         const last = items[items.length - 1];
         if (!first) {
@@ -108,18 +108,24 @@ export function SessionDeleteDialog({ target, opener, fallbackFocusRef, onCancel
             <AlertTriangle aria-hidden="true" className="mt-0.5 h-5 w-5 shrink-0 text-[var(--nk-danger)]" />
             <div className="min-w-0 flex-1">
               <h1 id={titleId} className="text-[17px] font-semibold">Xóa lịch sử phiên?</h1>
-              <p id={descriptionId} className="mt-2 text-[13px] leading-5 text-[var(--nk-text-2)]">Xóa sẽ dừng runtime của phiên và xóa lịch sử đã lưu trong Wiii. Nếu chỉ muốn đóng runtime và giữ lịch sử, hãy hủy rồi chọn Kết thúc phiên.</p>
+              <p id={descriptionId} className="mt-1 text-[13px] leading-5 text-[var(--nk-text-2)]">Lịch sử trong Wiii sẽ bị xóa. Không thể hoàn tác.</p>
             </div>
           </div>
           <NekoCard tone="inset" className="mt-4 px-3 py-2.5">
             <p className="whitespace-pre-wrap wrap-break-word text-[13px] font-medium [overflow-wrap:anywhere]" data-testid="session-delete-title">{target.title}</p>
-            <p className="mt-1 break-all font-mono text-[10px] leading-4 text-[var(--nk-text-3)]">ID: {target.id}</p>
           </NekoCard>
-          <p className="mt-3 text-[12px] leading-5 text-[var(--nk-text-3)]">Không thể hoàn tác. Tệp trong thư mục dự án vẫn được giữ nguyên.</p>
+          <ul className="mt-3 v3-space-y-2 text-[12px] leading-5 text-[var(--nk-text-2)]">
+            <li className="flex items-center gap-2"><FolderCheck aria-hidden="true" className="h-4 w-4 shrink-0 text-[var(--nk-success)]" />Tệp dự án được giữ nguyên.</li>
+            {session?.runtime ? <li className="flex items-center gap-2"><Square aria-hidden="true" className="h-3.5 w-3.5 shrink-0" />Phiên đang chạy sẽ dừng.</li> : null}
+          </ul>
           {hasTaskScope ? (
-            <p id={taskScopeWarningId} role="note" data-testid="session-delete-task-scope-warning" className="mt-3 rounded-lg border border-[var(--nk-border)] bg-[var(--nk-raised)] px-3 py-2 text-[12px] leading-5 text-[var(--nk-text-2)]">
-              Xóa cũng xóa liên kết tác vụ và receipt đã lưu trong Wiii (nếu có). Liên kết này có thể cần để đối soát hoặc tiếp tục tác vụ, nhất là khi kết quả chưa được xác nhận. Thao tác này không xóa checkpoint hoặc writer lock của Neko. Wiii không giữ lại lịch sử hay liên kết này sau khi xóa.
-            </p>
+            <div className="mt-3 text-[12px] leading-5 text-[var(--nk-text-2)]">
+              <p id={taskScopeWarningId} role="note" data-testid="session-delete-task-scope-warning">Liên kết tác vụ và kết quả đối soát trong Wiii cũng bị xóa.</p>
+              <details className="mt-2">
+                <summary tabIndex={busy ? -1 : 0} className="cursor-pointer text-[var(--nk-text-3)]">Chi tiết khôi phục</summary>
+                <p className="mt-2">Wiii không giữ lại liên kết để tiếp tục tác vụ. Thao tác này không xóa checkpoint hoặc writer lock của Neko.</p>
+              </details>
+            </div>
           ) : null}
           {busy ? <p role="status" className="mt-3 flex items-center gap-2 text-[12px] leading-5 text-[var(--nk-text-2)]"><LoaderCircle aria-hidden="true" className="h-3.5 w-3.5 shrink-0 animate-spin" />Đang dừng runtime và xóa lịch sử…</p> : null}
           {!session ? <p role="status" className="mt-3 text-[12px] leading-5 text-[var(--nk-text-2)]">Phiên này không còn trong danh sách. Không có phiên khác bị xóa.</p> : null}
