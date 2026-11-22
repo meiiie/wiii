@@ -1,8 +1,11 @@
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { NekoTranscript } from "@/neko-chill/components/NekoTranscript";
+import * as virtualization from "@tanstack/react-virtual";
 import type { NekoSession } from "@/neko-chill/stores/neko-session-store";
 import { captureTranscriptReadingBookmark, restoreTranscriptReadingBookmark, type TranscriptReadingPosition } from "@/neko-chill/transcript-reading-anchor";
+
+vi.mock("@tanstack/react-virtual", { spy: true });
 
 function makeSession(): NekoSession {
   return {
@@ -72,6 +75,7 @@ function mount(session = makeSession(), readingPositions?: Map<string, Transcrip
   return { ...view, viewport, session, content: viewport.firstElementChild! };
 }
 beforeEach(() => {
+  vi.mocked(virtualization.useVirtualizer).mockReset();
   frames = new Map(); nextFrame = 0; observers.length = 0;
   vi.stubGlobal("requestAnimationFrame", (fn: FrameRequestCallback) => { frames.set(++nextFrame, fn); return nextFrame; });
   vi.stubGlobal("cancelAnimationFrame", (id: number) => frames.delete(id));
@@ -189,6 +193,27 @@ describe("Neko transcript reading continuity", () => {
     paint();
     expect(scroll).toHaveBeenCalledWith({ block: "end", behavior: "auto" });
     expect(screen.queryByRole("button", { name: "Đi tới tin nhắn mới nhất" })).toBeNull();
+  });
+  it("keeps the cached pixel fallback when a virtual row mounts with changed bookmarked text", () => {
+    const session = makeSession();
+    session.messages = Array.from({ length: 52 }, (_, index) => ({ id: `message-${index}`, role: "user" as const, text: `Tin nhắn ${index}` }));
+    const fakeVirtualizer = {
+      getTotalSize: () => 5200,
+      getVirtualItems: () => session.messages.map((message, index) => ({ index, key: message.id, start: index * 100, size: 100, end: index * 100 + 100, lane: 0 })),
+      measureElement: vi.fn(),
+      getOffsetForIndex: (index: number) => [index * 100],
+      scrollToIndex: vi.fn(() => { screen.getByRole("log").scrollTop = 1000; }),
+    };
+    vi.mocked(virtualization.useVirtualizer).mockReturnValue(fakeVirtualizer as unknown as ReturnType<typeof virtualization.useVirtualizer>);
+    const positions = new Map<string, TranscriptReadingPosition>([[session.id, {
+      followingTail: false, scrollTop: 2400,
+      bookmark: { messageId: "message-10", path: [], offset: 12, character: 0, sample: "Nội dung cũ" },
+    }]]);
+    render(<NekoTranscript session={session} readingPositions={positions} onResolvePermission={vi.fn()} onInsertPrompt={vi.fn()} />);
+    paint();
+    expect(fakeVirtualizer.scrollToIndex).toHaveBeenCalledWith(10, { align: "start" });
+    expect(screen.getByRole("log").scrollTop).toBe(2400);
+    expect(screen.getByRole("button", { name: "Đi tới tin nhắn mới nhất" })).toBeTruthy();
   });
   it("does not replace the anchor with a scroll event emitted by the reflow", () => {
     const { viewport, reflow } = readingFixture();

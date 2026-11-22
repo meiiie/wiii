@@ -424,6 +424,7 @@ export function NekoTranscript({
   const [followingTail, setFollowingTail] = useState(() => readingPositions?.get(session.id)?.followingTail ?? true);
   const followingTailRef = useRef(followingTail);
   const pendingReadingBookmarkRef = useRef<TranscriptReadingPosition["bookmark"]>(null);
+  const pendingVirtualFallbackRef = useRef<number | null>(null);
   const restoredReadingTopRef = useRef<number | null>(null);
   const messageCount = session.messages.length;
   const lastMessage = session.messages[messageCount - 1];
@@ -472,7 +473,11 @@ export function NekoTranscript({
   }, [virtualizer]);
 
   const updateFollowingTail = useCallback((next: boolean) => {
-    if (next) pendingReadingBookmarkRef.current = null;
+    if (next) {
+      pendingReadingBookmarkRef.current = null;
+      pendingVirtualFallbackRef.current = null;
+      restoredReadingTopRef.current = null;
+    }
     if (followingTailRef.current === next) return;
     followingTailRef.current = next;
     setFollowingTail(next);
@@ -483,8 +488,21 @@ export function NekoTranscript({
   const restorePendingReadingPosition = useCallback(() => {
     const viewport = scrollRef.current;
     const bookmark = pendingReadingBookmarkRef.current;
-    if (!viewport || !bookmark || !restoreTranscriptReadingBookmark(viewport, bookmark)) return false;
+    if (!viewport || !bookmark) return false;
+    if (!restoreTranscriptReadingBookmark(viewport, bookmark)) {
+      // Seeking a virtual row is only bootstrap. Once it mounts, an invalid
+      // bookmark must leave the reader at the cached offset, not the row start.
+      if (pendingVirtualFallbackRef.current !== null
+        && Array.from(viewport.querySelectorAll<HTMLElement>("[data-neko-message-id]"))
+          .some((row) => row.dataset.nekoMessageId === bookmark.messageId)) {
+        viewport.scrollTop = pendingVirtualFallbackRef.current;
+        restoredReadingTopRef.current = viewport.scrollTop;
+        pendingVirtualFallbackRef.current = null;
+      }
+      return false;
+    }
     pendingReadingBookmarkRef.current = null;
+    pendingVirtualFallbackRef.current = null;
     restoredReadingTopRef.current = viewport.scrollTop;
     return true;
   }, []);
@@ -551,6 +569,7 @@ export function NekoTranscript({
   useLayoutEffect(() => {
     pendingPromptFocusRef.current = null;
     automaticScrollTopRef.current = null;
+    pendingVirtualFallbackRef.current = null;
     const saved = readingPositions?.get(session.id);
     updateFollowingTail(saved?.followingTail ?? true);
     pendingReadingBookmarkRef.current = saved?.followingTail === false ? saved.bookmark : null;
@@ -558,7 +577,10 @@ export function NekoTranscript({
       scrollRef.current.scrollTop = saved.scrollTop;
       if (useVirtual && saved.bookmark) {
         const index = messagesRef.current.findIndex(({ id }) => id === saved.bookmark?.messageId);
-        if (index >= 0) virtualizer.scrollToIndex(index, { align: "start" });
+        if (index >= 0) {
+          pendingVirtualFallbackRef.current = saved.scrollTop;
+          virtualizer.scrollToIndex(index, { align: "start" });
+        }
       }
       restorePendingReadingPosition();
       restoredReadingTopRef.current = scrollRef.current.scrollTop;
@@ -616,6 +638,7 @@ export function NekoTranscript({
       restoredScrollTop = null;
       restoredReadingTopRef.current = null;
       pendingReadingBookmarkRef.current = null;
+      pendingVirtualFallbackRef.current = null;
       updateFollowingTail(viewport.scrollHeight - viewport.scrollTop - viewport.clientHeight < 96);
       rememberReadingPosition();
     };
