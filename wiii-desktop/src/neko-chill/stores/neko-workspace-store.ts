@@ -396,7 +396,8 @@ export const useNekoWorkspaceStore = create<NekoWorkspaceState>((set, get) => ({
     if (!activity.locations?.length) return;
     get().ensureSession(sessionId, workspace);
     const following = get().sessions[sessionId];
-    if (following?.followAgent && !following.pinned) nextRequestVersion(sessionId);
+    // Follow inside an open pane, never reveal it over the user's chat.
+    if (following?.open && following.followAgent && !following.pinned) nextRequestVersion(sessionId);
     const now = Date.now();
     set((state) => {
       const current = state.sessions[sessionId] ?? emptySession();
@@ -412,7 +413,7 @@ export const useNekoWorkspaceStore = create<NekoWorkspaceState>((set, get) => ({
           updatedAt: now,
         };
       }
-      const shouldFollow = current.followAgent && !current.pinned;
+      const shouldFollow = current.open && current.followAgent && !current.pinned;
       return {
         sessions: {
           ...state.sessions,
@@ -436,7 +437,7 @@ export const useNekoWorkspaceStore = create<NekoWorkspaceState>((set, get) => ({
 
     const current = get().sessions[sessionId];
     const firstPath = activity.locations[0].path;
-    if (current?.followAgent && !current.pinned && activity.status !== "pending") {
+    if (current?.open && current.followAgent && !current.pinned && activity.status !== "pending") {
       if (activity.operation === "delete") {
         void get().openChange(sessionId, workspace, relativePath(workspace, firstPath));
       } else {
