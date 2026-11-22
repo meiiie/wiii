@@ -11,6 +11,30 @@ pub struct LegacyLeaseRequest {
     pub backend_session_id: String,
 }
 
+#[cfg(test)]
+mod request_tests {
+    use super::LegacyLeaseRequest;
+    use serde_json::json;
+
+    #[test]
+    fn recovery_request_cannot_supply_paths_pids_or_native_proof() {
+        let request = json!({"clientSessionId": "local", "backendSessionId": "backend"});
+        assert!(serde_json::from_value::<LegacyLeaseRequest>(request.clone()).is_ok());
+        for field in [
+            "pid",
+            "path",
+            "home",
+            "records",
+            "quiescent",
+            "agentSessionId",
+        ] {
+            let mut forged = request.clone();
+            forged[field] = json!(1);
+            assert!(serde_json::from_value::<LegacyLeaseRequest>(forged).is_err());
+        }
+    }
+}
+
 pub const BUSY: &str = "neko_legacy_recovery_busy";
 
 /// Native-only physical proof. Never deserialized from renderer input and never

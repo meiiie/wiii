@@ -108,6 +108,8 @@ fn main_webview_has_no_raw_agent_process_primitive() {
         "allow-neko-control-session-start",
         "allow-neko-control-session-write",
         "allow-neko-control-session-cancel",
+        // Session-only legacy migration: native proof, no caller PID/path.
+        "allow-neko-control-legacy-lease-recover",
         "allow-neko-control-events-read",
     ];
     reviewed.sort_unstable();
