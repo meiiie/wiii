@@ -231,6 +231,33 @@ describe("Neko transcript reading continuity", () => {
     expect(viewport.scrollTop).toBe(220);
     expect(parent.getBoundingClientRect().top).toBe(120);
   });
+  it("ignores clipped tool lines even when their full range overlaps the answer below", () => {
+    const { viewport, paragraph, textRects, reflow } = readingFixture();
+    let expanded = false;
+    const clip = document.createElement("div");
+    clip.style.overflowY = "auto";
+    Object.defineProperty(clip, "clientHeight", { value: 88 });
+    clip.getBoundingClientRect = () => {
+      const top = 320 - viewport.scrollTop;
+      return { top, bottom: top + 88, height: 88 } as DOMRect;
+    };
+    const output = document.createElement("p");
+    output.textContent = "ABC";
+    output.getBoundingClientRect = () => {
+      const top = 320 - viewport.scrollTop;
+      return { top, bottom: top + 980, height: 980 } as DOMRect;
+    };
+    textRects.set(output.firstChild!, (range) => {
+      if (range.endOffset - range.startOffset > 1) return output.getBoundingClientRect();
+      const top = 100 + [220, expanded ? 500 : 320, 1180][range.startOffset] - viewport.scrollTop;
+      return { top, bottom: top + 20, height: 20 } as DOMRect;
+    });
+    clip.append(output); paragraph.before(clip);
+    resize(viewport); fireEvent.scroll(viewport);
+    expanded = true; reflow(750, 240); resize(viewport); paint();
+    expect(viewport.scrollTop).toBe(220);
+    expect(paragraph.getBoundingClientRect().top).toBe(120);
+  });
   it("does not mistake reflow clamping for choosing to follow the tail", () => {
     const { viewport, paragraph, reflow } = readingFixture();
     resize(viewport); fireEvent.scroll(viewport);
