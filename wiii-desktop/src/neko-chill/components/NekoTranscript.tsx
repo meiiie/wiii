@@ -522,10 +522,16 @@ export function NekoTranscript({
   useEffect(scheduleFollow, [lastMessage, lastBlockCount, session.pendingPermission, scheduleFollow]);
 
   return (
-    <div className="relative min-h-0 flex-1">
+    <div className="relative flex min-h-0 flex-1 flex-col">
+      <NekoPromptRail
+        messages={promptRailMessages}
+        scrollRef={scrollRef}
+        resolveMessageOffset={resolveMessageOffset}
+        onJump={jumpToPrompt}
+      />
       <div
         ref={scrollRef}
-        className="nk-scroll-surface h-full min-w-0 overflow-x-hidden overflow-y-auto focus-visible:v3-outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[var(--nk-focus-soft)]"
+        className="nk-scroll-surface min-h-0 min-w-0 flex-1 overflow-x-hidden overflow-y-auto focus-visible:v3-outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[var(--nk-focus-soft)]"
         tabIndex={0}
         data-testid="neko-transcript"
         role="log"
@@ -538,7 +544,7 @@ export function NekoTranscript({
           updateFollowingTail(distanceFromTail < 96);
         }}
       >
-      <div ref={contentRef} className="mx-auto min-w-0 w-full max-w-[780px] overflow-hidden py-4 pl-[58px] pr-5 min-[900px]:px-6">
+      <div ref={contentRef} className="mx-auto min-w-0 w-full max-w-[780px] overflow-hidden px-5 py-4 min-[900px]:px-6">
         {session.messages.length === 0 && session.status === "idle" ? (
           <section className="mx-auto flex max-w-[560px] flex-col items-center px-4 py-[10vh] text-center" aria-label="Bắt đầu phiên">
             <span className="grid h-10 w-10 place-items-center rounded-xl bg-[var(--nk-inset)] text-[var(--nk-text-2)]">
@@ -650,12 +656,6 @@ export function NekoTranscript({
         <div ref={bottomRef} />
       </div>
       </div>
-      <NekoPromptRail
-        messages={promptRailMessages}
-        scrollRef={scrollRef}
-        resolveMessageOffset={resolveMessageOffset}
-        onJump={jumpToPrompt}
-      />
       {!followingTail ? (
         <button
           type="button"
