@@ -2,6 +2,7 @@ import { useState } from "react";
 import { fireEvent, render, screen, within } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { PermissionCard } from "@/neko-chill/components/PermissionCard";
+import { acpPermissionPreview } from "@/neko-chill/drivers/acp/permission-preview";
 import {
   buildPermissionPreview,
   type PermissionPreviewSession,
@@ -46,11 +47,89 @@ function session(overrides: Partial<PermissionPreviewSession> = {}): PermissionP
 }
 const noData = "Chưa có thông tin thao tác.";
 
+describe("pending request content", () => {
+  const pending = (tool: unknown): PermissionRequest => ({ ...request, toolPreview: acpPermissionPreview(tool) });
+  it("shows the exact request's write, not cached activity arguments, with Vietnamese choices", () => {
+    const onResolve = vi.fn();
+    render(<PermissionCard request={{ ...pending({ name: "write_file", locations: [{ path: "/project/new.txt" }],
+      rawInput: { content: "First line\n  indented\n", api_key: "NOT_DISPLAYED" } }), options: [
+      { optionId: "opaque-allow", label: "Allow once", kind: "allow_once" },
+      { optionId: "opaque-session", label: "Always allow write_file in this session", kind: "allow_always" },
+      { optionId: "opaque-deny", label: "Reject once", kind: "reject_once" },
+      { optionId: "opaque-block", label: "Always reject write_file in this session", kind: "reject_always" },
+    ] }} session={session()} onResolve={onResolve} />);
+    expect(screen.getByLabelText("Nội dung mới").textContent).toBe("First line\n  indented\n");
+    expect(screen.getByTestId("permission-preview").textContent).not.toContain("config.json");
+    expect(screen.getByTestId("permission-preview").textContent).not.toContain("NOT_DISPLAYED");
+    expect(within(screen.getByRole("group", { name: "Quyết định" })).getAllByRole("button").map(button => button.textContent)).toEqual(["Cho phép", "Từ chối"]);
+    expect(screen.getByText("Thêm lựa chọn").closest("details")!.open).toBe(false);
+    fireEvent.click(screen.getByText("Thêm lựa chọn"));
+    expect(screen.getAllByRole("button").map(button => button.textContent)).toEqual([
+      "Cho phép", "Từ chối", "Cho phép ghi tệp cả phiên", "Chặn ghi tệp cả phiên",
+    ]);
+    fireEvent.click(screen.getByRole("button", { name: "Cho phép ghi tệp cả phiên" }));
+    expect(onResolve).toHaveBeenCalledWith("opaque-session");
+  });
+
+  it("renders empty writes and provider markup as literal code", () => {
+    const { container, rerender } = render(<PermissionCard request={pending({ name: "write_file", rawInput: { content: "" } })} onResolve={vi.fn()} />);
+    expect(screen.getByLabelText("Nội dung mới").textContent).toBe("(Tệp trống)");
+    rerender(<PermissionCard request={pending({ name: "write_file", rawInput: { content: '<script>alert(1)</script>\n\u202Efake' } })} onResolve={vi.fn()} />);
+    expect(screen.getByLabelText("Nội dung mới").textContent).toBe('<script>alert(1)</script>\n[U+202E]fake');
+    expect(container.querySelector("script")).toBeNull();
+  });
+
+  it("supports Neko edits and standard ACP diffs without inferring paths from rawInput", () => {
+    const edit = acpPermissionPreview({ name: "edit", rawInput: { path: "not-a-structured-target", old_string: "before", new_string: "after" } })!;
+    expect(edit.locations).toEqual([]);
+    expect(edit.changes).toEqual([{ before: "before", after: "after" }]);
+    const multi = acpPermissionPreview({ name: "multi_edit", rawInput: { edits: [{ old_string: "a", new_string: "b" }, { old_string: "c", new_string: "" }] } })!;
+    expect(multi.changes).toEqual([{ before: "a", after: "b" }, { before: "c", after: "" }]);
+    render(<PermissionCard request={pending({ content: [{ type: "diff", path: "/real.txt", oldText: "old", newText: "new" }] })} onResolve={vi.fn()} />);
+    expect(screen.getByLabelText("Nội dung cũ").textContent).toBe("old");
+    expect(screen.getByLabelText("Nội dung mới").textContent).toBe("new");
+  });
+
+  it("does not reuse previous content when a subsequent request omits it", () => {
+    const { rerender } = render(<PermissionCard request={pending({ name: "write_file", rawInput: { content: "CURRENT" } })} onResolve={vi.fn()} />);
+    rerender(<PermissionCard request={{ ...pending({ name: "write_file" }), requestId: "next-request" }} session={session()} onResolve={vi.fn()} />);
+    expect(screen.queryByText("CURRENT")).toBeNull();
+    expect(screen.getByText("Agent chưa gửi nội dung thay đổi.")).toBeTruthy();
+  });
+
+  it("bounds large content and explicitly signals an incomplete preview", () => {
+    const snapshot = acpPermissionPreview({ name: "write_file", locations: [{ path: "/large.txt" }], rawInput: { content: "x".repeat(100_000) } })!;
+    expect(snapshot.changes[0].after.length).toBeLessThanOrEqual(16_000);
+    expect(snapshot.truncated).toBe(true);
+    render(<PermissionCard request={{ ...request, toolPreview: snapshot }} onResolve={vi.fn()} />);
+    expect(screen.getByText("Bản xem trước đã rút gọn.")).toBeTruthy();
+    expect(screen.getByRole("region", { name: "Nội dung sắp ghi" }).className).toContain("max-h-52");
+  });
+
+  it("distinguishes deleting an edit snippet from writing an empty file", () => {
+    render(<PermissionCard request={pending({ name: "edit", rawInput: { old_string: "remove this snippet", new_string: "" } })} onResolve={vi.fn()} />);
+    expect(screen.getByLabelText("Nội dung mới").textContent).toBe("(Xoá đoạn này)");
+    expect(screen.queryByText("(Tệp trống)")).toBeNull();
+  });
+
+  it("keeps replacement text visible when the old snippet is huge and marks omitted content honestly", () => {
+    const large = pending({ name: "multi_edit", rawInput: { edits: [
+      { old_string: "old".repeat(20_000), new_string: "REPLACEMENT".repeat(2000) },
+      { old_string: "a", new_string: "STILL_NONEMPTY" },
+    ] } });
+    render(<PermissionCard request={large} onResolve={vi.fn()} />);
+    expect(screen.getAllByLabelText("Nội dung mới")[0].textContent).toContain("REPLACEMENT");
+    expect(screen.getAllByLabelText("Nội dung mới")[1].textContent).toBe("(Đã rút gọn)");
+    expect(screen.queryByText("(Tệp trống)")).toBeNull();
+    expect(screen.queryByText("(Xoá đoạn này)")).toBeNull();
+  });
+});
+
 describe("permission preview evidence", () => {
   it("keeps an unlinked request honest instead of inferring command or target from its title", () => {
     render(<PermissionCard request={{ ...request, activityId: undefined, title: "rm C:/private/secrets.json" }} onResolve={vi.fn()} session={session()} />);
     expect(screen.getByTestId("permission-preview").textContent).toBe(noData);
-    expect(screen.getAllByRole("button").map((button) => button.textContent)).toEqual(["Từ chối", "Cho phép"]);
+    expect(screen.getAllByRole("button").map((button) => button.textContent)).toEqual(["Cho phép", "Từ chối"]);
   });
 
   it("shows only structured facts from the exact current activity", () => {
@@ -220,8 +299,8 @@ describe("permission preview evidence", () => {
     expect(screen.getByText(noData)).toBeTruthy();
     expect(screen.getByText("Bản xem trước đã rút gọn.")).toBeTruthy();
     const buttons = screen.getAllByRole("button");
-    expect(buttons.map((button) => button.textContent!.length)).toEqual([7, 161]);
-    fireEvent.click(buttons[1]);
+    expect(buttons.map((button) => button.textContent!.length)).toEqual([161, 7]);
+    fireEvent.click(buttons[0]);
     expect(onResolve).toHaveBeenCalledWith("opaque-allow");
   });
 
@@ -259,7 +338,7 @@ describe("permission preview evidence", () => {
 });
 
 describe("permission option scope and dispatch compatibility", () => {
-  it("describes once versus persistent choices from kind, preserves opaque IDs and deny-first order", () => {
+  it("discloses persistent choices separately while preserving opaque IDs and scope", () => {
     const onResolve = vi.fn();
     const scopedRequest: PermissionRequest = { ...request, options: [
       { optionId: "allow-persistent-id", label: "Một lần", kind: "allow_always" },
@@ -269,14 +348,27 @@ describe("permission option scope and dispatch compatibility", () => {
       { optionId: "unknown-option-id", label: "Khác", kind: "other" },
     ] };
     render(<PermissionCard request={scopedRequest} onResolve={onResolve} />);
+    expect(within(screen.getByRole("group", { name: "Quyết định" })).getAllByRole("button").map(button => button.textContent)).toEqual(["Cho phép lâu dài", "Từ chối"]);
+    fireEvent.click(screen.getByText("Thêm lựa chọn"));
     const buttons = screen.getAllByRole("button");
-    expect(buttons.map((button) => button.textContent)).toEqual(["Từ chối", "Không cho phép nữa", "Khác", "Một lần", "Cho phép lâu dài"]);
+    expect(buttons.map((button) => button.textContent)).toEqual(["Cho phép lâu dài", "Từ chối", "Một lần", "Không cho phép nữa", "Khác"]);
     const description = (button: HTMLElement) => document.getElementById(button.getAttribute("aria-describedby")!)?.textContent;
     expect(description(screen.getByRole("button", { name: "Cho phép lâu dài" }))).toBe("Chỉ lần này");
-    expect(description(screen.getByRole("button", { name: "Một lần" }))).toBe("Lâu dài · chưa rõ phạm vi");
+    expect(description(screen.getByRole("button", { name: "Một lần" }))).toBe("Phạm vi do agent quyết định");
     expect(description(screen.getByRole("button", { name: "Khác" }))).toBe("Chưa rõ phạm vi");
     fireEvent.click(screen.getByRole("button", { name: "Một lần" }));
     expect(onResolve).toHaveBeenCalledWith("allow-persistent-id");
+  });
+
+  it("keeps a new request's persistent choices collapsed and never auto-selects", () => {
+    const onResolve = vi.fn();
+    const options: PermissionRequest["options"] = [...request.options, { optionId: "session", label: "Always allow write_file in this session", kind: "allow_always" }];
+    const { rerender } = render(<PermissionCard request={{ ...request, options }} onResolve={onResolve} />);
+    fireEvent.click(screen.getByText("Thêm lựa chọn"));
+    expect(screen.getByRole("button", { name: "Cho phép ghi tệp cả phiên" })).toBeTruthy();
+    rerender(<PermissionCard request={{ ...request, requestId: "next", options }} onResolve={onResolve} />);
+    expect(screen.getByText("Thêm lựa chọn").closest("details")!.open).toBe(false);
+    expect(onResolve).not.toHaveBeenCalled();
   });
 
   it.each([

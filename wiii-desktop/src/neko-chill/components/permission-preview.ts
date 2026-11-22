@@ -4,13 +4,14 @@ import type { NekoSession } from "../stores/neko-session-store";
 export type PermissionPreviewSession = Pick<NekoSession, "events" | "messages" | "runtime">;
 
 export interface PermissionPreview {
-  source: "activity" | "linked-tool" | "missing";
+  source: "request" | "activity" | "linked-tool" | "missing";
   toolName: string | null;
   title: string | null;
   operation: string | null;
   targets: Array<{ path: string; line?: number }>;
   detail: string | null;
   truncated: boolean;
+  changes?: NonNullable<PermissionRequest["toolPreview"]>["changes"];
 }
 
 const LIMITS = { name: 120, title: 300, path: 320, detail: 600, targets: 5 };
@@ -49,6 +50,12 @@ export function permissionPreviewIsTruncated(value: unknown, limit = LIMITS.titl
   return formattedText(value, limit).truncated;
 }
 
+/** Preserve code whitespace; make deceptive/invisible control characters visible. */
+export function permissionCodeText(value: string): string {
+  return value.replace(/[\u0000-\u0008\u000B-\u001F\u007F-\u009F\u200B-\u200F\u2028-\u202E\u2060-\u206F\uFEFF]/gu,
+    (char) => "[U+" + char.codePointAt(0)!.toString(16).toUpperCase().padStart(4, "0") + "]");
+}
+
 function missing(): PermissionPreview {
   return { source: "missing", toolName: null, title: null, operation: null, targets: [], detail: null, truncated: false };
 }
@@ -58,6 +65,16 @@ export function buildPermissionPreview(
   request: PermissionRequest,
   session?: PermissionPreviewSession,
 ): PermissionPreview {
+  // The pending RPC is stronger evidence than persisted/cached activity IDs.
+  if (request.toolPreview) {
+    const snapshot = request.toolPreview;
+    return {
+      source: "request", toolName: permissionPreviewText(snapshot.toolName, LIMITS.name),
+      title: null, operation: null, detail: null,
+      targets: snapshot.locations.map((location) => ({ path: permissionPreviewText(location.path, LIMITS.path) ?? "" })),
+      changes: snapshot.changes, truncated: snapshot.truncated,
+    };
+  }
   const activityId = request.activityId;
   const runtimeId = session?.runtime?.instanceId;
   if (!session || typeof activityId !== "string" || !activityId || activityId.length > 512
@@ -164,10 +181,23 @@ export function buildPermissionPreview(
   return missing();
 }
 
-export function permissionOptionScope(kind: PermissionOption["kind"]): string {
+export function permissionOptionLabel(option: PermissionOption): string | null {
+  if (option.kind === "allow_once" && option.label === "Allow once") return "Cho phép";
+  if (option.kind === "reject_once" && option.label === "Reject once") return "Từ chối";
+  const match = /^Always (allow|reject) (.+) in this session$/u.exec(option.label);
+  if (match && option.kind === `${match[1]}_always`) {
+    const tool = ({ write_file: "ghi tệp", edit: "sửa tệp", multi_edit: "sửa tệp" } as Record<string, string>)[match[2]] ?? "công cụ này";
+    return `${match[1] === "allow" ? "Cho phép" : "Chặn"} ${tool} cả phiên`;
+  }
+  return permissionPreviewText(option.label, 160);
+}
+
+export function permissionOptionScope(option: PermissionOption): string {
+  const { kind } = option;
   if (kind === "allow_once" || kind === "reject_once") return "Chỉ lần này";
   if (kind === "allow_always" || kind === "reject_always") {
-    return "Lâu dài · chưa rõ phạm vi";
+    if (/^Always (allow|reject) .+ in this session$/u.test(option.label)) return "Công cụ này · phiên hiện tại";
+    return "Phạm vi do agent quyết định";
   }
   return "Chưa rõ phạm vi";
 }
