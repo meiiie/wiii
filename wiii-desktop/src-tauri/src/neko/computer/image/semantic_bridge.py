@@ -57,7 +57,7 @@ REALTIME_CLOCK_DIR = "/tmp/wiii-computer-clock"
 REALTIME_CLOCK_WATCHDOG_MS = 30_000
 REALTIME_CLOCK_RESUME_GRACE_SECONDS = 0.35
 REALTIME_CLOCK_SETTLE_SECONDS = 0.08
-CONTINUATION_SECRET_PATH = "/run/secrets/wiii-vnc-password"
+CONTINUATION_SECRET_PATH = "/tmp/wiii-secrets/vnc-password"
 FORM_CONTROL_ROLES = {
     "button",
     "checkbox",

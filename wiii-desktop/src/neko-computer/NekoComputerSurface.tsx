@@ -210,7 +210,7 @@ function NekoComputerSurfaceComponent({
 
   useEffect(() => {
     setViewerState("loading");
-    if (mode !== "computer" || !environment?.attachUrl || !viewerOrigin) return;
+    if (mode === "terminal" || !environment?.attachUrl || !viewerOrigin) return;
     const onMessage = (event: MessageEvent) => {
       if (event.origin !== viewerOrigin) return;
       if (event.source !== viewerFrameRef.current?.contentWindow) return;
