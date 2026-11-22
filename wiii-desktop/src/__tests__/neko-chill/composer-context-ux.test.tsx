@@ -150,6 +150,19 @@ describe("composer context and keyboard UX", () => {
     fireEvent.click(send);
     expect(view.props.onSend).toHaveBeenCalledOnce();
   });
+
+  it("dismisses hovered Send help with Escape while focus stays in the draft", () => {
+    const { props } = mount();
+    const input = screen.getByTestId("neko-composer-input") as HTMLTextAreaElement;
+    act(() => input.focus());
+    const send = screen.getByTestId("neko-send");
+    fireEvent.mouseEnter(send.parentElement!);
+    expect(screen.getByRole("tooltip")).toBeTruthy();
+    fireEvent.keyDown(input, { key: "Escape" });
+    expect(screen.queryByRole("tooltip")).toBeNull();
+    expect(document.activeElement).toBe(input);
+    expect(props.onSend).not.toHaveBeenCalled();
+  });
   it.each(["streaming", "dispatching"] as const)("allows drafting during %s without submitting or cancelling", status => {
     const props = { session: { ...session, status }, disabled: true, streaming: true,
       onSend: vi.fn(), onCancel: vi.fn(), onSetConfigOption: vi.fn(), onClientCommand: vi.fn() };

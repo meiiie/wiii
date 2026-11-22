@@ -147,6 +147,18 @@ function ComposerSendButton({ disabled, submitting, queueAllowed, busy, tooltip,
   const [open, setOpen] = useState(false);
   const tooltipId = useId();
   useEffect(() => setOpen(false), [disabled, tooltip]);
+  useEffect(() => {
+    if (!open) return;
+    // Hover help also needs Escape when focus remains in the draft.
+    const dismiss = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      event.preventDefault();
+      event.stopPropagation();
+      setOpen(false);
+    };
+    window.addEventListener("keydown", dismiss, true);
+    return () => window.removeEventListener("keydown", dismiss, true);
+  }, [open]);
 
   return (
     <span
@@ -158,13 +170,6 @@ function ComposerSendButton({ disabled, submitting, queueAllowed, busy, tooltip,
       onFocus={() => setOpen(true)}
       onBlur={(event) => {
         if (!event.currentTarget.contains(event.relatedTarget)) setOpen(false);
-      }}
-      onKeyDown={(event) => {
-        if (event.key === "Escape" && open) {
-          event.preventDefault();
-          event.stopPropagation();
-          setOpen(false);
-        }
       }}
     >
       {open && (
