@@ -121,7 +121,7 @@ export const NekoPromptRail = memo(function NekoPromptRail({
         if (!event.currentTarget.contains(event.relatedTarget)) setOpen(false);
       }}>
       <button ref={triggerRef} type="button" aria-expanded={open} aria-controls={panelId}
-        className="flex h-7 items-center gap-1.5 rounded-md px-2 text-[11px] text-[var(--nk-text-3)] hover:bg-[var(--nk-overlay)] focus-visible:v3-outline-none focus-visible:ring-2 focus-visible:ring-[var(--nk-focus-soft)]"
+        className="flex h-7 items-center gap-1.5 rounded-md px-2 text-[11px] text-[var(--nk-text-3)] hover:bg-[var(--nk-overlay)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--nk-text-3)]"
         onClick={() => setOpen(current => !current)}
         onKeyDown={(event) => {
           if (event.key !== "ArrowDown") return;
@@ -135,7 +135,7 @@ export const NekoPromptRail = memo(function NekoPromptRail({
         <ChevronDown aria-hidden="true" className={`h-3 w-3 ${open ? "rotate-180" : ""}`} />
       </button>
       {open && (
-        <div id={panelId} className="nk-scroll-surface absolute right-5 top-full w-[min(360px,calc(100%-2.5rem))] overflow-y-auto rounded-xl border border-[var(--nk-border-strong)] bg-[var(--nk-composer)] p-1.5 shadow-lg"
+        <div id={panelId} className="nk-scroll-surface absolute right-5 top-full w-[min(360px,calc(100%_-_2.5rem))] overflow-y-auto rounded-xl border border-[var(--nk-border-strong)] bg-[var(--nk-composer)] p-1.5 shadow-lg"
           style={{ maxHeight: panelHeight }}>
           <ol className="space-y-1">
             {landmarks.map((landmark, index) => (
@@ -145,7 +145,7 @@ export const NekoPromptRail = memo(function NekoPromptRail({
                   else buttonsRef.current.delete(landmark.id);
                 }} type="button" aria-label={`Đi tới lời nhắn ${index + 1}: ${landmark.title}`}
                   aria-current={activeId === landmark.id ? "location" : undefined}
-                  className="flex min-h-9 w-full items-start gap-2 rounded-lg px-2 py-2 text-left text-[11.5px] leading-[18px] text-[var(--nk-text-2)] hover:bg-[var(--nk-overlay)] focus-visible:bg-[var(--nk-overlay)] focus-visible:v3-outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[var(--nk-focus-soft)] aria-[current=location]:bg-[var(--nk-inset)]"
+                  className="flex min-h-9 w-full items-start gap-2 rounded-lg px-2 py-2 text-left text-[11.5px] leading-[18px] text-[var(--nk-text-2)] hover:bg-[var(--nk-overlay)] focus-visible:bg-[var(--nk-overlay)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[var(--nk-text-3)] aria-[current=location]:bg-[var(--nk-inset)]"
                   onKeyDown={(event) => {
                     const next = event.key === "ArrowDown" ? Math.min(index + 1, landmarks.length - 1)
                       : event.key === "ArrowUp" ? Math.max(index - 1, 0)
