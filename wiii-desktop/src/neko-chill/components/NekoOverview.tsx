@@ -167,7 +167,7 @@ export function NekoOverview({
             </button>
             <button type="button" className="nk-home-action" onClick={projectCount === 0 ? onCreateProject ?? onNewSession : onNewSession} data-testid={projectCount === 0 ? "overview-create-first-project" : "overview-new-session"}>
               <span className="nk-home-action-icon"><FolderPlus aria-hidden="true" size={20} /></span>
-              <span className="min-w-0 flex-1 text-[14px] font-medium">{projectCount === 0 ? "Tạo Project" : "Chat trong dự án"}</span>
+              <span className="min-w-0 flex-1 text-[14px] font-medium">{projectCount === 0 ? "Tạo dự án" : "Chat trong dự án"}</span>
               <ArrowUpRight aria-hidden="true" size={16} className="text-[var(--nk-text-3)]" />
             </button>
           </div>
@@ -175,7 +175,7 @@ export function NekoOverview({
         </div>
 
         {recentProjects.length && onOpenProject ? <section className="mt-9" aria-label="Dự án gần đây">
-          <div className="mb-3 flex items-center justify-between"><h2 className="text-[12px] font-medium text-[var(--nk-text-3)]">Dự án của bạn</h2><button type="button" onClick={onCreateProject} className="nk-chrome-button inline-flex items-center gap-1 rounded-md px-2 py-1 text-[11px] text-[var(--nk-text-2)]"><Plus size={13} aria-hidden="true" />Tạo Project</button></div>
+          <div className="mb-3 flex items-center justify-between"><h2 className="text-[12px] font-medium text-[var(--nk-text-3)]">Dự án của bạn</h2><button type="button" onClick={onCreateProject} className="nk-chrome-button inline-flex items-center gap-1 rounded-md px-2 py-1 text-[11px] text-[var(--nk-text-2)]"><Plus size={13} aria-hidden="true" />Tạo dự án</button></div>
           <div className="nk-project-shortcuts grid gap-2">{recentProjects.map((project) => <button key={project.id} type="button" className="nk-project-shortcut" onClick={() => onOpenProject(project.id)}>
             <Folder size={17} aria-hidden="true" className="shrink-0 text-[var(--nk-text-3)]" /><span className="min-w-0 flex-1"><strong className="block truncate text-[12.5px] font-medium">{project.name}</strong><span className="mt-0.5 block truncate text-[11px] text-[var(--nk-text-3)]">{project.roots[0]?.path}</span></span><ArrowUpRight size={14} aria-hidden="true" className="shrink-0 text-[var(--nk-text-3)]" />
           </button>)}</div>
