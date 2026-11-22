@@ -262,9 +262,18 @@ async function main() {
 
     log("approving the permission request");
     await element(driver, '[data-testid="permission-card"]', "permission card", 60_000);
-    await waitText(driver, "write_file", "write_file permission preview");
+    await until(async () => (await driver.execute(`
+      return document.querySelector('[data-testid="permission-card"] [aria-label="Nội dung mới"]')?.textContent;
+    `)) === APPROVED_CONTENT, "exact pending write content");
+    const choices = await driver.execute(`
+      return [...document.querySelectorAll('[data-testid="permission-card"] button')].map(button => button.textContent.trim());
+    `);
+    if (JSON.stringify(choices) !== JSON.stringify(["Từ chối", "Chặn ghi tệp cả phiên", "Cho phép", "Cho phép ghi tệp cả phiên"])) {
+      throw new Error(`unexpected permission choices: ${JSON.stringify(choices)}`);
+    }
+    if (existsSync(path.join(project, APPROVED_FILE))) throw new Error("file was written before permission approval");
     await capture(driver, "permission-card");
-    await driver.click(await elementWithText(driver, '[data-testid="permission-card"] button', "Allow once"));
+    await driver.click(await elementWithText(driver, '[data-testid="permission-card"] button', "Cho phép"));
     await waitText(driver, MARKERS.permissionDone, "answer after approval", 60_000);
     const written = path.join(project, APPROVED_FILE);
     await until(() => existsSync(written), "approved file on disk");
