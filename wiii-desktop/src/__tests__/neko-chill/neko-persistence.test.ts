@@ -631,6 +631,7 @@ describe("neko-chill persistence", () => {
   async function restoreOrphan() {
     const id = await useNekoSessionStore.getState().createSession(AGENT, WORKSPACE);
     await useNekoSessionStore.getState().sendPrompt("original read-only turn");
+    const provider = useNekoSessionStore.getState().sessions[id].runtime!;
     await flushDebounce();
     useNekoSessionStore.setState({ sessions: {}, activeSessionId: null, hydrated: false });
     _clearLiveDriversForTests();
@@ -643,7 +644,7 @@ describe("neko-chill persistence", () => {
     const records = [native];
     nativeControl.listSessions.mockImplementation(async (runId?: string) => records.filter(record => !runId || runId === record.runId));
     await useNekoSessionStore.getState().hydrate();
-    return { id, native, records, stop: () => Object.assign(native, { state: "cancelled", operationPhase: "completed" }) };
+    return { id, native, records, provider, stop: () => Object.assign(native, { state: "cancelled", operationPhase: "completed" }) };
   }
 
   it("stops an orphan and enables the same transcript/backend without auto-sending", async () => {
@@ -657,6 +658,7 @@ describe("neko-chill persistence", () => {
     expect(restored.closePending).toBe(false);
     expect(restored.backendSessionId).toBe(before.backendSessionId);
     expect(restored.messages).toEqual(before.messages);
+    expect(JSON.stringify([...storage.values()])).not.toContain("nativeRecoveryRequired");
     expect(spawned).toHaveLength(1);
     expect(nativeControl.cancelUnresolvedStarts).toHaveBeenCalledExactlyOnceWith(id, { taskId: `legacy-local/task/${id}`, agentSessionIds: ["orphan"] });
     await useNekoSessionStore.getState().sendPromptToSession(id, "an explicit new user turn");
@@ -735,6 +737,20 @@ describe("neko-chill persistence", () => {
     await useNekoSessionStore.getState().recoverSession(id);
     expect(nativeControl.cancelUnresolvedStarts).not.toHaveBeenCalled();
     expect(useNekoSessionStore.getState().sessions[id].status).toBe("error");
+  });
+
+  it("does not stop a native execution still owned by another live view", async () => {
+    const { id, provider } = await restoreOrphan();
+    useNekoSessionStore.setState(state => {
+      state.sessions["visible-other"] = { ...state.sessions[id], id: "visible-other", runtime: {
+        ...provider, sessionId: "visible-other", providerCapabilities: { ...provider.providerCapabilities!,
+          extensions: { nativeAgentSessionId: "orphan", nativeRunId: "orphan-run" } },
+      } };
+    });
+    await useNekoSessionStore.getState().recoverSession(id);
+    expect(nativeControl.cancelUnresolvedStarts).not.toHaveBeenCalled();
+    expect(useNekoSessionStore.getState().sessions[id].status).toBe("error");
+    expect(spawned).toHaveLength(1);
   });
 
   it("reconciles every native run so a newer terminal run cannot hide an older uncertain process", async () => {
