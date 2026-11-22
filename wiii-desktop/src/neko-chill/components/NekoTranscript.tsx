@@ -3,7 +3,7 @@
  * centered column, quiet thinking rail, dot-status tool rows, shared
  * MarkdownRenderer for answers, with measured row virtualization for long sessions.
  */
-import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { ArrowDown, BookOpen, ChevronRight, Command, FolderGit2 } from "lucide-react";
 import { NEKO_STARTER_PROMPTS } from "../starter-prompts";
@@ -19,7 +19,7 @@ import { getSessionControlNotices, getStoppedPrompt, workspaceIsolationLabel, ty
 import { PermissionCard } from "./PermissionCard";
 import { NekoPromptRail, type NekoPromptLandmark } from "./NekoPromptRail";
 import { nativeSessionNeedsRecovery } from "../stores/session-native-recovery";
-import { captureTranscriptReadingAnchor, restoreTranscriptReadingAnchor } from "../transcript-reading-anchor";
+import { captureTranscriptReadingAnchor, restoreTranscriptReadingAnchor, captureTranscriptReadingBookmark, restoreTranscriptReadingBookmark, type TranscriptReadingPosition } from "../transcript-reading-anchor";
 
 export const NEKO_TRANSCRIPT_VIRTUALIZATION_THRESHOLD = 50;
 
@@ -402,6 +402,7 @@ interface NekoTranscriptProps {
   onInsertPrompt: (text: string) => void;
   onRecover?: () => void;
   onRetry?: (eventId: string) => Promise<void>;
+  readingPositions?: Map<string, TranscriptReadingPosition>;
 }
 
 export function NekoTranscript({
@@ -410,6 +411,7 @@ export function NekoTranscript({
   onInsertPrompt,
   onRecover,
   onRetry,
+  readingPositions,
 }: NekoTranscriptProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
@@ -419,10 +421,14 @@ export function NekoTranscript({
   const pendingPromptFocusRef = useRef<{ sessionId: string; messageId: string } | null>(null);
   const messagesRef = useRef(session.messages);
   messagesRef.current = session.messages;
-  const [followingTail, setFollowingTail] = useState(true);
-  const followingTailRef = useRef(true);
+  const [followingTail, setFollowingTail] = useState(() => readingPositions?.get(session.id)?.followingTail ?? true);
+  const followingTailRef = useRef(followingTail);
+  const pendingReadingBookmarkRef = useRef<TranscriptReadingPosition["bookmark"]>(null);
+  const pendingVirtualFallbackRef = useRef<number | null>(null);
+  const restoredReadingTopRef = useRef<number | null>(null);
   const messageCount = session.messages.length;
   const lastMessage = session.messages[messageCount - 1];
+  const previousLastMessageRef = useRef(lastMessage?.id);
   const lastBlockCount = lastMessage?.blocks?.length ?? 0;
   const useVirtual = shouldVirtualizeTranscript(messageCount);
   const promptRailMessages = useMemo(
@@ -447,6 +453,7 @@ export function NekoTranscript({
     overscan: 4,
     gap: 4,
     enabled: useVirtual,
+    initialOffset: readingPositions?.get(session.id)?.scrollTop ?? 0,
   });
 
   const measureVirtualRow = useCallback((node: HTMLDivElement | null) => {
@@ -466,9 +473,38 @@ export function NekoTranscript({
   }, [virtualizer]);
 
   const updateFollowingTail = useCallback((next: boolean) => {
+    if (next) {
+      pendingReadingBookmarkRef.current = null;
+      pendingVirtualFallbackRef.current = null;
+      restoredReadingTopRef.current = null;
+    }
     if (followingTailRef.current === next) return;
     followingTailRef.current = next;
     setFollowingTail(next);
+    const saved = readingPositions?.get(session.id);
+    if (saved) readingPositions?.set(session.id, { ...saved, followingTail: next });
+  }, [readingPositions, session.id]);
+
+  const restorePendingReadingPosition = useCallback(() => {
+    const viewport = scrollRef.current;
+    const bookmark = pendingReadingBookmarkRef.current;
+    if (!viewport || !bookmark) return false;
+    if (!restoreTranscriptReadingBookmark(viewport, bookmark)) {
+      // Seeking a virtual row is only bootstrap. Once it mounts, an invalid
+      // bookmark must leave the reader at the cached offset, not the row start.
+      if (pendingVirtualFallbackRef.current !== null
+        && Array.from(viewport.querySelectorAll<HTMLElement>("[data-neko-message-id]"))
+          .some((row) => row.dataset.nekoMessageId === bookmark.messageId)) {
+        viewport.scrollTop = pendingVirtualFallbackRef.current;
+        restoredReadingTopRef.current = viewport.scrollTop;
+        pendingVirtualFallbackRef.current = null;
+      }
+      return false;
+    }
+    pendingReadingBookmarkRef.current = null;
+    pendingVirtualFallbackRef.current = null;
+    restoredReadingTopRef.current = viewport.scrollTop;
+    return true;
   }, []);
 
   const scrollToLatest = useCallback(
@@ -530,14 +566,35 @@ export function NekoTranscript({
     return viewport.scrollTop + targetBounds.top - viewportBounds.top;
   }, [useVirtual, virtualizer]);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     pendingPromptFocusRef.current = null;
     automaticScrollTopRef.current = null;
-    updateFollowingTail(true);
-  }, [session.id, updateFollowingTail]);
+    pendingVirtualFallbackRef.current = null;
+    const saved = readingPositions?.get(session.id);
+    updateFollowingTail(saved?.followingTail ?? true);
+    pendingReadingBookmarkRef.current = saved?.followingTail === false ? saved.bookmark : null;
+    if (saved && !saved.followingTail && scrollRef.current) {
+      scrollRef.current.scrollTop = saved.scrollTop;
+      if (useVirtual && saved.bookmark) {
+        const index = messagesRef.current.findIndex(({ id }) => id === saved.bookmark?.messageId);
+        if (index >= 0) {
+          pendingVirtualFallbackRef.current = saved.scrollTop;
+          virtualizer.scrollToIndex(index, { align: "start" });
+        }
+      }
+      restorePendingReadingPosition();
+      restoredReadingTopRef.current = scrollRef.current.scrollTop;
+    }
+    previousLastMessageRef.current = messagesRef.current[messagesRef.current.length - 1]?.id;
+  }, [session.id, readingPositions, restorePendingReadingPosition, updateFollowingTail, useVirtual, virtualizer]);
+
+  // Virtual rows and delayed Markdown can mount after the initial restoration.
+  useLayoutEffect(() => { restorePendingReadingPosition(); });
 
   useEffect(() => {
-    if (lastMessage?.role === "user") updateFollowingTail(true);
+    const changed = previousLastMessageRef.current !== lastMessage?.id;
+    previousLastMessageRef.current = lastMessage?.id;
+    if (changed && lastMessage?.role === "user") updateFollowingTail(true);
   }, [lastMessage?.id, lastMessage?.role, updateFollowingTail]);
 
   const scheduleFollow = useCallback(() => {
@@ -557,25 +614,36 @@ export function NekoTranscript({
     let anchor: ReturnType<typeof captureTranscriptReadingAnchor> = null;
     let restoredScrollTop: number | null = null;
     const rememberReadingPosition = () => {
+      if (pendingReadingBookmarkRef.current) return;
       if (followingTailRef.current) anchor = null;
       // A reflow can emit scroll before ResizeObserver. Keep the pre-resize
       // text position until it has been restored, rather than caching the jump.
       else if (width === viewport.clientWidth) anchor = captureTranscriptReadingAnchor(viewport);
+      if (width === viewport.clientWidth) readingPositions?.set(session.id, {
+        followingTail: followingTailRef.current,
+        scrollTop: viewport.scrollTop,
+        bookmark: followingTailRef.current ? null : captureTranscriptReadingBookmark(viewport, anchor),
+      });
     };
     const onScroll = () => {
       // Reflow may clamp scrollTop to the new bottom. That is not the reader
       // choosing to resume tail-following; restore their text position first.
       if (width !== viewport.clientWidth) return;
+      if (restoredReadingTopRef.current !== null && Math.abs(viewport.scrollTop - restoredReadingTopRef.current) < 1) return;
       if (restoredScrollTop !== null && Math.abs(viewport.scrollTop - restoredScrollTop) < 1) return;
       // A requested follow can emit scroll after another streaming chunk has
       // grown the content. That old position is not the reader scrolling away.
       if (followingTailRef.current && automaticScrollTopRef.current !== null
         && Math.abs(viewport.scrollTop - automaticScrollTopRef.current) < 1) return;
       restoredScrollTop = null;
+      restoredReadingTopRef.current = null;
+      pendingReadingBookmarkRef.current = null;
+      pendingVirtualFallbackRef.current = null;
       updateFollowingTail(viewport.scrollHeight - viewport.scrollTop - viewport.clientHeight < 96);
       rememberReadingPosition();
     };
     const onResize = () => {
+      if (restorePendingReadingPosition()) anchor = captureTranscriptReadingAnchor(viewport);
       const restored = !followingTailRef.current && restoreTranscriptReadingAnchor(viewport, anchor);
       width = viewport.clientWidth;
       // Keep the same character across every frame of an animated resize.
@@ -595,7 +663,7 @@ export function NekoTranscript({
       if (followFrameRef.current !== null) cancelAnimationFrame(followFrameRef.current);
       followFrameRef.current = null;
     };
-  }, [session.id, scheduleFollow, updateFollowingTail]);
+  }, [session.id, scheduleFollow, updateFollowingTail, readingPositions, restorePendingReadingPosition]);
 
   // Message updates also cover environments without ResizeObserver. The observer
   // covers delayed Markdown/image layout and composer-induced viewport changes.
