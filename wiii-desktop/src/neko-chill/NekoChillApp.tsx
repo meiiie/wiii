@@ -40,6 +40,7 @@ import {
 import { NEKO_SESSION_STATUS_LABELS } from "./session-status";
 import { sessionStatusDotClass } from "./session-catalog";
 import { NekoTranscript } from "./components/NekoTranscript";
+import { getStoppedPrompt } from "./session-control-status";
 import { NekoComposer, nekoComposerTurnBusy } from "./components/NekoComposer";
 import { NekoOutbox } from "./components/NekoOutbox";
 import { enqueueSessionMessage, useNekoOutboxStore } from "./stores/neko-outbox-store";
@@ -388,6 +389,15 @@ function LiveNekoTranscript({
       onResolvePermission={onResolvePermission}
       onInsertPrompt={onInsertPrompt}
       onRecover={() => void recoverSession(sessionId)}
+      onRetry={async (eventId) => {
+        const state = useNekoSessionStore.getState();
+        const current = state.sessions[sessionId];
+        const prompt = current ? getStoppedPrompt(current) : null;
+        if (prompt?.eventId === eventId) {
+          // Use normal admission; never replace the draft or replay stored tools.
+          await state.sendPromptToSession(sessionId, prompt.text);
+        }
+      }}
     />
   );
 }

@@ -21,6 +21,7 @@ import {
 } from "@/neko-chill/stores/neko-session-store";
 import { useNekoWorkspaceStore } from "@/neko-chill/stores/neko-workspace-store";
 import { useNekoProjectStore } from "@/neko-chill/stores/neko-project-store";
+import { clearNekoComposerDraft, readNekoComposerDraft, writeNekoComposerDraft } from "@/neko-chill/composer-drafts";
 import { canChooseWorkspaceFolder, chooseWorkspaceFolder, createQuickChatWorkspace } from "@/neko-chill/workspace";
 
 vi.mock("@/neko-chill/workspace", async (importOriginal) => ({
@@ -426,6 +427,43 @@ describe("Neko Chill shell UI", () => {
     const jump = screen.getByRole("button", { name: "Đi tới tin nhắn mới nhất" });
     fireEvent.click(jump);
     expect(screen.queryByRole("button", { name: "Đi tới tin nhắn mới nhất" })).toBeNull();
+  });
+
+  it("retries the stopped input through normal targeted admission without sending or clearing a draft", async () => {
+    const savedSend = useNekoSessionStore.getState().sendPromptToSession;
+    let finish!: () => void;
+    const sendPromptToSession = vi.fn(() => new Promise<void>(resolve => { finish = resolve; }));
+    const session = makeSession("retry-session", "Stopped chat", { path: "C:/work/wiii", name: "wiii" }, {
+      status: "idle", statusDetail: undefined,
+      messages: [
+        { id: "original", role: "user", text: "Tin nhắn gốc" },
+        { id: "partial", role: "assistant", blocks: [{ id: "part", type: "answer", content: "Câu trả lời dở còn nguyên" }] },
+      ],
+      events: [
+        { v: 1, seq: 1, at: 1, eventId: "input", visibility: "model", data: { type: "model-input", source: "live", messageId: "original", text: "Tin nhắn gốc", providerInstanceId: "runtime", delivery: "staged" } },
+        { v: 1, seq: 2, at: 2, eventId: "prompt", visibility: "runtime", data: { type: "dispatch-invoked", action: "prompt", targetEventId: "input", providerInstanceId: "runtime" } },
+        { v: 1, seq: 3, at: 3, eventId: "stop", visibility: "runtime", data: { type: "runtime-command", action: "cancel", promptEventId: "input", providerInstanceId: "runtime", delivery: "staged" } },
+        { v: 1, seq: 4, at: 4, eventId: "cancel", visibility: "runtime", data: { type: "dispatch-invoked", action: "cancel", targetEventId: "stop", providerInstanceId: "runtime" } },
+        { v: 1, seq: 5, at: 5, eventId: "terminal", visibility: "runtime", data: { type: "turn-terminal", promptEventId: "input", providerInstanceId: "runtime", stopReason: "cancelled" } },
+      ],
+    });
+    const before = JSON.stringify(session);
+    writeNekoComposerDraft("session:retry-session", "Bản nháp khác\nGiữ nguyên tiếng Việt");
+    useNekoSessionStore.setState({ sessions: { [session.id]: session }, activeSessionId: session.id, sendPromptToSession });
+    const view = render(<NekoChillApp />);
+    const retry = screen.getByRole("button", { name: "Thử lại tin nhắn vừa dừng" });
+    expect(sendPromptToSession).not.toHaveBeenCalled();
+    fireEvent.click(retry); fireEvent.click(retry);
+    expect(sendPromptToSession).toHaveBeenCalledExactlyOnceWith(session.id, "Tin nhắn gốc");
+    expect((screen.getByTestId("neko-composer-input") as HTMLTextAreaElement).value).toBe("Bản nháp khác\nGiữ nguyên tiếng Việt");
+    expect(readNekoComposerDraft("session:retry-session")).toBe("Bản nháp khác\nGiữ nguyên tiếng Việt");
+    expect(JSON.stringify(useNekoSessionStore.getState().sessions[session.id])).toBe(before);
+    await act(async () => { finish(); });
+    act(() => useNekoSessionStore.setState({ sessions: { [session.id]: { ...session, status: "dispatching" } } }));
+    expect(screen.queryByRole("button", { name: "Thử lại tin nhắn vừa dừng" })).toBeNull();
+    view.unmount();
+    clearNekoComposerDraft("session:retry-session");
+    useNekoSessionStore.setState({ sendPromptToSession: savedSend });
   });
 
   it("creates a session only after submitting from Project Home", async () => {

@@ -15,7 +15,7 @@ import type {
   ToolExecutionBlockData,
 } from "@/api/types/content-blocks";
 import type { NekoSession } from "../stores/neko-session-store";
-import { getSessionControlNotices, workspaceIsolationLabel, type SessionControlNotice } from "../session-control-status";
+import { getSessionControlNotices, getStoppedPrompt, workspaceIsolationLabel, type SessionControlNotice } from "../session-control-status";
 import { PermissionCard } from "./PermissionCard";
 import { NekoPromptRail, type NekoPromptLandmark } from "./NekoPromptRail";
 import { nativeSessionNeedsRecovery } from "../stores/session-native-recovery";
@@ -332,11 +332,39 @@ export function streamingActivityLabel(session: NekoSession): string {
   return `${session.agentName} đang viết…`;
 }
 
+function RetryStoppedTurn({ onRetry }: { onRetry: () => Promise<void> }) {
+  const pending = useRef(false);
+  const [state, setState] = useState<"idle" | "pending" | "failed">("idle");
+  const retry = async () => {
+    if (pending.current) return;
+    pending.current = true;
+    setState("pending");
+    try {
+      await onRetry();
+      setState("idle");
+    } catch {
+      setState("failed");
+    } finally {
+      pending.current = false;
+    }
+  };
+  return <div>
+    <button type="button" className="nk-chrome-button rounded-md border border-[var(--nk-border)] px-2 py-0.5 text-[var(--nk-text)] disabled:opacity-50"
+      aria-label="Thử lại tin nhắn vừa dừng" disabled={state === "pending"} aria-busy={state === "pending"}
+      onClick={() => void retry()}>
+      {state === "pending" ? "Đang gửi lại…" : "Thử lại"}
+    </button>
+    {state === "failed" ? <p role="alert">Chưa gửi lại được. Hãy thử lại.</p> : null}
+  </div>;
+}
+
 export function SessionControlStatus({
   session,
   notices = getSessionControlNotices(session),
   onRecover,
-}: { session: NekoSession; notices?: SessionControlNotice[]; onRecover?: () => void }) {
+  onRetry,
+}: { session: NekoSession; notices?: SessionControlNotice[]; onRecover?: () => void; onRetry?: (eventId: string) => Promise<void> }) {
+  const stoppedPrompt = onRetry ? getStoppedPrompt(session) : null;
   if (onRecover && nativeSessionNeedsRecovery(session)) {
     return <div role="status" aria-live="polite" className="my-2 rounded-xl border border-[var(--nk-border)] bg-[var(--nk-composer)] px-3 py-3 text-[12px] leading-5">
       <p>{session.closePending ? "Đang dừng phiên cũ…" : session.nativeRecoveryRequired ? session.statusDetail : "Cuộc trò chuyện cần nối lại."}</p>
@@ -360,6 +388,9 @@ export function SessionControlStatus({
     >
       {notice.tone === "quiet" ? <span aria-hidden="true" className="mt-2 h-1 w-1 shrink-0 rounded-full bg-[var(--nk-ghost)]" /> : null}
       <p className="whitespace-pre-wrap">{notice.text}</p>
+      {notice.kind === "cancel" && stoppedPrompt && onRetry ? (
+        <RetryStoppedTurn key={`${session.id}:${stoppedPrompt.eventId}`} onRetry={() => onRetry(stoppedPrompt.eventId)} />
+      ) : null}
       {notice.guidance ? <p className="mt-1 text-[var(--nk-text-3)]">{notice.guidance}</p> : null}
     </div>
   ));
@@ -370,6 +401,7 @@ interface NekoTranscriptProps {
   onResolvePermission: (optionId: string | null) => void;
   onInsertPrompt: (text: string) => void;
   onRecover?: () => void;
+  onRetry?: (eventId: string) => Promise<void>;
 }
 
 export function NekoTranscript({
@@ -377,6 +409,7 @@ export function NekoTranscript({
   onResolvePermission,
   onInsertPrompt,
   onRecover,
+  onRetry,
 }: NekoTranscriptProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
@@ -695,7 +728,13 @@ export function NekoTranscript({
             {streamingActivityLabel(session)}
           </p>
         ) : null}
-        <SessionControlStatus session={session} notices={controlNotices} onRecover={onRecover} />
+        <SessionControlStatus session={session} notices={controlNotices} onRecover={onRecover}
+          onRetry={onRetry ? async (eventId) => {
+            updateFollowingTail(true);
+            scrollToLatest();
+            scrollRef.current?.focus({ preventScroll: true });
+            await onRetry(eventId);
+          } : undefined} />
         <div ref={bottomRef} />
       </div>
       </div>
