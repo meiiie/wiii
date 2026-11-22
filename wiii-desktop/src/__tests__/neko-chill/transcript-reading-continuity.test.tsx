@@ -84,11 +84,29 @@ beforeEach(() => {
   Object.defineProperty(HTMLElement.prototype, "scrollIntoView", { configurable: true, value: scroll });
   vi.stubGlobal("matchMedia", () => ({ matches: false, addEventListener() {}, removeEventListener() {} }));
 });
-afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
+afterEach(() => { cleanup(); vi.restoreAllMocks(); vi.unstubAllGlobals(); });
 
 describe("Neko transcript reading continuity", () => {
   function readingFixture() {
     const view = mount();
+    const textRects = new WeakMap<Node, (range: Range) => DOMRect>();
+    const createRange = document.createRange.bind(document);
+    vi.spyOn(document, "createRange").mockImplementation(() => {
+      const range = createRange();
+      range.getBoundingClientRect = () => {
+        const node = range.startContainer;
+        const custom = textRects.get(node);
+        if (custom) return custom(range);
+        const rect = node.parentElement?.getBoundingClientRect() ?? new DOMRect();
+        if (node.nodeType === Node.TEXT_NODE && range.endOffset - range.startOffset === 1
+          && range.startOffset === (node.textContent?.length ?? 0) - 1) {
+          const height = Math.min(20, rect.height);
+          return { ...rect, top: rect.bottom - height, bottom: rect.bottom, height } as DOMRect;
+        }
+        return rect;
+      };
+      return range;
+    });
     let width = 500;
     let paragraphTop = 320;
     const paragraph = document.createElement("p");
@@ -102,7 +120,7 @@ describe("Neko transcript reading continuity", () => {
     };
     view.viewport.scrollTop = 300;
     fireEvent.scroll(view.viewport);
-    return { ...view, paragraph, reflow: (nextWidth: number, nextTop: number) => { width = nextWidth; paragraphTop = nextTop; } };
+    return { ...view, paragraph, textRects, reflow: (nextWidth: number, nextTop: number) => { width = nextWidth; paragraphTop = nextTop; } };
   }
   it("keeps the visible paragraph through wider and narrower transcript reflow", () => {
     const { viewport, paragraph, reflow } = readingFixture();
@@ -123,25 +141,33 @@ describe("Neko transcript reading continuity", () => {
     expect(viewport.scrollTop).toBe(220);
   });
   it("anchors the tall paragraph crossing the reading line, not the next closer heading", () => {
-    const { viewport, content, paragraph, reflow } = readingFixture();
+    const { viewport, content, paragraph, textRects, reflow } = readingFixture();
     let expanded = false;
+    paragraph.textContent = "x".repeat(119);
     paragraph.getBoundingClientRect = () => {
       const top = 200 - viewport.scrollTop;
-      const height = expanded ? 680 : 580;
+      const height = expanded ? 680 : 600;
       return { top, bottom: top + height, height } as DOMRect;
     };
+    textRects.set(paragraph.firstChild!, (range) => {
+      if (range.endOffset - range.startOffset > 1) return paragraph.getBoundingClientRect();
+      const offset = range.startOffset;
+      const line = expanded ? Math.floor(offset / 7) * 2 + (offset % 7 >= 4 ? 1 : 0) : Math.floor(offset / 4);
+      const top = paragraph.getBoundingClientRect().top + line * 20;
+      return { top, bottom: top + 20, height: 20 } as DOMRect;
+    });
     const next = document.createElement("h2");
     next.textContent = "Đoạn tiếp theo";
     next.getBoundingClientRect = () => {
-      const top = 100 + (expanded ? 800 : 700) - viewport.scrollTop;
+      const top = 100 + (expanded ? 800 : 720) - viewport.scrollTop;
       return { top, bottom: top + 30, height: 30 } as DOMRect;
     };
     content.append(next);
     resize(viewport);
     viewport.scrollTop = 600; fireEvent.scroll(viewport);
     expanded = true; reflow(750, 100); resize(viewport); paint();
-    expect(viewport.scrollTop).toBe(600);
-    expect(paragraph.getBoundingClientRect().top).toBe(-400);
+    expect(viewport.scrollTop).toBe(660); // same character; the heading moved 80px
+    expect(paragraph.getBoundingClientRect().top).toBe(-460);
     expect(scroll).not.toHaveBeenCalled();
   });
   it("does not restore a reading node removed by replacement or virtualization", () => {
@@ -176,6 +202,34 @@ describe("Neko transcript reading continuity", () => {
     expanded = true; reflow(750, 320); resize(viewport); paint();
     expect(viewport.scrollTop).toBe(380);
     expect(next.getBoundingClientRect().top).toBe(130);
+  });
+  it("keeps direct parent-list text even with a visible nested bullet", () => {
+    const { viewport, paragraph, textRects, reflow } = readingFixture();
+    const list = document.createElement("ul");
+    const parent = document.createElement("li");
+    const ownText = paragraph.firstChild!;
+    const nestedList = document.createElement("ul");
+    const nested = document.createElement("li");
+    nested.textContent = "Mục con";
+    nestedList.append(nested); parent.append(ownText, nestedList); list.append(parent);
+    paragraph.replaceWith(list);
+    let expanded = false;
+    parent.getBoundingClientRect = () => {
+      const top = 100 + (expanded ? 240 : 320) - viewport.scrollTop;
+      return { top, bottom: top + 300, height: 300 } as DOMRect;
+    };
+    textRects.set(ownText, () => {
+      const top = parent.getBoundingClientRect().top;
+      return { top, bottom: top + 20, height: 20 } as DOMRect;
+    });
+    nested.getBoundingClientRect = () => {
+      const top = 100 + (expanded ? 300 : 450) - viewport.scrollTop;
+      return { top, bottom: top + 20, height: 20 } as DOMRect;
+    };
+    resize(viewport); fireEvent.scroll(viewport);
+    expanded = true; reflow(750, 240); resize(viewport); paint();
+    expect(viewport.scrollTop).toBe(220);
+    expect(parent.getBoundingClientRect().top).toBe(120);
   });
   it("does not mistake reflow clamping for choosing to follow the tail", () => {
     const { viewport, paragraph, reflow } = readingFixture();
