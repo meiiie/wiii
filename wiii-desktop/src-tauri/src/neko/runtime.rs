@@ -928,7 +928,7 @@ impl NekoRuntime {
     }
 
     pub fn kill_all(&self, app: &AppHandle) {
-        let processes = {
+        let mut processes = {
             let _operation = lock(&self.inner.operations);
             // Starts release the lifecycle lock while probing providers. Mark
             // the authority closed before draining so a probe cannot spawn
@@ -938,9 +938,18 @@ impl NekoRuntime {
             let mut processes = lock(&self.inner.processes);
             processes.drain().collect::<Vec<_>>()
         };
-        for (agent_session_id, mut process) in processes {
+        for (_, process) in &mut processes {
+            let (disconnected, _) = sync_channel(0);
+            drop(std::mem::replace(&mut process.writer, disconnected));
+        }
+        let results = provider::shutdown_children(
+            &mut processes
+                .iter_mut()
+                .map(|(_, process)| &mut process.child)
+                .collect::<Vec<_>>(),
+        );
+        for ((agent_session_id, _process), termination) in processes.into_iter().zip(results) {
             let _operation = lock(&self.inner.operations);
-            let termination = kill_proc(&mut process);
             let fact = match termination {
                 Ok(()) => PendingTerminalFact {
                     next_state: RunState::Cancelled,

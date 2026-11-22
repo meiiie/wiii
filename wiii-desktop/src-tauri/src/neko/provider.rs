@@ -5,6 +5,8 @@ use std::fmt;
 use std::io;
 #[cfg(any(windows, target_os = "linux"))]
 use std::io::Read;
+#[cfg(target_os = "linux")]
+use std::os::fd::{AsRawFd, FromRawFd};
 use std::path::{Path, PathBuf};
 #[cfg(any(windows, target_os = "linux"))]
 use std::process::Stdio;
@@ -14,7 +16,6 @@ use std::sync::mpsc;
 #[cfg(any(windows, target_os = "linux"))]
 use std::thread;
 use std::time::Duration;
-#[cfg(any(windows, target_os = "linux"))]
 use std::time::Instant;
 
 #[cfg(windows)]
@@ -627,12 +628,16 @@ fn reap_child_before(child: &mut Child, deadline: Instant) -> io::Result<()> {
 
 #[cfg(windows)]
 pub(crate) fn terminate_child_tree(owned: &mut OwnedChild) -> io::Result<()> {
+    terminate_child_tree_before(owned, Instant::now() + PROCESS_TERMINATION_TIMEOUT)
+}
+
+#[cfg(windows)]
+fn terminate_child_tree_before(owned: &mut OwnedChild, deadline: Instant) -> io::Result<()> {
     use windows_sys::Win32::System::JobObjects::{
         JobObjectBasicAccountingInformation, QueryInformationJobObject, TerminateJobObject,
         JOBOBJECT_BASIC_ACCOUNTING_INFORMATION,
     };
 
-    let deadline = Instant::now() + PROCESS_TERMINATION_TIMEOUT;
     if unsafe { TerminateJobObject(owned.job.raw(), 1) } == 0 {
         return Err(io::Error::last_os_error());
     }
@@ -666,7 +671,11 @@ pub(crate) fn terminate_child_tree(owned: &mut OwnedChild) -> io::Result<()> {
 
 #[cfg(target_os = "linux")]
 pub(crate) fn terminate_child_tree(owned: &mut OwnedChild) -> io::Result<()> {
-    let deadline = Instant::now() + PROCESS_TERMINATION_TIMEOUT;
+    terminate_child_tree_before(owned, Instant::now() + PROCESS_TERMINATION_TIMEOUT)
+}
+
+#[cfg(target_os = "linux")]
+fn terminate_child_tree_before(owned: &mut OwnedChild, deadline: Instant) -> io::Result<()> {
     match owned.child.kill() {
         Ok(()) => {}
         Err(error) if error.kind() == io::ErrorKind::InvalidInput => {
@@ -679,6 +688,89 @@ pub(crate) fn terminate_child_tree(owned: &mut OwnedChild) -> io::Result<()> {
     // --as-pid-1, leftovers in that namespace are reaped by the kernel. Mark
     // kill-on-drop satisfied so Drop does not re-enter.
     owned.linux_kill_on_drop = false;
+    Ok(())
+}
+
+/// Application exit only: all providers share each grace period and final reap budget.
+pub(crate) fn shutdown_children(children: &mut [&mut OwnedChild]) -> Vec<io::Result<()>> {
+    for owned in children.iter_mut() {
+        drop(owned.child.stdin.take());
+    }
+    let wait = |children: &mut [&mut OwnedChild], deadline: Instant| {
+        while children
+            .iter_mut()
+            .any(|owned| !matches!(owned.child.try_wait(), Ok(Some(_))))
+        {
+            let remaining = deadline.saturating_duration_since(Instant::now());
+            if remaining.is_zero() {
+                break;
+            }
+            std::thread::sleep(remaining.min(Duration::from_millis(10)));
+        }
+    };
+    wait(children, Instant::now() + Duration::from_millis(1500));
+    #[cfg(unix)]
+    for owned in children.iter_mut() {
+        if matches!(owned.child.try_wait(), Ok(None)) {
+            let _ = signal_graceful_exit(owned);
+        }
+    }
+    wait(children, Instant::now() + Duration::from_millis(1500));
+    let deadline = Instant::now() + Duration::from_millis(500);
+    children
+        .iter_mut()
+        .map(|owned| {
+            #[cfg(any(windows, target_os = "linux"))]
+            {
+                terminate_child_tree_before(owned, deadline)
+            }
+            #[cfg(not(any(windows, target_os = "linux")))]
+            {
+                let _ = deadline;
+                terminate_child_tree(owned)
+            }
+        })
+        .collect()
+}
+
+#[cfg(target_os = "linux")]
+fn signal_graceful_exit(owned: &OwnedChild) -> io::Result<()> {
+    // --as-pid-1 execs Neko in the supervisor's direct child. Killing the
+    // supervisor instead triggers --die-with-parent's SIGKILL, not a graceful exit.
+    let children_path = format!("/proc/{0}/task/{0}/children", owned.child.id());
+    let children = std::fs::read_to_string(&children_path)?;
+    for pid in children.split_whitespace() {
+        let pid: i32 = pid.parse().map_err(io::Error::other)?;
+        // Pin identity before rechecking parentage so PID reuse cannot signal
+        // an unrelated process after the namespace init exits.
+        let fd = unsafe { libc::syscall(libc::SYS_pidfd_open, pid, 0) } as i32;
+        if fd < 0 {
+            continue;
+        }
+        let fd = unsafe { std::os::fd::OwnedFd::from_raw_fd(fd) };
+        if std::fs::read_to_string(&children_path)?
+            .split_whitespace()
+            .any(|current| current == pid.to_string())
+        {
+            unsafe {
+                libc::syscall(
+                    libc::SYS_pidfd_send_signal,
+                    fd.as_raw_fd(),
+                    libc::SIGTERM,
+                    std::ptr::null::<libc::siginfo_t>(),
+                    0,
+                );
+            }
+        }
+    }
+    Ok(())
+}
+
+#[cfg(all(unix, not(target_os = "linux")))]
+fn signal_graceful_exit(owned: &OwnedChild) -> io::Result<()> {
+    if unsafe { libc::kill(owned.child.id() as i32, libc::SIGTERM) } == -1 {
+        return Err(io::Error::last_os_error());
+    }
     Ok(())
 }
 
@@ -1207,6 +1299,71 @@ pub fn profiles(provider_id: &str, cwd: &str) -> Result<Vec<AgentProfile>, Strin
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[cfg(target_os = "linux")]
+    fn shutdown_fixture(script: &str) -> OwnedChild {
+        use std::io::BufRead;
+        let mut command = Command::new("sh");
+        command
+            .args(["-c", script])
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped());
+        let mut owned = spawn_owned(&mut command).expect("shutdown tests require working bwrap");
+        let mut ready = String::new();
+        std::io::BufReader::new(owned.child.stdout.take().unwrap())
+            .read_line(&mut ready)
+            .unwrap();
+        assert_eq!(ready, "ready\n");
+        owned
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn graceful_shutdown_stdin_eof_exits_without_force_kill() {
+        let mut child = shutdown_fixture("echo ready; cat >/dev/null; exit 0");
+        let start = Instant::now();
+        shutdown_children(&mut [&mut child]).remove(0).unwrap();
+        assert!(child.child.wait().unwrap().success());
+        assert!(start.elapsed() < Duration::from_secs(1));
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn graceful_shutdown_sigterm_reaches_neko_inside_bwrap() {
+        let marker = std::env::temp_dir().join(format!("wiii-term-{}", uuid::Uuid::new_v4()));
+        let mut child = shutdown_fixture(&format!(
+            "trap 'echo term > {}; exit 0' TERM; echo ready; while :; do :; done",
+            marker.display()
+        ));
+        shutdown_children(&mut [&mut child]).remove(0).unwrap();
+        assert!(child.child.wait().unwrap().success());
+        assert_eq!(std::fs::read_to_string(&marker).unwrap(), "term\n");
+        std::fs::remove_file(marker).unwrap();
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn graceful_shutdown_force_kills_survivors_with_shared_bound() {
+        use std::os::unix::process::ExitStatusExt;
+        let script = "trap '' TERM; echo ready; while :; do :; done";
+        let mut first = shutdown_fixture(script);
+        let mut second = shutdown_fixture(script);
+        let start = Instant::now();
+        for result in shutdown_children(&mut [&mut first, &mut second]) {
+            result.unwrap();
+        }
+        assert!(start.elapsed() >= Duration::from_secs(3));
+        assert!(start.elapsed() < Duration::from_secs(4));
+        assert_eq!(first.child.wait().unwrap().signal(), Some(libc::SIGKILL));
+        assert_eq!(second.child.wait().unwrap().signal(), Some(libc::SIGKILL));
+    }
+
+    #[test]
+    fn graceful_shutdown_empty_is_immediate() {
+        let start = Instant::now();
+        assert!(shutdown_children(&mut []).is_empty());
+        assert!(start.elapsed() < Duration::from_millis(100));
+    }
 
     #[cfg(windows)]
     const WINDOWS_FIXTURE_STARTUP_TIMEOUT: Duration = Duration::from_secs(15);
