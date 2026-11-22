@@ -248,7 +248,7 @@ async function main() {
     log("opening a project");
     await driver.click(await element(driver, '[data-testid="overview-create-first-project"], [data-testid="create-first-project"]'));
     await element(driver, '[data-testid="project-dialog"]');
-    await driver.click(await element(driver, '[data-testid="project-dialog-add-folder"]'));
+    await driver.click(await element(driver, '[data-testid="project-dialog-empty-folder"]'));
     await pickFolderInGtkChooser(project);
     await waitText(driver, project, "selected project folder");
     await capture(driver, "project-dialog");
