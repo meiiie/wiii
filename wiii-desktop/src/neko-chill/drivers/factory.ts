@@ -12,7 +12,7 @@ import type { Driver, DriverEventHandler } from "./types";
 import type { DetectedAgent } from "../stores/neko-agent-store";
 import { isAbsoluteWorkspacePath, type WorkspaceRef } from "../workspace";
 import { createComputerAgentBridge } from "@/neko-computer/agent-bridge";
-import { useAdeWorkStore } from "@/ade/store";
+import { legacyWorkState } from "@/neko/legacy-work-state";
 import {
   assertNekoTaskBindingCurrent,
   validateNekoTaskBinding,
@@ -73,13 +73,13 @@ export async function createDriverForAgent(
     if (typeof window === "undefined" || !("__TAURI_INTERNALS__" in window)) {
       throw new Error("Task scoped cần native Wiii để xác minh root vật lý; bản xem trước không có quyền này.");
     }
-    // Neko can be opened directly after a cold start without mounting Work.
-    // Await the serialized existing hydration before consulting its graph.
+    // Work has been removed. Retain its read-only scope/root proof only for
+    // existing scoped sessions; normal/manual launches never read the graph.
     // A missing/invalid graph still fails the fresh binding check; no spawn,
     // receipt rewrite or legacy fallback is allowed on hydration failure.
-    await useAdeWorkStore.getState().hydrate();
+    await legacyWorkState.getState().hydrate();
     readCurrentTaskBinding = () => {
-      const work = useAdeWorkStore.getState();
+      const work = legacyWorkState.getState();
       const task = work.graph.tasks.find((item) => item.id === launch.execution?.taskId);
       return {
         hydrated: work.hydrated,

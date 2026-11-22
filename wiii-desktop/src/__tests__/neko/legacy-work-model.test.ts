@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   validateAdeGraph,
   type AdeGraph,
-} from "@/ade/domain";
+} from "@/neko/legacy-work-model";
 
 function graph(): AdeGraph {
   return {

@@ -1,8 +1,9 @@
-import { loadStoreStrict, saveStoreStrict } from "@/lib/storage";
+/** Compatibility reader only. Never rewrite or delete a retired Work snapshot. */
+import { loadStoreStrict } from "@/lib/storage";
 import {
   validateAdeGraph,
   type AdeGraph,
-} from "./domain";
+} from "./legacy-work-model";
 
 const STORE = "wiii-ade-work.json";
 const SNAPSHOT_KEY = "snapshot";
@@ -140,21 +141,4 @@ export async function loadAdeWorkSnapshot(): Promise<AdeWorkSnapshot | null> {
   return parseAdeWorkSnapshot(
     await loadStoreStrict<unknown>(STORE, SNAPSHOT_KEY, undefined),
   );
-}
-
-export async function saveAdeWorkGraph(graph: AdeGraph): Promise<AdeWorkSnapshot> {
-  const diagnostics = validateAdeGraph(graph);
-  if (diagnostics.length > 0) {
-    const first = diagnostics[0];
-    throw new Error(
-      `Không thể lưu công việc Wiii không nhất quán: ${first.code} tại ${first.entityKind}/${first.entityId}.`,
-    );
-  }
-  const snapshot: AdeWorkSnapshot = {
-    v: SCHEMA_VERSION,
-    updatedAt: new Date().toISOString(),
-    graph,
-  };
-  await saveStoreStrict(STORE, SNAPSHOT_KEY, snapshot);
-  return snapshot;
 }
