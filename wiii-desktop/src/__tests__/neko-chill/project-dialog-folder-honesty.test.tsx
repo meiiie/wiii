@@ -84,7 +84,7 @@ describe("projectDialogPrimaryTitle", () => {
       saving: false,
       hasName: false,
       hasRoots: false,
-    })).toBe("Hãy đặt tên Project và thêm ít nhất một thư mục nguồn.");
+    })).toBe("Hãy đặt tên dự án và thêm ít nhất một thư mục nguồn.");
   });
 
   it("explains missing folder after name is set", () => {
@@ -93,7 +93,7 @@ describe("projectDialogPrimaryTitle", () => {
       saving: false,
       hasName: true,
       hasRoots: false,
-    })).toBe("Project cần ít nhất một thư mục nguồn.");
+    })).toBe("Dự án cần ít nhất một thư mục nguồn.");
   });
 
   it("returns the enabled create label when ready", () => {
@@ -102,7 +102,7 @@ describe("projectDialogPrimaryTitle", () => {
       saving: false,
       hasName: true,
       hasRoots: true,
-    })).toBe("Tạo Project");
+    })).toBe("Tạo dự án");
   });
 });
 
@@ -112,9 +112,9 @@ describe("ProjectDialog primary title wiring", () => {
     const primary = screen.getByTestId("project-dialog-primary");
     expect((primary as HTMLButtonElement).disabled).toBe(true);
     expect(primary.getAttribute("title")).toBe(
-      "Hãy đặt tên Project và thêm ít nhất một thư mục nguồn.",
+      "Hãy đặt tên dự án và thêm ít nhất một thư mục nguồn.",
     );
     fireEvent.change(screen.getByPlaceholderText(/Ví dụ/i), { target: { value: "Demo" } });
-    expect(primary.getAttribute("title")).toBe("Project cần ít nhất một thư mục nguồn.");
+    expect(primary.getAttribute("title")).toBe("Dự án cần ít nhất một thư mục nguồn.");
   });
 });

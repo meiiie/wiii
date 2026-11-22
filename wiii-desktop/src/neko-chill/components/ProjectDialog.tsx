@@ -23,11 +23,11 @@ export function projectDialogPrimaryTitle(args: {
   const missingName = !args.hasName;
   const missingRoots = !args.hasRoots;
   if (missingName && missingRoots) {
-    return "Hãy đặt tên Project và thêm ít nhất một thư mục nguồn.";
+    return "Hãy đặt tên dự án và thêm ít nhất một thư mục nguồn.";
   }
-  if (missingName) return "Hãy đặt tên cho Project.";
-  if (missingRoots) return "Project cần ít nhất một thư mục nguồn.";
-  return args.mode === "edit" ? "Lưu thay đổi" : "Tạo Project";
+  if (missingName) return "Hãy đặt tên cho dự án.";
+  if (missingRoots) return "Dự án cần ít nhất một thư mục nguồn.";
+  return args.mode === "edit" ? "Lưu thay đổi" : "Tạo dự án";
 }
 
 export function ProjectDialog({
@@ -93,11 +93,11 @@ export function ProjectDialog({
   const submit = async () => {
     if (saving) return;
     if (!name.trim()) {
-      setError("Hãy đặt tên cho Project.");
+      setError("Hãy đặt tên cho dự án.");
       return;
     }
     if (!roots.length) {
-      setError("Project cần ít nhất một thư mục nguồn.");
+      setError("Dự án cần ít nhất một thư mục nguồn.");
       return;
     }
     setSaving(true);
@@ -142,7 +142,7 @@ export function ProjectDialog({
         <header className="flex items-center justify-between gap-4">
           <div>
             <h1 id="project-dialog-title" className="text-[18px] font-semibold tracking-[-0.025em] text-[var(--nk-text)]">
-              {project ? "Chỉnh sửa Project" : "Tạo Project"}
+              {project ? "Chỉnh sửa dự án" : "Tạo dự án"}
             </h1>
             {!project && reason === "new-session" ? (
               <p className="mt-2 max-w-[420px] text-[12.5px] leading-5 text-[var(--nk-text-2)]" data-testid="project-required-hint">
@@ -160,7 +160,7 @@ export function ProjectDialog({
         </header>
 
         <label className="mt-5 block" htmlFor="project-name">
-          <span className="text-[13px] font-medium text-[var(--nk-text-2)]">Tên Project</span>
+          <span className="text-[13px] font-medium text-[var(--nk-text-2)]">Tên dự án</span>
           <div className="nk-input-field mt-2">
             <Folder aria-hidden="true" className="mx-3 h-4 w-4 shrink-0 text-[var(--nk-text-3)]" />
             <NekoInput
@@ -272,7 +272,7 @@ export function ProjectDialog({
             onClick={() => void submit()}
           >
             {saving ? <LoaderCircle aria-hidden="true" className="h-3.5 w-3.5 animate-spin" /> : null}
-            {project ? "Lưu thay đổi" : "Tạo Project"}
+            {project ? "Lưu thay đổi" : "Tạo dự án"}
           </NekoButton>
         </footer>
       </NekoDialogPanel>

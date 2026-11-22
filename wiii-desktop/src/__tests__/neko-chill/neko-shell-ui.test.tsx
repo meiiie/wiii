@@ -534,8 +534,8 @@ describe("Neko Chill shell UI", () => {
 
     render(<NekoChillApp />);
     fireEvent.click(screen.getByRole("button", { name: "Chỉnh sửa Project Wiii" }));
-    expect(screen.getByRole("dialog", { name: "Chỉnh sửa Project" })).toBeTruthy();
-    const name = screen.getByLabelText("Tên Project");
+    expect(screen.getByRole("dialog", { name: "Chỉnh sửa dự án" })).toBeTruthy();
+    const name = screen.getByLabelText("Tên dự án");
     fireEvent.change(name, { target: { value: "Wiii Desktop" } });
     fireEvent.click(screen.getByRole("button", { name: "Lưu thay đổi" }));
 
