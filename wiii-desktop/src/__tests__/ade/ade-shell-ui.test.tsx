@@ -344,8 +344,11 @@ describe("Wiii task-first desktop shell", () => {
     saveSession.mockRejectedValue(new Error("disk full"));
     await bindCompletedTurn();
     render(<WiiiAdeApp />);
-    await screen.findByText("Chưa lưu được kết quả lần chạy. Thử mở lại công việc.");
+    await screen.findByText("Chưa lưu được kết quả lần chạy.");
     expect(useAdeWorkStore.getState().graph.runs[0].state).toBe("running");
+    saveSession.mockResolvedValue(undefined);
+    fireEvent.click(screen.getByRole("button", { name: "Thử lại" }));
+    await screen.findByText("1 cần duyệt");
   });
 
   it("rechecks correlation after saving instead of finishing a newer prompt", async () => {

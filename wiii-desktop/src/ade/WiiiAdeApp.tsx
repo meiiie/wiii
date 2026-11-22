@@ -273,6 +273,8 @@ function WiiiAdeScreen({ active = true, onOpenManaged = () => {}, onOpenConnecti
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
   const [pendingLaunch, setPendingLaunch] = useState<NekoTaskLaunchRequest | null>(null);
   const [navigationError, setNavigationError] = useState<string | null>(null);
+  const [resultError, setResultError] = useState(false);
+  const [resultRetry, setResultRetry] = useState(0);
   const lifecycleSyncs = useRef(new Set<string>());
   const sessions = useNekoSessionStore((state) => state.sessions);
   const desktopChrome = typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
@@ -345,7 +347,7 @@ function WiiiAdeScreen({ active = true, onOpenManaged = () => {}, onOpenConnecti
           const nativeOutcome = deriveAdeOutcomeFromSessionEvents(current.events, execution.runId);
           await projectOutcome(execution.runId, nativeOutcome === "unknown_outcome" ? nativeOutcome : turnResult.outcome);
         }).catch(() => {
-          setNavigationError("Chưa lưu được kết quả lần chạy. Thử mở lại công việc.");
+          setResultError(true);
         }).finally(() => {
           lifecycleSyncs.current.delete(key);
         });
@@ -374,7 +376,7 @@ function WiiiAdeScreen({ active = true, onOpenManaged = () => {}, onOpenConnecti
         });
       }
     }
-  }, [graph.agentSessions, graph.runs, hydrated, sessions]);
+  }, [graph.agentSessions, graph.runs, hydrated, sessions, resultRetry]);
 
   const visibleTasks = useMemo(() => graph.tasks.filter((task) =>
     !selectedProjectId || task.projectId === selectedProjectId), [graph.tasks, selectedProjectId]);
@@ -476,9 +478,20 @@ function WiiiAdeScreen({ active = true, onOpenManaged = () => {}, onOpenConnecti
     setSurface("neko");
   };
 
+  const resultNotice = resultError ? (
+    <div role="status" className="fixed bottom-4 right-4 z-50 flex items-center gap-3 rounded-xl border border-[var(--nk-border)] bg-[var(--nk-composer)] px-4 py-3 text-[12px] shadow-lg">
+      <span>Chưa lưu được kết quả lần chạy.</span>
+      <button type="button" className="font-medium text-[var(--nk-accent)]" onClick={() => {
+        setResultError(false);
+        setResultRetry((value) => value + 1);
+      }}>Thử lại</button>
+    </div>
+  ) : null;
+
   if (surface === "neko") {
     return (
       <>
+        {resultNotice}
         <NekoChillApp
           active={active}
           onOpenManaged={onOpenManaged}
@@ -499,6 +512,7 @@ function WiiiAdeScreen({ active = true, onOpenManaged = () => {}, onOpenConnecti
 
   return (
     <div className="nk-root flex h-screen flex-col bg-[var(--nk-canvas)] text-[var(--nk-text)]" data-testid="wiii-ade-app">
+      {resultNotice}
       <TitleBar
         minimal
         leading={<span className="flex h-8 items-center gap-2 px-2.5 text-[13px] font-semibold"><WiiiMark size={17} /> Wiii</span>}
