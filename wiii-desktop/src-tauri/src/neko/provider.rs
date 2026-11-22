@@ -735,8 +735,9 @@ pub(crate) fn shutdown_children(children: &mut [&mut OwnedChild]) -> Vec<io::Res
 
 #[cfg(target_os = "linux")]
 fn signal_graceful_exit(owned: &OwnedChild) -> io::Result<()> {
-    // --as-pid-1 execs Neko in the supervisor's direct child. Killing the
-    // supervisor instead triggers --die-with-parent's SIGKILL, not a graceful exit.
+    // Linux OwnedChild is only constructed after attach_bwrap_supervisor succeeds;
+    // spawn_owned has no uncontained fallback. --as-pid-1 execs Neko in its direct
+    // child. Killing the supervisor triggers --die-with-parent's SIGKILL instead.
     let children_path = format!("/proc/{0}/task/{0}/children", owned.child.id());
     let children = std::fs::read_to_string(&children_path)?;
     for pid in children.split_whitespace() {

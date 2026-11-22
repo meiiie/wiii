@@ -1901,6 +1901,32 @@ fn bounded_error(error: &impl std::fmt::Display) -> String {
 mod tests {
     use super::*;
 
+    #[cfg(unix)]
+    #[test]
+    fn disconnecting_idle_writer_closes_child_stdin_promptly() {
+        let mut child = std::process::Command::new("sh")
+            .args(["-c", "cat >/dev/null"])
+            .stdin(Stdio::piped())
+            .spawn()
+            .unwrap();
+        let writer = spawn_writer(child.stdin.take().unwrap()).unwrap();
+        assert!(child.stdin.is_none());
+        drop(writer);
+        let deadline = std::time::Instant::now() + Duration::from_secs(1);
+        loop {
+            if let Some(status) = child.try_wait().unwrap() {
+                assert!(status.success());
+                break;
+            }
+            if std::time::Instant::now() >= deadline {
+                child.kill().unwrap();
+                child.wait().unwrap();
+                panic!("writer channel disconnect did not deliver EOF promptly");
+            }
+            std::thread::sleep(Duration::from_millis(10));
+        }
+    }
+
     fn runtime_test_path() -> std::path::PathBuf {
         std::env::temp_dir()
             .join(format!("wiii-runtime-{}", uuid::Uuid::new_v4()))
