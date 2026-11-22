@@ -336,6 +336,25 @@ describe("Neko transcript reading continuity", () => {
     const { viewport } = mount(); resize(viewport); paint();
     expect(scroll).toHaveBeenCalled();
   });
+  it("keeps following when an automatic scroll arrives after more content rendered", () => {
+    const { viewport, content } = mount();
+    // The prior frame reached the tail. Its scroll event is delivered only
+    // after another chunk has pushed the ending more than 96px further down.
+    Object.defineProperty(viewport, "scrollHeight", { configurable: true, value: 2000 });
+    fireEvent.scroll(viewport);
+    resize(content); paint();
+    expect(scroll).toHaveBeenCalledWith({ block: "end", behavior: "auto" });
+    expect(screen.queryByRole("button", { name: "Đi tới tin nhắn mới nhất" })).toBeNull();
+  });
+  it("still honors a reader scrolling away while the answer grows", () => {
+    const { viewport, content } = mount();
+    Object.defineProperty(viewport, "scrollHeight", { configurable: true, value: 2000 });
+    viewport.scrollTop = 1000;
+    fireEvent.scroll(viewport);
+    resize(content); paint();
+    expect(scroll).not.toHaveBeenCalled();
+    expect(screen.getByRole("button", { name: "Đi tới tin nhắn mới nhất" })).toBeTruthy();
+  });
   it("lets scrolling away cancel an already queued follow", () => {
     const { viewport, content } = mount(); resize(content);
     viewport.scrollTop = 100; fireEvent.scroll(viewport); paint();
