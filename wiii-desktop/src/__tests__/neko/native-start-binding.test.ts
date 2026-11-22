@@ -75,4 +75,21 @@ describe("native start result identity correlation", () => {
     const result = await getNekoControlClient().spawnProvider({ providerId: "neko", clientSessionId: "thread-legacy", workspacePath: "E:/Synthetic" });
     expect(result.canonicalWorkspacePath).toBeUndefined();
   });
+
+  it("cancels only selected orphan identities of the exact recovery Task", async () => {
+    const record = { agentSessionId: "selected", taskId: "work-task", runId: "work-run", environmentId: "env",
+      providerId: "neko", providerVersion: "test", workspacePath: "E:/Synthetic", state: "running",
+      operationPhase: "running", continuity: "active", pid: 1, createdAt: "2026-08-23T00:00:00Z", updatedAt: "2026-08-23T00:01:00Z" };
+    const records = [record, { ...record, agentSessionId: "unselected" }, { ...record, agentSessionId: "foreign", taskId: "foreign-task" }];
+    native.invoke.mockImplementation(async (command: string, payload: StartPayload) => {
+      if (command === "neko_control_session_list") return records;
+      if (command === "neko_control_session_cancel") return { agentSessionId: payload.request.agentSessionId, cancelled: true };
+      throw new Error(`Unexpected test command ${command}`);
+    });
+    const { getNekoControlClient } = await import("@/neko/control-client");
+    await expect(getNekoControlClient().cancelUnresolvedStarts("visible-thread", { taskId: "work-task", agentSessionIds: ["selected", "foreign"] })).resolves.toBe(1);
+    const cancellations = native.invoke.mock.calls.filter(([command]) => command === "neko_control_session_cancel");
+    expect(cancellations).toHaveLength(1);
+    expect(cancellations[0][1].request).toEqual({ requestId: "reconcile-retained-start-selected", agentSessionId: "selected", runId: "work-run" });
+  });
 });

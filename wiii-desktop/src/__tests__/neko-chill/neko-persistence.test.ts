@@ -628,6 +628,115 @@ describe("neko-chill persistence", () => {
     expect(useNekoSessionStore.getState().sessions[id].status).toBe("error");
   });
 
+  async function restoreOrphan() {
+    const id = await useNekoSessionStore.getState().createSession(AGENT, WORKSPACE);
+    await useNekoSessionStore.getState().sendPrompt("original read-only turn");
+    await flushDebounce();
+    useNekoSessionStore.setState({ sessions: {}, activeSessionId: null, hydrated: false });
+    _clearLiveDriversForTests();
+    const native = {
+      agentSessionId: "orphan", taskId: `legacy-local/task/${id}`, runId: "orphan-run",
+      environmentId: "orphan-env", providerId: "neko", providerVersion: "0.25.0",
+      workspacePath: WORKSPACE.path, state: "running", operationPhase: "running",
+      continuity: "active", pid: 1234, createdAt: "2026-08-23T00:00:00.000Z", updatedAt: "2026-08-23T00:01:00.000Z",
+    };
+    const records = [native];
+    nativeControl.listSessions.mockImplementation(async (runId?: string) => records.filter(record => !runId || runId === record.runId));
+    await useNekoSessionStore.getState().hydrate();
+    return { id, native, records, stop: () => Object.assign(native, { state: "cancelled", operationPhase: "completed" }) };
+  }
+
+  it("stops an orphan and enables the same transcript/backend without auto-sending", async () => {
+    const { id, stop } = await restoreOrphan();
+    const before = useNekoSessionStore.getState().sessions[id];
+    nativeControl.cancelUnresolvedStarts.mockImplementation(async () => { stop(); return 1; });
+    await useNekoSessionStore.getState().recoverSession(id);
+    const restored = useNekoSessionStore.getState().sessions[id];
+    expect(restored.status).toBe("exited");
+    expect(restored.nativeRecoveryRequired).toBe(false);
+    expect(restored.closePending).toBe(false);
+    expect(restored.backendSessionId).toBe(before.backendSessionId);
+    expect(restored.messages).toEqual(before.messages);
+    expect(spawned).toHaveLength(1);
+    expect(nativeControl.cancelUnresolvedStarts).toHaveBeenCalledExactlyOnceWith(id, { taskId: `legacy-local/task/${id}`, agentSessionIds: ["orphan"] });
+    await useNekoSessionStore.getState().sendPromptToSession(id, "an explicit new user turn");
+    expect(spawned).toHaveLength(2);
+    expect(launches.at(-1)?.backendSessionId).toBe(before.backendSessionId);
+  });
+
+  it("joins repeated recovery and blocks sends until native termination AND checkpoint save finish", async () => {
+    const { id, stop } = await restoreOrphan();
+    let releaseStop!: () => void;
+    const stopGate = new Promise<void>(resolve => { releaseStop = resolve; });
+    const stopEntered = new Promise<void>(resolve => {
+      nativeControl.cancelUnresolvedStarts.mockImplementation(async () => { resolve(); await stopGate; stop(); return 1; });
+    });
+    let releaseSave!: () => void;
+    strictWriteGate = new Promise<void>(resolve => { releaseSave = resolve; });
+    strictBlockedKey = `session:${id}`;
+    const saveEntered = new Promise<void>(resolve => { notifyStrictGateEntered = resolve; });
+    const first = useNekoSessionStore.getState().recoverSession(id);
+    await stopEntered;
+    const second = useNekoSessionStore.getState().recoverSession(id);
+    await useNekoSessionStore.getState().sendPromptToSession(id, "blocked during stop");
+    expect(spawned).toHaveLength(1);
+    expect(useNekoSessionStore.getState().sessions[id].closePending).toBe(true);
+    releaseStop();
+    await saveEntered;
+    await useNekoSessionStore.getState().sendPromptToSession(id, "blocked during checkpoint save");
+    expect(spawned).toHaveLength(1);
+    expect(useNekoSessionStore.getState().sessions[id].status).toBe("stopping");
+    releaseSave();
+    await Promise.all([first, second]);
+    expect(nativeControl.cancelUnresolvedStarts).toHaveBeenCalledTimes(1);
+    expect(useNekoSessionStore.getState().sessions[id].status).toBe("exited");
+  });
+
+  it.each(["rejected", "still-running", "unknown", "missing", "uncertain-continuity"])('keeps recovery retryable and sending locked after %s stop proof', async outcome => {
+    const { id, native, records, stop } = await restoreOrphan();
+    nativeControl.cancelUnresolvedStarts.mockImplementation(async () => {
+      if (outcome === "rejected") throw new Error("native cancellation failed");
+      if (outcome === "unknown") native.state = "unknown_outcome";
+      if (outcome === "missing") records.length = 0;
+      if (outcome === "uncertain-continuity") { stop(); native.continuity = "unknown_outcome"; }
+      return 1;
+    });
+    await useNekoSessionStore.getState().recoverSession(id);
+    const session = useNekoSessionStore.getState().sessions[id];
+    expect(session.status).toBe("error");
+    expect(session.nativeRecoveryRequired).toBe(true);
+    expect(session.closePending).toBe(false);
+    expect(session.statusDetail).not.toMatch(/journal|nhật ký|native|lifecycle/);
+    await useNekoSessionStore.getState().sendPromptToSession(id, "must not replace uncertain execution");
+    expect(spawned).toHaveLength(1);
+  });
+
+  it("retries a failed checkpoint save without another cancellation or lost replay cursor", async () => {
+    const { id, stop } = await restoreOrphan();
+    nativeControl.cancelUnresolvedStarts.mockImplementation(async () => { stop(); return 1; });
+    failTranscriptWrites = true;
+    await useNekoSessionStore.getState().recoverSession(id);
+    const failed = useNekoSessionStore.getState().sessions[id];
+    expect(failed.status).toBe("error");
+    expect(failed.nativeRecoveryRequired).toBe(true);
+    const events = failed.events;
+    await useNekoSessionStore.getState().sendPromptToSession(id, "blocked until checkpoint is durable");
+    expect(spawned).toHaveLength(1);
+    failTranscriptWrites = false;
+    await useNekoSessionStore.getState().recoverSession(id);
+    expect(useNekoSessionStore.getState().sessions[id].status).toBe("exited");
+    expect(useNekoSessionStore.getState().sessions[id].events).toEqual(events);
+    expect(nativeControl.cancelUnresolvedStarts).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not turn malformed task admission into permission to resume", async () => {
+    const { id } = await restoreOrphan();
+    useNekoSessionStore.setState(state => { state.sessions[id].taskScope = { state: "recovery-required" } as never; });
+    await useNekoSessionStore.getState().recoverSession(id);
+    expect(nativeControl.cancelUnresolvedStarts).not.toHaveBeenCalled();
+    expect(useNekoSessionStore.getState().sessions[id].status).toBe("error");
+  });
+
   it("reconciles every native run so a newer terminal run cannot hide an older uncertain process", async () => {
     const id = await useNekoSessionStore.getState().createSession(AGENT, WORKSPACE);
     await useNekoSessionStore.getState().sendPrompt("tạo lịch sử native");

@@ -392,6 +392,7 @@ function LiveNekoTranscript({
   onInsertPrompt: (text: string) => void;
 }) {
   const session = useNekoSessionStore((state) => state.sessions[sessionId]);
+  const recoverSession = useNekoSessionStore((state) => state.recoverSession);
   useLayoutEffect(() => {
     measureWiiiPerformance("wiii:session:ready", "wiii:session:switch-start");
   }, [sessionId]);
@@ -407,6 +408,7 @@ function LiveNekoTranscript({
       session={session}
       onResolvePermission={onResolvePermission}
       onInsertPrompt={onInsertPrompt}
+      onRecover={() => void recoverSession(sessionId)}
     />
   );
 }

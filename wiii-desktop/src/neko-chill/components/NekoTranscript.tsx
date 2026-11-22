@@ -18,6 +18,7 @@ import type { NekoSession } from "../stores/neko-session-store";
 import { getSessionControlNotices, workspaceIsolationLabel, type SessionControlNotice } from "../session-control-status";
 import { PermissionCard } from "./PermissionCard";
 import { NekoPromptRail, type NekoPromptLandmark } from "./NekoPromptRail";
+import { nativeSessionNeedsRecovery } from "../stores/session-native-recovery";
 
 export const NEKO_TRANSCRIPT_VIRTUALIZATION_THRESHOLD = 50;
 
@@ -357,7 +358,19 @@ export function streamingActivityLabel(session: NekoSession): string {
 export function SessionControlStatus({
   session,
   notices = getSessionControlNotices(session),
-}: { session: NekoSession; notices?: SessionControlNotice[] }) {
+  onRecover,
+}: { session: NekoSession; notices?: SessionControlNotice[]; onRecover?: () => void }) {
+  if (onRecover && nativeSessionNeedsRecovery(session)) {
+    return <div role="status" aria-live="polite" className="my-2 rounded-xl border border-[var(--nk-border)] bg-[var(--nk-composer)] px-3 py-3 text-[12px] leading-5">
+      <p>{session.closePending ? "Đang dừng phiên cũ…" : session.nativeRecoveryRequired ? session.statusDetail : "Cuộc trò chuyện cần nối lại."}</p>
+      <p className="mt-1 text-[var(--nk-text-3)]">Lịch sử và bản nháp được giữ lại.</p>
+      <button type="button" className="nk-chrome-button mt-2 rounded-md border border-[var(--nk-border)] px-3 py-1.5 disabled:opacity-50"
+        data-testid="neko-recover-session" disabled={session.closePending || session.deletePending}
+        aria-busy={session.closePending} onClick={onRecover}>
+        {session.closePending ? "Đang nối lại…" : "Dừng phiên cũ và tiếp tục"}
+      </button>
+    </div>;
+  }
   return notices.map((notice) => (
     <div
       key={notice.kind}
@@ -378,12 +391,14 @@ interface NekoTranscriptProps {
   session: NekoSession;
   onResolvePermission: (optionId: string | null) => void;
   onInsertPrompt: (text: string) => void;
+  onRecover?: () => void;
 }
 
 export function NekoTranscript({
   session,
   onResolvePermission,
   onInsertPrompt,
+  onRecover,
 }: NekoTranscriptProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
@@ -631,7 +646,7 @@ export function NekoTranscript({
             {streamingActivityLabel(session)}
           </p>
         ) : null}
-        <SessionControlStatus session={session} notices={controlNotices} />
+        <SessionControlStatus session={session} notices={controlNotices} onRecover={onRecover} />
         <div ref={bottomRef} />
       </div>
       </div>

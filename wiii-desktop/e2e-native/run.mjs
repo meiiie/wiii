@@ -306,6 +306,31 @@ async function main() {
       throw new Error("the queued follow-up reached the model after cancellation");
     }
 
+    log("recovering the same chat after a live WebView reload");
+    const recoveryDraft = "E2E_RECOVERY_DRAFT: respond briefly without changing files";
+    const composer = await element(driver, '[data-testid="neko-composer-input"]');
+    await driver.clear(composer);
+    await driver.type(composer, recoveryDraft);
+    await driver.call("POST", "/refresh", {});
+    const recover = await element(driver, '[data-testid="neko-recover-session"]', "same-chat recovery action", 60_000);
+    const lockedSend = await element(driver, '[data-testid="neko-send"]');
+    if (await driver.enabled(lockedSend)) throw new Error("reload enabled Send before orphan stop proof");
+    await driver.click(recover);
+    await until(() => driver.execute(`
+      const input = document.querySelector('[data-testid="neko-composer-input"]');
+      const send = document.querySelector('[data-testid="neko-send"]');
+      return input && !input.readOnly && input.value === arguments[0] && send && !send.disabled;`, [recoveryDraft]), "same chat usable with retained draft", 60_000);
+    if (model.requests.some(request => request.user.includes("E2E_RECOVERY_DRAFT"))) {
+      throw new Error("recovery automatically sent the retained draft");
+    }
+    await capture(driver, "same-chat-recovered-with-draft");
+    await driver.click(await element(driver, '[data-testid="neko-send"]'));
+    await waitText(driver, MARKERS.generic, "explicit follow-up after recovery", 60_000);
+    await until(async () => !(await driver.findAll('[data-testid="neko-cancel"]')).length, "recovered turn finished", 60_000);
+    if (model.requests.some(request => request.user.includes("E2E_QUEUED"))) {
+      throw new Error("recovery bypassed outbox review");
+    }
+
     log("restarting Wiii");
     await closeApp(driver);
     driver = await launch(base);
@@ -321,7 +346,10 @@ async function main() {
       return [...document.querySelectorAll('[data-testid="neko-outbox-row"] button[title]')]
         .some((node) => node.getAttribute("title") === arguments[0]);`, [QUEUED_TEXT]), "queued text after restart");
     // WebDriver ends the app without its graceful exit, so recovery must fail closed rather than resume.
-    await waitText(driver, "Chưa rõ kết quả lượt trước. Wiii không tự gửi lại.", "fail-closed recovery notice");
+    await element(driver, '[data-testid="neko-recover-session"]', "fail-closed recovery action");
+    if (await driver.enabled(await element(driver, '[data-testid="neko-send"]'))) {
+      throw new Error("hard restart enabled Send without native termination proof");
+    }
     const outboxText = await driver.execute("return document.querySelector('[data-testid=\"neko-outbox\"]').innerText;");
     await capture(driver, "restored-session-and-outbox");
     if (model.requests.some((request) => request.user.includes("E2E_QUEUED"))) {

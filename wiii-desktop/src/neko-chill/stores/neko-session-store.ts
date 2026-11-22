@@ -10,6 +10,7 @@ import { createSessionPromptActions } from "./session-prompt-actions";
 import { createSessionControlActions } from "./session-control-actions";
 import { createSessionLifecycleActions } from "./session-lifecycle-actions";
 import { createSessionEventActions } from "./session-event-actions";
+import { createSessionRecoveryActions } from "./session-recovery-actions";
 
 export type { NekoMessage, NekoSession, NekoSessionStatus } from "./session-store-types";
 
@@ -34,6 +35,7 @@ export const useNekoSessionStore = create<NekoSessionState>()(
       ...createSessionPromptActions(set, get, runtime),
       ...createSessionControlActions(set, get, runtime),
       ...createSessionLifecycleActions(set, get, runtime),
+      ...createSessionRecoveryActions(set, get, runtime),
       ...createSessionEventActions(set, get, runtime),
     };
   }),

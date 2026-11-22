@@ -69,6 +69,8 @@ export interface NekoSession {
   cancelPending: boolean;
   /** Lifecycle lock held through runtime teardown and terminal persistence. */
   closePending: boolean;
+  /** Ephemeral retry state; never permission to launch without native stop proof. */
+  nativeRecoveryRequired?: boolean;
   /** Lifecycle lock held from delete intent through durable deletion. */
   deletePending: boolean;
   /** Honest error text for the banner when status is error/exited. */
@@ -103,6 +105,8 @@ export interface NekoSessionState {
   setConfigOption: (optionId: string, value: string | boolean) => Promise<void>;
   /** End the live agent process but KEEP the transcript (persisted). */
   closeSession: (sessionId: string) => Promise<void>;
+  /** Stop a restored orphan, save its terminal proof, then enable this same chat. Never sends. */
+  recoverSession: (sessionId: string) => Promise<void>;
   /** Remove a session from state AND local storage. */
   deleteSession: (sessionId: string) => Promise<void>;
   setActiveSession: (sessionId: string | null) => void;

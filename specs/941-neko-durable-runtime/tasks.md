@@ -161,6 +161,17 @@
 
 ## Dependencies
 
+### Same-conversation recovery follow-up (#1050)
+
+- [x] T534 Scope user-requested orphan cancellation by Task and exact native
+  identity, preserving unscoped bootstrap cleanup and live-owner fences.
+- [x] T535 Serialize stop/replay/strict-save before enabling the same chat;
+  keep transcript/backend identity/draft and retry after failed stop or save.
+- [x] T536 Cover uncertainty, missing records, duplicate clicks, blocked sends,
+  scoped cancellation and actionable presentation with focused regressions.
+- [ ] T537 Verify native reload -> safe stop -> same-chat explicit reply, plus
+  paused outbox and hard-restart fences in the native harness.
+
 1. Phase 1 freezes semantics.
 2. Lifecycle and provider contracts precede SQLite/process work.
 3. Journal precedes side-effecting runtime commands.

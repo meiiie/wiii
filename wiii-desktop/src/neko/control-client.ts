@@ -128,8 +128,14 @@ export interface NekoControlClient {
   readEvents(streamId: string, afterSeq?: number, limit?: number): Promise<NekoControlReplayPage>;
   unresolvedStartSessionIds(): string[];
   reconcilableStartSessionIds(): Promise<string[]>;
-  cancelUnresolvedStarts(clientSessionId: string): Promise<number>;
+  cancelUnresolvedStarts(clientSessionId: string, scope?: NativeRecoveryScope): Promise<number>;
   spawnProvider(request: NekoProviderSpawnRequest): Promise<NekoSpawnedProvider>;
+}
+
+/** Exact orphan identities selected from the authoritative catalog by a user action. */
+export interface NativeRecoveryScope {
+  taskId: string;
+  agentSessionIds: readonly string[];
 }
 
 const MAX_PENDING_BOOTSTRAP_FRAMES = 256;
@@ -295,9 +301,10 @@ class TauriNekoControlClient implements NekoControlClient {
     }
   }
 
-  async cancelUnresolvedStarts(clientSessionId: string): Promise<number> {
+  async cancelUnresolvedStarts(clientSessionId: string, scope?: NativeRecoveryScope): Promise<number> {
     const retained = [...this.unresolvedStarts.entries()].filter(
-      ([, identity]) => identity.clientSessionId === clientSessionId,
+      ([, identity]) => identity.clientSessionId === clientSessionId &&
+        (!scope || scope.agentSessionIds.includes(identity.agentSessionId)),
     );
     const representedNativeSessions = new Set(
       retained.map(([, identity]) => identity.agentSessionId),
@@ -319,7 +326,8 @@ class TauriNekoControlClient implements NekoControlClient {
         : null;
       const durable = (await this.listSessions())
         .filter((session) => (
-          session.taskId === legacyExecution(clientSessionId).taskId &&
+          session.taskId === (scope?.taskId ?? legacyExecution(clientSessionId).taskId) &&
+          (!scope || scope.agentSessionIds.includes(session.agentSessionId)) &&
           (!expectedProviderId || session.providerId === expectedProviderId) &&
           !representedNativeSessions.has(session.agentSessionId) &&
           !NATIVE_TERMINAL_STATES.has(session.state)
