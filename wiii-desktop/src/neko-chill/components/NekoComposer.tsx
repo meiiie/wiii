@@ -424,7 +424,7 @@ function NekoComposerComponent({
           </div>
         ) : null}
 
-        <div className="nk-input-field relative rounded-[14px] border border-[var(--nk-border-strong)] bg-[var(--nk-composer)] p-3 shadow-[0_4px_18px_rgba(30,30,28,0.05)]" data-testid="neko-composer">
+        <div className="nk-input-field relative block rounded-[14px] border border-[var(--nk-border-strong)] bg-[var(--nk-composer)] p-3 shadow-[0_4px_18px_rgba(30,30,28,0.05)]" data-testid="neko-composer">
           <div className="mb-2 flex min-w-0 items-center gap-2 text-[11.5px] text-[var(--nk-text-3)]">
             {session.workspace ? (
               <button
