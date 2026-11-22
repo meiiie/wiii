@@ -317,6 +317,14 @@ async function main() {
     await driver.clear(composer);
     await driver.type(composer, recoveryDraft);
     await driver.call("POST", "/refresh", {});
+    // WebKit can select a pre-created auxiliary webview while main reloads.
+    // Reacquire the actual workbench, then reopen the existing chat if home
+    // is the restored surface. Never create a replacement conversation.
+    await focusMainWindow(driver);
+    await element(driver, '[data-testid="neko-recover-session"], [data-testid="neko-overview"]', "reloaded chat or home", 60_000);
+    if (await driver.execute('return Boolean(document.querySelector(\'[data-testid="neko-overview"]\'));')) {
+      await driver.click(await clickableWithText(driver, '[data-testid="neko-overview"] button', MARKERS.permission, "same saved chat after reload"));
+    }
     const recover = await element(driver, '[data-testid="neko-recover-session"]', "same-chat recovery action", 60_000);
     const lockedSend = await element(driver, '[data-testid="neko-send"]');
     if (await driver.enabled(lockedSend)) throw new Error("reload enabled Send before orphan stop proof");
