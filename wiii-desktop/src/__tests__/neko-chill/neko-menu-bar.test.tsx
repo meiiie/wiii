@@ -92,11 +92,7 @@ describe("application menu and local editing", () => {
     fireEvent.keyDown(document.activeElement!, { key: "ArrowRight" });
     fireEvent.keyDown(document.activeElement!, { key: "ArrowRight" });
     const tools = screen.getByRole("menuitemcheckbox", { name: /Công cụ dự án/ });
-    expect(tools.getAttribute("title")).toBe(
-      "Cần mở Project hoặc phiên có thư mục nguồn trước khi dùng công cụ dự án.",
-    );
-    expect(screen.getByTestId("workspace-tools-disabled-hint").textContent)
-      .toContain("chỉ bật khi đã có Project");
+    expect(tools.getAttribute("title")).toBe("Mở Project hoặc phiên có thư mục trước.");
     fireEvent.click(tools);
     expect(actions.onToggleWorkspace).not.toHaveBeenCalled();
   });

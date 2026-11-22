@@ -17,7 +17,7 @@ interface MenuAction {
   shortcut?: string;
   disabled?: boolean;
   checked?: boolean;
-  /** Explains why the item is unavailable (shown as title + View-menu helper). */
+  /** Contextual tooltip for unavailable actions. */
   disabledReason?: string;
   run: () => void;
 }
@@ -105,7 +105,7 @@ export function NekoMenuBar(props: NekoMenuBarProps) {
         disabled: !props.workspaceAvailable,
         disabledReason: props.workspaceAvailable
           ? undefined
-          : "Cần mở Project hoặc phiên có thư mục nguồn trước khi dùng công cụ dự án.",
+          : "Mở Project hoặc phiên có thư mục trước.",
         run: props.onToggleWorkspace,
       },
     ],
@@ -242,11 +242,6 @@ export function NekoMenuBar(props: NekoMenuBarProps) {
             {open === 1 && <p className="border-t border-[var(--nk-border)] px-3 py-2 text-[11px] leading-4 text-[var(--nk-text-3)]">
               Sửa ô nhập trong Wiii. Trình sửa tệp và Computer dùng phím tắt trong vùng đó.
             </p>}
-            {open === 2 && !props.workspaceAvailable ? (
-              <p className="border-t border-[var(--nk-border)] px-3 py-2 text-[11px] leading-4 text-[var(--nk-text-3)]" data-testid="workspace-tools-disabled-hint">
-                Công cụ dự án chỉ bật khi đã có Project hoặc phiên với thư mục nguồn.
-              </p>
-            ) : null}
           </div>
         )}
       </nav>
