@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { CoworkerComputerStatus } from "@/neko-computer/contracts";
 
@@ -130,11 +130,14 @@ describe("Neko coworker Signal Inbox", () => {
     render(<NekoCoworkerHome projects={[]} />);
 
     const alert = await screen.findByRole("alert");
-    expect(alert.textContent).toBe("Máy tính chưa sẵn sàng");
+    expect(alert.textContent).toContain("Máy tính chưa sẵn sàng");
     expect(screen.queryByText(detail)).toBeNull();
-    fireEvent.click(screen.getByRole("button", { name: "Kiểm tra" }));
+    fireEvent.click(within(alert).getByRole("button", { name: "Kiểm tra lại" }));
     await waitFor(() => expect(screen.queryByRole("alert")).toBeNull());
     expect(mocks.refresh).toHaveBeenCalledTimes(2);
+    expect(mocks.ensure).not.toHaveBeenCalled();
+    expect(mocks.grant).not.toHaveBeenCalled();
+    expect(mocks.removeComputer).not.toHaveBeenCalled();
   });
 
   it("keeps an empty successful workstation free of failure states", async () => {
@@ -160,8 +163,8 @@ describe("Neko coworker Signal Inbox", () => {
     expect(openCard.textContent).not.toContain("Không có");
 
     const grantsCard = screen.getByTestId("neko-coworker-grants");
-    expect(grantsCard.textContent).toContain("0 quyền máy Neko");
-    expect(grantsCard.textContent).toMatch(/Project Wiii/);
+    expect(grantsCard.textContent).toContain("Chưa cấp quyền");
+    expect(grantsCard.textContent).toMatch(/dự án chưa cấp quyền/);
 
     const banner = await screen.findByTestId("coworker-chill-separation-honesty");
     expect(banner.textContent).toMatch(/cần quyền riêng/i);
@@ -175,7 +178,7 @@ describe("Neko coworker Signal Inbox", () => {
       gapCount: 0,
     })).toEqual({
       value: "Không có việc mới",
-      detail: "5 tín hiệu đã được xử lý hoặc hoãn",
+      detail: "5 mục đã xử lý hoặc hoãn",
       attention: false,
     });
   });

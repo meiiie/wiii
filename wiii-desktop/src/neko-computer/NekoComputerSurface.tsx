@@ -139,6 +139,11 @@ function NekoComputerSurfaceComponent({
   const [displayRevision, setDisplayRevision] = useState(0);
   const [viewerState, setViewerState] = useState<ViewerPresentationState>("loading");
   const [semanticLoading, setSemanticLoading] = useState(false);
+  const detailsRef = useRef<HTMLDetailsElement>(null);
+  const closeDetails = () => {
+    detailsRef.current?.removeAttribute("open");
+    detailsRef.current?.querySelector("summary")?.focus();
+  };
   const [historyOpen, setHistoryOpen] = useState(false);
   const [historyBusy, setHistoryBusy] = useState(false);
   const [historyDeleteArmed, setHistoryDeleteArmed] = useState(false);
@@ -295,9 +300,8 @@ function NekoComputerSurfaceComponent({
           {workstationTitle}
         </h3>
         <p className="mx-auto mt-2 max-w-md text-[11px] leading-5 text-[var(--nk-text-3)]">
-          Thêm một máy làm việc riêng để Neko dùng Browser, Terminal và ứng dụng mà không tranh thao tác với bạn.
-          Neko đọc cấu trúc giao diện trước; hình ảnh và tọa độ chỉ là phương án dự phòng.
-          Hồ sơ trình duyệt và ứng dụng thuộc về Neko; Project <strong className="font-medium text-[var(--nk-text-2)]">{workspace.name}</strong> chỉ được gắn vào khi bạn cấp quyền.
+          Neko có trình duyệt, dòng lệnh và ứng dụng riêng.
+          Chỉ truy cập dự án <strong className="font-medium text-[var(--nk-text-2)]">{workspace.name}</strong> sau khi bạn cấp quyền.
         </p>
 
         <details className="group mx-auto mt-5 max-w-lg rounded-xl border border-[var(--nk-border)] bg-[var(--nk-composer)] text-left">
@@ -365,7 +369,7 @@ function NekoComputerSurfaceComponent({
           {packageRemoveOpen ? (
             <div className="mt-3 border-t border-[var(--nk-border)] pt-3">
               <p className="text-[9.5px] leading-4 text-[var(--nk-text-3)]">
-                Gỡ phần đã tải để giải phóng dung lượng. Project không bị xóa; hồ sơ làm việc của Neko chỉ được xóa khi bạn gỡ hẳn máy của Neko.
+                Gỡ phần đã tải để giải phóng dung lượng. Tệp dự án và dữ liệu của Neko được giữ lại.
               </p>
               <div className="mt-2 flex justify-end gap-2">
                 <button type="button" className="h-7 rounded-md px-2.5 text-[9.5px] text-[var(--nk-text-3)] hover:bg-[var(--nk-overlay)]" onClick={() => setPackageRemoveOpen(false)}>
@@ -421,8 +425,8 @@ function NekoComputerSurfaceComponent({
             )}
             {workstationExists
               ? projectGranted
-                ? "Mở Project trong máy Neko"
-                : "Cấp quyền và mở Project"
+                ? "Mở dự án trong máy Neko"
+                : "Cấp quyền và mở dự án"
               : doctor?.packageReady
                 ? "Thiết lập máy của Neko"
                 : "Tải và thiết lập máy của Neko"}
@@ -453,33 +457,7 @@ function NekoComputerSurfaceComponent({
         <span className="text-[9.5px] text-[var(--nk-text-3)]">
           {packUpdate ? "Cần nâng cấp" : statusLabel(environment.state)}
         </span>
-        <span className="hidden text-[9px] text-[var(--nk-ghost)] xl:inline">
-          {environment.operatingSystem} · {environment.resources.cpus} CPU · {formatBytes(environment.resources.memoryBytes)} · {environment.resources.pidsLimit} PID
-        </span>
-        <button
-          type="button"
-          disabled={semanticLoading || environment.state !== "ready"}
-          className="inline-flex h-7 items-center gap-1.5 rounded-md px-2 text-[9px] text-[var(--nk-text-3)] hover:bg-[var(--nk-overlay)] disabled:opacity-40"
-          title={project?.semanticError
-            ? `Bản đồ giao diện chưa sẵn sàng: ${project.semanticError}`
-            : "Làm mới bản đồ giao diện dành cho agent"}
-          onClick={() => {
-            setSemanticLoading(true);
-            void observeSemantics(projectRef)
-              .catch(() => undefined)
-              .finally(() => setSemanticLoading(false));
-          }}
-        >
-          {semanticLoading ? <LoaderCircle aria-hidden="true" className="h-3 w-3 animate-spin" /> : <ScanSearch aria-hidden="true" className="h-3 w-3" />}
-          {project?.semanticSnapshot
-            ? `AI map · ${project.semanticSnapshot.nodes.length}`
-            : project?.semanticError
-              ? "AI map cần thử lại"
-              : "AI map"}
-        </button>
-        <span className="ml-auto rounded-md bg-[var(--nk-overlay)] px-2 py-1 text-[8.5px] font-medium text-[var(--nk-text-3)]">
-          Chạy trên máy
-        </span>
+        <span className="ml-auto" />
         {mode === "computer" && canObserve ? (
           <ComputerControl
             icon={RefreshCw}
@@ -514,18 +492,48 @@ function NekoComputerSurfaceComponent({
         ) : (
           <ComputerControl icon={CircleStop} label="Tạm dừng" disabled={project?.mutating || environment.state !== "ready"} onClick={() => void suspend(projectRef).catch(() => undefined)} />
         )}
-        <ComputerControl icon={History} label="Lịch sử" onClick={() => {
-          setHistoryDeleteArmed(false);
-          setHistoryOpen((value) => !value);
-        }} />
-        <ComputerControl icon={RotateCcw} label="Reset" danger onClick={() => {
-          setRemoveOpen(false);
-          setResetOpen((value) => !value);
-        }} />
-        <ComputerControl icon={Trash2} label="Gỡ" danger onClick={() => {
-          setResetOpen(false);
-          setRemoveOpen((value) => !value);
-        }} />
+        <details ref={detailsRef} className="relative">
+          <summary className="flex h-7 cursor-pointer items-center gap-1 rounded-md px-2 text-[9.5px] text-[var(--nk-text-3)] hover:bg-[var(--nk-overlay)]">
+            Chi tiết <ChevronDown aria-hidden="true" className="h-3 w-3" />
+          </summary>
+          <div className="absolute right-0 top-full z-20 mt-1 w-64 rounded-xl border border-[var(--nk-border)] bg-[var(--nk-composer)] p-3 shadow-lg">
+            <p className="mb-2 text-[10px] text-[var(--nk-text-3)]">
+              {environment.operatingSystem} · {environment.resources.cpus} CPU · {formatBytes(environment.resources.memoryBytes)}
+            </p>
+            <button
+              type="button"
+              disabled={semanticLoading || environment.state !== "ready"}
+              className="mb-2 inline-flex h-8 items-center gap-1.5 rounded-md px-2 text-[10px] text-[var(--nk-text-2)] hover:bg-[var(--nk-overlay)] disabled:opacity-40"
+              title={project?.semanticError ? "Chưa kiểm tra được giao diện. Hãy thử lại." : undefined}
+              onClick={() => {
+                setSemanticLoading(true);
+                void observeSemantics(projectRef)
+                  .catch(() => undefined)
+                  .finally(() => setSemanticLoading(false));
+              }}
+            >
+              {semanticLoading ? <LoaderCircle aria-hidden="true" className="h-3 w-3 animate-spin" /> : <ScanSearch aria-hidden="true" className="h-3 w-3" />}
+              Kiểm tra giao diện
+            </button>
+            <div className="flex flex-wrap gap-1 border-t border-[var(--nk-border)] pt-2">
+              <ComputerControl icon={History} label="Lịch sử" onClick={() => {
+                closeDetails();
+                setHistoryDeleteArmed(false);
+                setHistoryOpen((value) => !value);
+              }} />
+              <ComputerControl icon={RotateCcw} label="Đặt lại" danger onClick={() => {
+                closeDetails();
+                setRemoveOpen(false);
+                setResetOpen((value) => !value);
+              }} />
+              <ComputerControl icon={Trash2} label="Gỡ" danger onClick={() => {
+                closeDetails();
+                setResetOpen(false);
+                setRemoveOpen((value) => !value);
+              }} />
+            </div>
+          </div>
+        </details>
       </div>
 
       {packUpdate ? (
@@ -600,7 +608,7 @@ function NekoComputerSurfaceComponent({
                 }}
               >
                 <Trash2 aria-hidden="true" className="h-3 w-3" />
-                {historyDeleteArmed ? "Nhấn lại để xóa" : "Xóa lịch sử Project"}
+                {historyDeleteArmed ? "Nhấn lại để xóa" : "Xóa lịch sử dự án"}
               </button>
             </div>
             {historyError ? <p className="mt-2 text-[9px] text-[var(--nk-danger)]">{historyError}</p> : null}
@@ -626,13 +634,13 @@ function NekoComputerSurfaceComponent({
         <div className="shrink-0 border-b border-[var(--nk-danger-soft)] bg-[var(--nk-danger-soft)]/35 px-3 py-2.5">
           <div className="mx-auto flex max-w-3xl flex-wrap items-center gap-2">
             <p className="min-w-48 flex-1 text-[10px] leading-4 text-[var(--nk-text-2)]">
-              Reset xóa hồ sơ Browser/Home của Neko, không xóa Project. Nhập <strong>{resetPhrase}</strong> để xác nhận.
+              Đặt lại sẽ xóa hồ sơ đăng nhập và dữ liệu của Neko, không xóa tệp dự án. Nhập <strong>{resetPhrase}</strong> để xác nhận.
             </p>
             <input
               value={resetConfirmation}
               onChange={(event) => setResetConfirmation(event.target.value)}
               className="h-7 w-52 rounded-md border border-[var(--nk-border)] bg-[var(--nk-composer)] px-2 text-[10px] v3-outline-none focus:ring-2 focus:ring-[var(--nk-focus-soft)]"
-              aria-label="Xác nhận reset Local Computer"
+              aria-label="Xác nhận đặt lại máy tính"
             />
             <button
               type="button"
@@ -643,7 +651,7 @@ function NekoComputerSurfaceComponent({
                 setResetConfirmation("");
               }).catch(() => undefined)}
             >
-              Reset computer
+              Đặt lại máy tính
             </button>
           </div>
         </div>
@@ -653,13 +661,13 @@ function NekoComputerSurfaceComponent({
         <div className="shrink-0 border-b border-[var(--nk-danger-soft)] bg-[var(--nk-danger-soft)]/35 px-3 py-2.5">
           <div className="mx-auto flex max-w-3xl flex-wrap items-center gap-2">
             <p className="min-w-48 flex-1 text-[10px] leading-4 text-[var(--nk-text-2)]">
-              Gỡ máy làm việc và toàn bộ hồ sơ Browser/Home của Neko. Source của các Project không bị xóa. Nhập <strong>{removePhrase}</strong> để xác nhận.
+              Gỡ máy tính và toàn bộ hồ sơ đăng nhập, dữ liệu của Neko. Tệp dự án được giữ lại. Nhập <strong>{removePhrase}</strong> để xác nhận.
             </p>
             <input
               value={removeConfirmation}
               onChange={(event) => setRemoveConfirmation(event.target.value)}
               className="h-7 w-52 rounded-md border border-[var(--nk-border)] bg-[var(--nk-composer)] px-2 text-[10px] v3-outline-none focus:ring-2 focus:ring-[var(--nk-focus-soft)]"
-              aria-label="Xác nhận gỡ Computer của Project"
+              aria-label="Xác nhận gỡ máy tính của dự án"
             />
             <button
               type="button"
@@ -872,13 +880,13 @@ function ComputerError({ message, compact = false }: { message: string; compact?
   const normalized = displayMessage.toLocaleLowerCase();
   const description = normalized.includes("not a valid windows path")
     ? {
-        title: "Không thể kết nối thư mục Project",
-        detail: "Wiii chưa chuyển được đường dẫn Windows cho Computer. Source Project vẫn nguyên vẹn; bạn có thể thử lại sau khi Wiii kiểm tra trạng thái.",
+        title: "Không thể kết nối thư mục dự án",
+        detail: "Chưa kết nối được thư mục Windows. Tệp dự án vẫn nguyên vẹn; hãy kiểm tra lại máy tính rồi thử lại.",
       }
     : normalized.includes("computer_package_in_use")
       ? {
           title: "Gói Computer đang được sử dụng",
-          detail: "Hãy gỡ Computer khỏi các Project đang dùng trước. Dữ liệu Project không bị ảnh hưởng.",
+          detail: "Hãy gỡ máy tính khỏi các dự án đang dùng trước. Tệp dự án được giữ lại.",
         }
       : normalized.includes("unknown_outcome")
         ? {

@@ -50,7 +50,7 @@ export function signalInboxCardState(state: SignalInboxViewState): {
   if (state === "loading") {
     return {
       value: "Đang kiểm tra",
-      detail: "Đọc kho tín hiệu đã mã hóa",
+      detail: "Đang cập nhật",
       attention: false,
     };
   }
@@ -71,15 +71,15 @@ export function signalInboxCardState(state: SignalInboxViewState): {
   if (state.readyCount > 0) {
     return {
       value: `${state.readyCount} việc đang chờ`,
-      detail: "Neko sẽ kiểm tra trong phiên tiếp theo",
+      detail: "Chờ Neko xử lý",
       attention: true,
     };
   }
   return {
     value: "Không có việc mới",
     detail: state.itemCount > 0
-      ? `${state.itemCount} tín hiệu đã được xử lý hoặc hoãn`
-      : "Kho tín hiệu đã cập nhật",
+      ? `${state.itemCount} mục đã xử lý hoặc hoãn`
+      : "Đã cập nhật",
     attention: false,
   };
 }
@@ -246,11 +246,11 @@ export function NekoCoworkerHome({ projects }: { projects: NekoProject[] }) {
   };
 
   return (
-    <main className="h-full overflow-y-auto bg-[var(--nk-canvas)] px-6 py-8" data-testid="neko-coworker-home">
+    <main className="h-full overflow-y-auto bg-[var(--nk-canvas)] px-6 py-6" data-testid="neko-coworker-home">
       <div className="mx-auto max-w-4xl">
         <header className="flex flex-wrap items-start gap-4">
-          <div className="grid h-14 w-14 place-items-center rounded-2xl bg-[var(--nk-overlay)] shadow-[0_12px_36px_rgba(38,33,28,0.08)]">
-            <WiiiMark size={38} title={coworker.displayName} />
+          <div className="grid h-12 w-12 place-items-center rounded-2xl bg-[var(--nk-overlay)] shadow-[0_12px_36px_rgba(38,33,28,0.08)]">
+            <WiiiMark size={32} title={coworker.displayName} />
           </div>
           <div className="min-w-0 flex-1">
             <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-[var(--nk-text-3)]">
@@ -272,7 +272,22 @@ export function NekoCoworkerHome({ projects }: { projects: NekoProject[] }) {
           </button>
         </header>
 
-        <section className="mt-6 grid gap-4 border-y border-[var(--nk-border)] py-4 sm:grid-cols-2 lg:grid-cols-4">
+        {error ? (
+          <div className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-[var(--nk-danger-soft)] bg-[var(--nk-danger-soft)]/35 px-3 py-2.5 text-[11px] text-[var(--nk-danger)]" role="alert">
+            <p>Máy tính chưa sẵn sàng</p>
+            <button
+              type="button"
+              disabled={pageBusy || !nativeComputer}
+              className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-current px-3 font-medium disabled:opacity-40"
+              onClick={() => void refreshAll()}
+            >
+              <RefreshCw aria-hidden="true" className="h-3.5 w-3.5" />
+              Kiểm tra lại
+            </button>
+          </div>
+        ) : null}
+
+        <section className="mt-4 grid gap-3 border-y border-[var(--nk-border)] py-3 sm:grid-cols-2 lg:grid-cols-4">
           <SummaryCard
             icon={Monitor}
             label="Máy làm việc"
@@ -281,7 +296,7 @@ export function NekoCoworkerHome({ projects }: { projects: NekoProject[] }) {
           />
           <SummaryCard
             icon={Folder}
-            label="Project đang mở"
+            label="Dự án đang mở"
             value={openProjectCard.value}
             detail={openProjectCard.detail}
             attention={openProjectCard.needsCoworkerGrant}
@@ -289,7 +304,7 @@ export function NekoCoworkerHome({ projects }: { projects: NekoProject[] }) {
           />
           <SummaryCard
             icon={ShieldCheck}
-            label="Quyền Project"
+            label="Quyền dự án"
             value={grantsCard.value}
             detail={grantsCard.detail}
             attention={grantsCard.needsCoworkerGrant}
@@ -305,10 +320,10 @@ export function NekoCoworkerHome({ projects }: { projects: NekoProject[] }) {
           />
         </section>
 
-        <section className="mt-6 rounded-2xl border border-[var(--nk-border)] bg-[var(--nk-composer)]">
+        <section className="mt-4 rounded-2xl border border-[var(--nk-border)] bg-[var(--nk-composer)]">
           <div className="flex items-center justify-between border-b border-[var(--nk-border)] px-4 py-3">
             <div>
-              <h2 className="text-[12.5px] font-semibold text-[var(--nk-text)]">Quyền truy cập Project</h2>
+              <h2 className="text-[12.5px] font-semibold text-[var(--nk-text)]">Dự án cho Neko</h2>
               {showChillSeparation ? <p role="status" data-testid="coworker-chill-separation-honesty" className="mt-1 text-[11px] text-[var(--nk-text-3)]">{COWORKER_CHILL_SEPARATION_VI}</p> : null}
             </div>
             <span className="rounded-md bg-[var(--nk-overlay)] px-2 py-1 text-[9px] font-medium text-[var(--nk-text-3)]">
@@ -370,7 +385,7 @@ export function NekoCoworkerHome({ projects }: { projects: NekoProject[] }) {
                 </div>
               );
             }) : (
-              <p className="px-4 py-6 text-center text-[11px] text-[var(--nk-text-3)]">Thêm Project trước để cấp quyền cho Neko.</p>
+              <p className="px-4 py-6 text-center text-[11px] text-[var(--nk-text-3)]">Thêm dự án để cấp quyền cho Neko.</p>
             )}
           </div>
         </section>
@@ -384,16 +399,13 @@ export function NekoCoworkerHome({ projects }: { projects: NekoProject[] }) {
               <div className="min-w-0 flex-1">
                 <div className="flex flex-wrap items-center gap-2">
                   <h2 className="text-[11.5px] font-semibold text-[var(--nk-text)]">
-                    {corePackage?.displayName ?? "Web Computer Core"}
+                    Ứng dụng của Neko
                   </h2>
-                  <span className="rounded bg-[var(--nk-overlay)] px-1.5 py-0.5 text-[8px] font-semibold uppercase tracking-[0.06em] text-[var(--nk-text-3)]">
-                    Gói cốt lõi
-                  </span>
                 </div>
                 <p className="mt-0.5 text-[9.5px] text-[var(--nk-text-3)]">
                   {packageInstalled
                     ? `Đã tải trên máy · ${formatComputerBytes(corePackage?.installedBytes)}`
-                    : "Chưa tải · thêm Desktop, Browser, Terminal và Files cho Neko"}
+                    : "Trình duyệt, dòng lệnh và quản lý tệp"}
                 </p>
               </div>
               {!packageInstalled ? (
@@ -429,15 +441,10 @@ export function NekoCoworkerHome({ projects }: { projects: NekoProject[] }) {
                 </button>
               ) : null}
             </div>
-            {corePackage?.description ? (
-              <p className="mt-3 text-[9.5px] leading-4 text-[var(--nk-text-3)]">
-                {corePackage.description}. Một bản được dùng chung cho mọi Project; gỡ gói vẫn giữ hồ sơ đăng nhập và dữ liệu làm việc của Neko.
-              </p>
-            ) : null}
             {removeOpen ? (
               <div className="mt-4 flex flex-wrap items-center gap-2 border-t border-[var(--nk-danger-soft)] pt-4">
                 <p className="min-w-52 flex-1 text-[10px] leading-4 text-[var(--nk-text-3)]">
-                  Thao tác này xóa hồ sơ Browser/Home của Neko, nhưng không xóa source Project.
+                  Xóa hồ sơ đăng nhập và dữ liệu của Neko, không xóa tệp dự án.
                   Nhập <strong className="text-[var(--nk-text)]">REMOVE NEKO</strong>.
                 </p>
                 <input
@@ -465,7 +472,7 @@ export function NekoCoworkerHome({ projects }: { projects: NekoProject[] }) {
               icon={HardDriveDownload}
               label="Ứng dụng & hệ thống"
               value="Một bản dùng chung"
-              detail={doctor?.storage?.locationSelectable ? "Có thể chọn vị trí lưu" : "Lưu cục bộ · runtime quản lý vị trí"}
+              detail={doctor?.storage?.locationSelectable ? "Có thể chọn vị trí lưu" : "Lưu trên thiết bị này"}
             />
             <StorageFact
               icon={Database}
@@ -475,7 +482,7 @@ export function NekoCoworkerHome({ projects }: { projects: NekoProject[] }) {
             />
             <StorageFact
               icon={Folder}
-              label="Tệp Project"
+              label="Tệp dự án"
               value="Ở nguyên vị trí gốc"
               detail="Wiii gắn thư mục đang mở, không tạo bản sao"
             />
@@ -494,11 +501,6 @@ export function NekoCoworkerHome({ projects }: { projects: NekoProject[] }) {
           </p>
         ) : null}
 
-        {error ? (
-          <p className="mt-4 rounded-xl border border-[var(--nk-danger-soft)] bg-[var(--nk-danger-soft)]/35 px-3 py-2.5 text-[10px] leading-4 text-[var(--nk-danger)]" role="alert">
-            Máy tính chưa sẵn sàng
-          </p>
-        ) : null}
       </div>
     </main>
   );
