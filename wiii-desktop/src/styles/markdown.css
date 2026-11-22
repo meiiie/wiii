@@ -36,6 +36,7 @@
 
 .markdown-content ol {
   @apply list-decimal;
+  padding-inline-start: max(1.5rem, calc(var(--ol-marker-width, 1ch) + 0.5ch + 0.5em));
 }
 
 .markdown-content li {
