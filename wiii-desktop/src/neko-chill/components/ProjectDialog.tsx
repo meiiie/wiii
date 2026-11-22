@@ -1,10 +1,10 @@
 import { useEffect, useRef, useState } from "react";
 import { Folder, FolderPlus, LoaderCircle, X } from "lucide-react";
+import { NekoBadge, NekoButton, NekoCard, NekoDialogPanel, NekoIconButton, NekoInput } from "./ui";
 import type { NekoProject } from "../stores/neko-project-store";
 import { workspaceKey } from "../stores/neko-project-store";
 import {
   BROWSER_FOLDER_PICKER_UNAVAILABLE_VI,
-  NATIVE_FOLDER_PICKER_SELECT_HINT_VI,
   canChooseWorkspaceFolder,
   chooseWorkspaceFolder,
   resolveWorkspaceFolder,
@@ -22,11 +22,11 @@ export function projectDialogPrimaryTitle(args: {
   const missingName = !args.hasName;
   const missingRoots = !args.hasRoots;
   if (missingName && missingRoots) {
-    return "Hãy đặt tên Project và thêm ít nhất một thư mục nguồn.";
+    return "Hãy đặt tên dự án và thêm ít nhất một thư mục nguồn.";
   }
-  if (missingName) return "Hãy đặt tên cho Project.";
-  if (missingRoots) return "Project cần ít nhất một thư mục nguồn.";
-  return args.mode === "edit" ? "Lưu thay đổi" : "Tạo Project";
+  if (missingName) return "Hãy đặt tên cho dự án.";
+  if (missingRoots) return "Dự án cần ít nhất một thư mục nguồn.";
+  return args.mode === "edit" ? "Lưu thay đổi" : "Tạo dự án";
 }
 
 export function ProjectDialog({
@@ -92,11 +92,11 @@ export function ProjectDialog({
   const submit = async () => {
     if (saving) return;
     if (!name.trim()) {
-      setError("Hãy đặt tên cho Project.");
+      setError("Hãy đặt tên cho dự án.");
       return;
     }
     if (!roots.length) {
-      setError("Project cần ít nhất một thư mục nguồn.");
+      setError("Dự án cần ít nhất một thư mục nguồn.");
       return;
     }
     setSaving(true);
@@ -113,7 +113,7 @@ export function ProjectDialog({
 
   return (
     <dialog ref={dialogRef} aria-labelledby="project-dialog-title"
-      className="fixed inset-0 m-0 h-full max-h-none w-full max-w-none overflow-y-auto border-0 bg-transparent p-0"
+      className="nk-dialog"
       onKeyDown={(event) => {
         if (event.key !== "Tab") return;
         const items = [...event.currentTarget.querySelectorAll<HTMLElement>("button:not(:disabled), input:not(:disabled)")];
@@ -129,23 +129,19 @@ export function ProjectDialog({
         if (!saving) onCancel();
       }}>
     <div
-      className="grid min-h-full place-items-center bg-[rgba(29,27,24,0.18)] p-5"
+      className="nk-dialog-layout"
       role="presentation"
       onMouseDown={(event) => {
         if (event.target === event.currentTarget && !saving) onCancel();
       }}
     >
-      <section
-        className="w-full max-w-[560px] rounded-[22px] border border-[var(--nk-border-strong)] bg-[var(--nk-composer)] p-6 shadow-[0_24px_80px_rgba(55,47,39,0.18)]"
+      <NekoDialogPanel
         data-testid="project-dialog"
       >
         <header className="flex items-center justify-between gap-4">
           <div>
-            <p className="text-[10px] font-semibold uppercase tracking-[0.1em] text-[var(--nk-ghost)]">
-              Wiii
-            </p>
-            <h1 id="project-dialog-title" className="mt-1 text-[21px] font-semibold tracking-[-0.025em] text-[var(--nk-text)]">
-              {project ? "Chỉnh sửa Project" : "Tạo Project"}
+            <h1 id="project-dialog-title" className="text-[18px] font-semibold tracking-[-0.025em] text-[var(--nk-text)]">
+              {project ? "Chỉnh sửa dự án" : "Tạo dự án"}
             </h1>
             {!project && reason === "new-session" ? (
               <p className="mt-2 max-w-[420px] text-[12.5px] leading-5 text-[var(--nk-text-2)]" data-testid="project-required-hint">
@@ -153,28 +149,26 @@ export function ProjectDialog({
               </p>
             ) : null}
           </div>
-          <button
-            type="button"
-            className="grid h-8 w-8 place-items-center rounded-lg text-[var(--nk-text-3)] transition-colors hover:bg-[var(--nk-overlay)] hover:text-[var(--nk-text)] focus-visible:v3-outline-none focus-visible:ring-2 focus-visible:ring-[var(--nk-focus-soft)]"
-            aria-label="Đóng"
+          <NekoIconButton
+            label="Đóng"
             disabled={saving}
             onClick={onCancel}
           >
             <X aria-hidden="true" className="h-4 w-4" />
-          </button>
+          </NekoIconButton>
         </header>
 
-        <label className="mt-6 block" htmlFor="project-name">
-          <span className="text-[11.5px] font-medium text-[var(--nk-text-2)]">Tên Project</span>
-          <div className="nk-input-field mt-2 flex h-11 items-center rounded-xl border border-[var(--nk-border-strong)] bg-[var(--nk-composer)]">
+        <label className="mt-5 block" htmlFor="project-name">
+          <span className="text-[13px] font-medium text-[var(--nk-text-2)]">Tên dự án</span>
+          <div className="nk-input-field mt-2">
             <Folder aria-hidden="true" className="mx-3 h-4 w-4 shrink-0 text-[var(--nk-text-3)]" />
-            <input
+            <NekoInput
               ref={nameRef}
               id="project-name"
               value={name}
               maxLength={80}
               disabled={saving}
-              className="min-w-0 flex-1 bg-transparent pr-3 text-[13px] text-[var(--nk-text)] v3-outline-none placeholder:text-[var(--nk-ghost)]"
+              className="pl-0"
               placeholder="Ví dụ: Wiii"
               onChange={(event) => setName(event.target.value)}
               onKeyDown={(event) => {
@@ -190,32 +184,31 @@ export function ProjectDialog({
         <div className="mt-5">
           <div className="flex flex-wrap items-end justify-between gap-3">
             <div>
-              <h2 className="text-[11.5px] font-medium text-[var(--nk-text-2)]">Thư mục nguồn</h2>
+              <h2 className="flex items-center gap-2 text-[13px] font-medium text-[var(--nk-text-2)]">Thư mục nguồn <NekoBadge aria-label={`${roots.length} thư mục`}>{roots.length}</NekoBadge></h2>
               {!nativeFolderPicker ? (
                 <p className="mt-1.5 text-[10.5px] leading-4 text-[var(--nk-text-3)]" data-testid="browser-folder-picker-hint">
                   Bản xem trước trình duyệt không mở được hộp chọn thư mục máy — dùng app desktop Wiii.
                 </p>
-              ) : (
-                <p className="mt-1.5 text-[10.5px] leading-4 text-[var(--nk-text-3)]" data-testid="native-folder-picker-hint">
-                  {NATIVE_FOLDER_PICKER_SELECT_HINT_VI}
-                </p>
-              )}
+              ) : null}
             </div>
-            <button
-              type="button"
-              className="inline-flex h-8 shrink-0 items-center gap-1.5 whitespace-nowrap rounded-lg px-2.5 text-[11px] text-[var(--nk-text-2)] transition-colors hover:bg-[var(--nk-overlay)] hover:text-[var(--nk-text)] disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-transparent disabled:hover:text-[var(--nk-text-2)]"
+            {roots.length > 0 ? (
+            <NekoButton
+              variant="ghost"
+              size="sm"
+              className="shrink-0"
               disabled={saving || !nativeFolderPicker}
-              title={!nativeFolderPicker ? BROWSER_FOLDER_PICKER_UNAVAILABLE_VI : NATIVE_FOLDER_PICKER_SELECT_HINT_VI}
+              title={!nativeFolderPicker ? BROWSER_FOLDER_PICKER_UNAVAILABLE_VI : undefined}
               aria-disabled={!nativeFolderPicker || undefined}
               data-testid="project-dialog-add-folder"
               onClick={() => void addRoot()}
             >
               <FolderPlus aria-hidden="true" className="h-3.5 w-3.5" />
               Thêm thư mục
-            </button>
+            </NekoButton>
+            ) : null}
           </div>
 
-          <div className="mt-2 overflow-hidden rounded-xl border border-[var(--nk-border)] bg-[var(--nk-raised)]">
+          <NekoCard tone="inset" className="mt-2 overflow-hidden">
             {roots.length ? roots.map((root) => (
               <div key={root.path} className="flex min-h-12 items-center gap-3 border-b border-[var(--nk-border)] px-3 last:border-b-0">
                 <Folder aria-hidden="true" className="h-4 w-4 shrink-0 text-[var(--nk-text-3)]" />
@@ -223,22 +216,21 @@ export function ProjectDialog({
                   <strong className="block truncate text-[12px] font-medium text-[var(--nk-text)]">{root.name}</strong>
                   <span className="block truncate text-[10px] text-[var(--nk-ghost)]">{root.path}</span>
                 </span>
-                <button
-                  type="button"
-                  className="grid h-7 w-7 place-items-center rounded-md text-[var(--nk-ghost)] transition-colors hover:bg-[var(--nk-overlay)] hover:text-[var(--nk-danger)]"
-                  aria-label={`Gỡ thư mục ${root.name}`}
+                <NekoIconButton
+                  label={`Gỡ thư mục ${root.name}`}
+                  className="hover:text-[var(--nk-danger)]"
                   disabled={saving}
                   onClick={() => setRoots((current) => current.filter((item) => item.path !== root.path))}
                 >
                   <X aria-hidden="true" className="h-3.5 w-3.5" />
-                </button>
+                </NekoIconButton>
               </div>
             )) : (
               <button
                 type="button"
                 className="flex min-h-[96px] w-full flex-col items-center justify-center gap-2 text-[11.5px] text-[var(--nk-text-3)] transition-colors hover:bg-[var(--nk-overlay)] hover:text-[var(--nk-text)] disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-transparent disabled:hover:text-[var(--nk-text-3)]"
                 disabled={saving || !nativeFolderPicker}
-                title={!nativeFolderPicker ? BROWSER_FOLDER_PICKER_UNAVAILABLE_VI : NATIVE_FOLDER_PICKER_SELECT_HINT_VI}
+                title={!nativeFolderPicker ? BROWSER_FOLDER_PICKER_UNAVAILABLE_VI : undefined}
                 aria-disabled={!nativeFolderPicker || undefined}
                 data-testid="project-dialog-empty-folder"
                 onClick={() => void addRoot()}
@@ -247,27 +239,25 @@ export function ProjectDialog({
                 Chọn thư mục Neko được phép đọc và sửa
               </button>
             )}
-          </div>
+          </NekoCard>
         </div>
 
         {error ? (
-          <p role="alert" className="mt-4 rounded-lg bg-[var(--nk-danger-soft)] px-3 py-2 text-[10.5px] leading-4 text-[var(--nk-danger)]">
+          <p role="alert" className="mt-4 rounded-lg bg-[var(--nk-danger-soft)] px-3 py-2 text-[13px] leading-5 text-[var(--nk-danger)]">
             {error}
           </p>
         ) : null}
 
-        <footer className="mt-6 flex items-center justify-end gap-2">
-          <button
-            type="button"
-            className="h-9 rounded-lg px-3 text-[12px] text-[var(--nk-text-3)] transition-colors hover:bg-[var(--nk-overlay)] hover:text-[var(--nk-text)]"
+        <footer className="nk-dialog-actions">
+          <NekoButton
+            variant="ghost"
             disabled={saving}
             onClick={onCancel}
           >
             Hủy
-          </button>
-          <button
-            type="button"
-            className="inline-flex h-9 min-w-[110px] items-center justify-center gap-2 rounded-lg bg-[var(--nk-inverse)] px-4 text-[12px] font-medium text-[var(--nk-on-inverse)] transition-opacity hover:opacity-90 active:scale-[0.99] disabled:opacity-35"
+          </NekoButton>
+          <NekoButton
+            variant="primary"
             disabled={saving || !name.trim() || roots.length === 0}
             title={projectDialogPrimaryTitle({
               mode: project ? "edit" : "create",
@@ -279,10 +269,10 @@ export function ProjectDialog({
             onClick={() => void submit()}
           >
             {saving ? <LoaderCircle aria-hidden="true" className="h-3.5 w-3.5 animate-spin" /> : null}
-            {project ? "Lưu thay đổi" : "Tạo Project"}
-          </button>
+            {project ? "Lưu thay đổi" : "Tạo dự án"}
+          </NekoButton>
         </footer>
-      </section>
+      </NekoDialogPanel>
     </div>
     </dialog>
   );

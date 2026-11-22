@@ -1,6 +1,7 @@
 /** Searchable catalog: arrows explore, Enter commits, Tab leaves unchanged. */
 import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 import { Check, ChevronDown, LoaderCircle, Search, X } from "lucide-react";
+import { NekoButton, NekoIconButton, NekoInput, NekoListButton } from "./ui";
 
 export interface ChillCatalogItem {
   id: string; label: string; group?: string; description?: string; disabled?: boolean; title?: string;
@@ -99,7 +100,7 @@ export function ChillCatalogPicker({ items, value, onChange, ariaLabel, disabled
   return <div ref={rootRef} className={`relative ${className}`} onBlur={event => {
     if (visible && !event.currentTarget.contains(event.relatedTarget as Node | null)) close();
   }}>
-    <button ref={triggerRef} type="button" className="flex h-8 w-full max-w-[210px] items-center gap-1.5 rounded-md px-1.5 text-[12px] text-[var(--nk-text-2)] transition-colors hover:bg-[var(--nk-overlay)] disabled:cursor-not-allowed disabled:opacity-60"
+    <NekoButton ref={triggerRef} variant="ghost" size="sm" className="w-full max-w-[210px] px-1.5"
       aria-label={ariaLabel} aria-expanded={visible} aria-haspopup="listbox" aria-controls={visible ? listId : undefined} aria-busy={pending}
       disabled={blocked} title={triggerTitle ?? selected?.title ?? selected?.description} data-testid={testId}
       onClick={() => { if (!blocked) { setOpen(current => !current); setQuery(""); setHighlightId(null); } }}
@@ -110,34 +111,34 @@ export function ChillCatalogPicker({ items, value, onChange, ariaLabel, disabled
       {pending ? <LoaderCircle size={14} aria-hidden="true" className="animate-spin motion-reduce:animate-none" /> : icon}
       <span className="min-w-0 flex-1 truncate text-left">{pending ? "Đang đổi…" : selected?.label ?? (items.length ? "Chọn…" : "Chưa có mục")}</span>
       <ChevronDown aria-hidden="true" className={`h-3 w-3 shrink-0 text-[var(--nk-ghost)] transition-transform motion-reduce:transition-none ${visible ? "rotate-180" : ""}`} />
-    </button>
+    </NekoButton>
     {visible && <div className="nk-catalog-popover absolute z-40 flex flex-col overflow-hidden rounded-xl border border-[var(--nk-border-strong)] bg-[var(--nk-composer)] shadow-[0_14px_35px_rgba(0,0,0,0.12)]"
       style={{ left: placement.left, width: placement.width, maxHeight: placement.height, ...(placement.below ? { top: "calc(100% + 4px)" } : { bottom: "calc(100% + 4px)" }) }}
       data-testid={testId ? `${testId}-menu` : "chill-catalog-picker-menu"} onKeyDown={onPanelKey}>
       <div className="shrink-0 border-b border-[var(--nk-border)] p-2">
         <div className="relative">
           <Search aria-hidden="true" className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-[var(--nk-ghost)]" />
-          <input ref={searchRef} role="combobox" aria-autocomplete="list" aria-expanded="true" aria-controls={listId}
+          <NekoInput ref={searchRef} role="combobox" aria-autocomplete="list" aria-expanded="true" aria-controls={listId}
             aria-activedescendant={activeId ? optionId(activeId) : undefined} value={query}
             onChange={event => { setQuery(event.target.value); setHighlightId(null); }} placeholder={searchPlaceholder} aria-label={searchPlaceholder}
-            className="h-8 w-full rounded-lg border border-[var(--nk-border)] bg-[var(--nk-sidebar)] pl-8 pr-8 text-[12px] text-[var(--nk-text)] v3-outline-none placeholder:text-[var(--nk-ghost)] focus:border-[var(--nk-accent)]" />
-          {query && <button type="button" tabIndex={-1} aria-label="Xóa bộ lọc" title="Xóa bộ lọc" onMouseDown={event => event.preventDefault()}
-            onClick={() => { setQuery(""); setHighlightId(null); searchRef.current?.focus(); }} className="absolute right-0 top-0 grid h-8 w-8 place-items-center text-[var(--nk-text-2)]"><X size={13} aria-hidden="true" /></button>}
+            className="pl-8 pr-9" />
+          {query && <NekoIconButton tabIndex={-1} label="Xóa bộ lọc" title="Xóa bộ lọc" onMouseDown={event => event.preventDefault()}
+            onClick={() => { setQuery(""); setHighlightId(null); searchRef.current?.focus(); }} className="absolute right-0.5 top-0.5"><X size={13} aria-hidden="true" /></NekoIconButton>}
         </div>
         <p className="mt-1.5 px-0.5 text-[10px] text-[var(--nk-ghost)]">↑↓ chọn · Enter xác nhận · Esc đóng</p>
       </div>
       <div id={listId} role="listbox" aria-label={ariaLabel} className="min-h-0 overflow-y-auto overscroll-contain p-1.5">
         {filtered.length === 0 ? <p role="status" className="px-3 py-5 text-center text-[11.5px] text-[var(--nk-text-3)]">{emptyLabel}</p> : groups.map(group => <div key={group || "__ungrouped"}>
           {group && <div className="px-2 pb-1 pt-1.5 text-[10px] font-medium uppercase tracking-wide text-[var(--nk-ghost)]">{group}</div>}
-          {filtered.filter(item => (item.group ?? "") === group).map(item => <button key={item.id} id={optionId(item.id)}
+          {filtered.filter(item => (item.group ?? "") === group).map(item => <NekoListButton key={item.id} id={optionId(item.id)}
             ref={node => { if (node) optionRefs.current.set(item.id, node); else optionRefs.current.delete(item.id); }}
             type="button" role="option" tabIndex={-1} aria-selected={item.id === value} aria-disabled={item.disabled || undefined} disabled={item.disabled}
             title={item.disabled ? item.title : item.description} onMouseDown={event => event.preventDefault()}
-            className={`flex min-h-9 w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-left ${activeId === item.id ? "bg-[var(--nk-item-active)]" : "hover:bg-[var(--nk-overlay)]"} ${item.disabled ? "cursor-not-allowed opacity-60" : ""}`}
+            active={activeId === item.id}
             onMouseEnter={() => { if (!item.disabled) setHighlightId(item.id); }} onClick={() => pick(item)}>
             <span className="min-w-0 flex-1"><span className="block truncate text-[12px]">{item.label}</span>{item.description && <span className="block truncate text-[10.5px] text-[var(--nk-text-3)]">{item.description}</span>}</span>
             {item.id === value && <Check size={14} aria-hidden="true" className="shrink-0 text-[var(--nk-accent)]" />}
-          </button>)}
+          </NekoListButton>)}
         </div>)}
       </div>
     </div>}

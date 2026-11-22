@@ -1,5 +1,5 @@
 import { StrictMode, Suspense } from "react";
-import { act, fireEvent, render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { expect, it, vi } from "vitest";
 
 const runtime = vi.hoisted(() => ({
@@ -45,6 +45,9 @@ it("keeps runtime ownership while a first Connections visit loads and returns", 
     <LocalWorkbenchSurface />
   </Suspense></StrictMode>);
   const local = await screen.findByRole("button", { name: "Local ready" });
+  // Lazy content can become visible before StrictMode's effect replay finishes.
+  // Establish the runtime owner before comparing navigation cleanup counts.
+  await waitFor(() => expect(runtime.start).toHaveBeenCalledTimes(2));
   const initialDisposals = runtime.dispose.mock.calls.length;
   fireEvent.click(local);
   await screen.findByText(/Loading screen|Wiii đang mở/);

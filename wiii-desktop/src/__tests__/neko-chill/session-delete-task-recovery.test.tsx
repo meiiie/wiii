@@ -78,8 +78,12 @@ describe("Scoped deletion consequence and actual deletion semantics", () => {
     expect(warning.getAttribute("role")).toBe("note");
     expect(warning.textContent).toMatch(/liên kết/i);
     expect(warning.textContent).toMatch(/đối soát/i);
-    expect(warning.textContent).toMatch(/không xóa.*checkpoint/i);
-    expect(warning.textContent).toMatch(/writer lock/i);
+    const details = within(dialog).getByText("Chi tiết khôi phục").closest("details")!;
+    expect(details.open).toBe(false);
+    fireEvent.click(within(dialog).getByText("Chi tiết khôi phục"));
+    expect(details.open).toBe(true);
+    expect(details.textContent).toMatch(/không xóa.*checkpoint/i);
+    expect(details.textContent).toMatch(/writer lock/i);
     expect(warning.id).not.toBe("");
     expect(dialog.getAttribute("aria-describedby")?.split(/\s+/)).toContain(warning.id);
     expect(useNekoSessionStore.getState().deleteSession).not.toHaveBeenCalled();
@@ -91,11 +95,23 @@ describe("Scoped deletion consequence and actual deletion semantics", () => {
     useNekoSessionStore.setState({ deleteSession });
     const { dialog } = open();
     expect(within(dialog).queryByTestId("session-delete-task-scope-warning")).toBeNull();
-    expect(within(dialog).getByText(/Tệp trong thư mục dự án vẫn được giữ nguyên/)).toBeTruthy();
+    expect(within(dialog).getByText(/Tệp dự án được giữ nguyên/)).toBeTruthy();
     await act(async () => fireEvent.click(within(dialog).getByRole("button", { name: "Xóa phiên và lịch sử" })));
     expect(deleteSession).toHaveBeenCalledExactlyOnceWith(ID);
     expect(useNekoSessionStore.getState().sessions[ID]).toBeUndefined();
     expect(screen.queryByRole("dialog")).toBeNull();
+  });
+
+  it("includes recovery disclosure in the keyboard focus loop", () => {
+    useNekoSessionStore.setState({ sessions: { [ID]: session(scoped("recovery-known")) } });
+    const { dialog } = open();
+    const summary = within(dialog).getByText("Chi tiết khôi phục");
+    const confirm = within(dialog).getByRole("button", { name: "Xóa phiên và lịch sử" });
+    confirm.focus();
+    fireEvent.keyDown(confirm, { key: "Tab" });
+    expect(document.activeElement).toBe(summary);
+    fireEvent.keyDown(summary, { key: "Tab", shiftKey: true });
+    expect(document.activeElement).toBe(confirm);
   });
 
   it.each(["cancel", "escape"] as const)("%s preserves both recovery history and receipt and restores focus", async (method) => {

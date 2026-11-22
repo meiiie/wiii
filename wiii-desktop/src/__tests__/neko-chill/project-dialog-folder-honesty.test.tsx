@@ -3,7 +3,6 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { ProjectDialog, projectDialogPrimaryTitle } from "@/neko-chill/components/ProjectDialog";
 import {
   BROWSER_FOLDER_PICKER_UNAVAILABLE_VI,
-  NATIVE_FOLDER_PICKER_SELECT_HINT_VI,
   canChooseWorkspaceFolder,
   chooseWorkspaceFolder,
 } from "@/neko-chill/workspace";
@@ -24,7 +23,7 @@ describe("ProjectDialog browser folder-picker honesty", () => {
     vi.mocked(chooseWorkspaceFolder).mockReset().mockResolvedValue(null);
   });
 
-  it("disables folder CTAs with a local title in browser preview", async () => {
+  it("disables the single empty-folder action with a local title in browser preview", async () => {
     const onCancel = vi.fn();
     const onSave = vi.fn(async () => {});
     render(<ProjectDialog project={null} onCancel={onCancel} onSave={onSave} />);
@@ -33,16 +32,13 @@ describe("ProjectDialog browser folder-picker honesty", () => {
       /trình duyệt|desktop Wiii/i,
     );
 
-    const add = screen.getByTestId("project-dialog-add-folder");
     const empty = screen.getByTestId("project-dialog-empty-folder");
-    expect((add as HTMLButtonElement).disabled).toBe(true);
+    expect(screen.queryByTestId("project-dialog-add-folder")).toBeNull();
     expect((empty as HTMLButtonElement).disabled).toBe(true);
-    expect(add.getAttribute("title")).toBe(BROWSER_FOLDER_PICKER_UNAVAILABLE_VI);
     expect(empty.getAttribute("title")).toBe(BROWSER_FOLDER_PICKER_UNAVAILABLE_VI);
-    expect(add.getAttribute("aria-disabled")).toBe("true");
+    expect(empty.getAttribute("aria-disabled")).toBe("true");
 
     await act(async () => {
-      fireEvent.click(add);
       fireEvent.click(empty);
     });
 
@@ -50,7 +46,7 @@ describe("ProjectDialog browser folder-picker honesty", () => {
     expect(screen.queryByRole("alert")).toBeNull();
   });
 
-  it("still opens the native picker when the desktop shell is available", async () => {
+  it("offers one native folder action, switching to add only after a root is selected", async () => {
     vi.mocked(canChooseWorkspaceFolder).mockReturnValue(true);
     vi.mocked(chooseWorkspaceFolder).mockResolvedValue({
       name: "demo",
@@ -59,19 +55,21 @@ describe("ProjectDialog browser folder-picker honesty", () => {
     render(<ProjectDialog project={null} onCancel={vi.fn()} onSave={vi.fn(async () => {})} />);
 
     expect(screen.queryByTestId("browser-folder-picker-hint")).toBeNull();
-    expect(screen.getByTestId("native-folder-picker-hint").textContent).toBe(
-      NATIVE_FOLDER_PICKER_SELECT_HINT_VI,
-    );
-    expect(screen.getByTestId("project-dialog-add-folder").getAttribute("title")).toBe(
-      NATIVE_FOLDER_PICKER_SELECT_HINT_VI,
-    );
+    expect(screen.queryByTestId("native-folder-picker-hint")).toBeNull();
+    expect(screen.queryByTestId("project-dialog-add-folder")).toBeNull();
+    expect(screen.getByTestId("project-dialog-empty-folder").getAttribute("title")).toBeNull();
 
     await act(async () => {
-      fireEvent.click(screen.getByRole("button", { name: /Thêm thư mục/i }));
+      fireEvent.click(screen.getByTestId("project-dialog-empty-folder"));
     });
 
     expect(chooseWorkspaceFolder).toHaveBeenCalledOnce();
     expect(screen.getByText("demo")).toBeTruthy();
+    expect(screen.queryByTestId("project-dialog-empty-folder")).toBeNull();
+    expect(screen.getByRole("button", { name: "Thêm thư mục" })).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Gỡ thư mục demo" }));
+    expect(screen.queryByTestId("project-dialog-add-folder")).toBeNull();
+    expect(screen.getByTestId("project-dialog-empty-folder")).toBeTruthy();
     expect(screen.queryByRole("alert")).toBeNull();
   });
 });
@@ -84,7 +82,7 @@ describe("projectDialogPrimaryTitle", () => {
       saving: false,
       hasName: false,
       hasRoots: false,
-    })).toBe("Hãy đặt tên Project và thêm ít nhất một thư mục nguồn.");
+    })).toBe("Hãy đặt tên dự án và thêm ít nhất một thư mục nguồn.");
   });
 
   it("explains missing folder after name is set", () => {
@@ -93,7 +91,7 @@ describe("projectDialogPrimaryTitle", () => {
       saving: false,
       hasName: true,
       hasRoots: false,
-    })).toBe("Project cần ít nhất một thư mục nguồn.");
+    })).toBe("Dự án cần ít nhất một thư mục nguồn.");
   });
 
   it("returns the enabled create label when ready", () => {
@@ -102,7 +100,7 @@ describe("projectDialogPrimaryTitle", () => {
       saving: false,
       hasName: true,
       hasRoots: true,
-    })).toBe("Tạo Project");
+    })).toBe("Tạo dự án");
   });
 });
 
@@ -112,9 +110,9 @@ describe("ProjectDialog primary title wiring", () => {
     const primary = screen.getByTestId("project-dialog-primary");
     expect((primary as HTMLButtonElement).disabled).toBe(true);
     expect(primary.getAttribute("title")).toBe(
-      "Hãy đặt tên Project và thêm ít nhất một thư mục nguồn.",
+      "Hãy đặt tên dự án và thêm ít nhất một thư mục nguồn.",
     );
     fireEvent.change(screen.getByPlaceholderText(/Ví dụ/i), { target: { value: "Demo" } });
-    expect(primary.getAttribute("title")).toBe("Project cần ít nhất một thư mục nguồn.");
+    expect(primary.getAttribute("title")).toBe("Dự án cần ít nhất một thư mục nguồn.");
   });
 });
