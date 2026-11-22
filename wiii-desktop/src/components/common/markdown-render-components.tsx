@@ -1,4 +1,4 @@
-import { Children, isValidElement, type ReactNode, lazy, Suspense } from "react";
+import { Children, isValidElement, type CSSProperties, type ReactNode, lazy, Suspense } from "react";
 import type { Components } from "react-markdown";
 
 const MermaidDiagram = lazy(() => import("./MermaidDiagram"));
@@ -65,6 +65,22 @@ function CitationLink({ href, children, title }: { href?: string; children?: Rea
 export function createMarkdownRenderComponents(streaming = false): Components {
   return {
     a: CitationLink,
+    ol({ node, start, children, style, ...props }) {
+      const first = Number.isSafeInteger(start) ? start! : 1;
+      const count = node?.children.filter(child => child.type === "element" && child.tagName === "li").length
+        ?? Children.toArray(children).filter(child => isValidElement(child) && child.type === "li").length;
+      const last = first + Math.max(0, count - 1);
+      const markerWidth = Math.max(String(first).length, String(last).length);
+      return (
+        <ol
+          {...props}
+          start={start === undefined ? undefined : first}
+          style={{ ...style, "--ol-marker-width": `${markerWidth}ch` } as CSSProperties}
+        >
+          {children}
+        </ol>
+      );
+    },
     code({ className, children }) {
       return <code className={className}>{children}</code>;
     },
