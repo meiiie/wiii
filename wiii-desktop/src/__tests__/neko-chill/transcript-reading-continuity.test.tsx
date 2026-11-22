@@ -258,6 +258,25 @@ describe("Neko transcript reading continuity", () => {
     expect(viewport.scrollTop).toBe(220);
     expect(paragraph.getBoundingClientRect().top).toBe(120);
   });
+  it("keeps the same image region when an image-only paragraph fills the viewport", () => {
+    const { viewport, content, paragraph, reflow } = readingFixture();
+    paragraph.remove();
+    const image = document.createElement("img");
+    content.append(image);
+    let imageTop = 250;
+    let height = 1000;
+    image.getBoundingClientRect = () => {
+      const top = 100 + imageTop - viewport.scrollTop;
+      return { top, bottom: top + height, left: 0, right: 500, width: 500, height } as DOMRect;
+    };
+    resize(viewport); fireEvent.scroll(viewport);
+    const fraction = (112 - image.getBoundingClientRect().top) / height;
+    imageTop = 170; height = 1200; reflow(750, 240); resize(viewport); paint();
+    expect(viewport.scrollTop).toBeCloseTo(232.4);
+    expect((112 - image.getBoundingClientRect().top) / height).toBeCloseTo(fraction);
+    image.remove(); reflow(500, 320); resize(viewport);
+    expect(viewport.scrollTop).toBeCloseTo(232.4);
+  });
   it("does not mistake reflow clamping for choosing to follow the tail", () => {
     const { viewport, paragraph, reflow } = readingFixture();
     resize(viewport); fireEvent.scroll(viewport);

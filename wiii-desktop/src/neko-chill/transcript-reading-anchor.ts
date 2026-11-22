@@ -1,7 +1,7 @@
 interface ReadingAnchor {
   node: Node;
   offset: number;
-  measure: () => DOMRect | null;
+  measure: () => Pick<DOMRect, "top" | "height"> | null;
 }
 
 /** Keep a text position, not a scroll percentage: wrapping changes earlier rows. */
@@ -9,6 +9,8 @@ export function captureTranscriptReadingAnchor(viewport: HTMLElement): ReadingAn
   const bounds = viewport.getBoundingClientRect();
   if (bounds.width <= 0 || bounds.height <= 0) return null;
   const readingLine = bounds.top + Math.min(12, bounds.height / 2);
+  const media = captureImageAnchor(viewport, bounds, readingLine);
+  if (media.atPoint) return media.anchor;
   const range = viewport.ownerDocument.caretRangeFromPoint?.(
     bounds.left + Math.min(160, bounds.width / 3), readingLine,
   );
@@ -28,7 +30,7 @@ export function captureTranscriptReadingAnchor(viewport: HTMLElement): ReadingAn
   // A parent list item can own text as well as nested blocks. Element boxes
   // cannot distinguish that text from gaps or children; measure text directly.
   const probe = viewport.ownerDocument.createRange();
-  if (typeof probe.getBoundingClientRect !== "function") return null;
+  if (typeof probe.getBoundingClientRect !== "function") return media.anchor;
   const walker = viewport.ownerDocument.createTreeWalker(viewport, NodeFilter.SHOW_ELEMENT | NodeFilter.SHOW_TEXT, {
     acceptNode: (node) => {
       if (node.nodeType === Node.TEXT_NODE) return node.textContent?.trim() ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_REJECT;
@@ -59,9 +61,35 @@ export function captureTranscriptReadingAnchor(viewport: HTMLElement): ReadingAn
       if (nextDistance === 0) break;
     }
   }
-  if (!best.node) return null;
+  if (!best.node || media.distance < best.distance) return media.anchor;
   probe.setStart(best.node, best.offset); probe.setEnd(best.node, best.offset + 1);
   return anchorFromRange(viewport, probe, bounds);
+}
+
+function captureImageAnchor(viewport: HTMLElement, bounds: DOMRect, readingLine: number) {
+  const best: { anchor: ReadingAnchor | null; distance: number; atPoint: boolean } = { anchor: null, distance: Infinity, atPoint: false };
+  const x = bounds.left + Math.min(160, bounds.width / 3);
+  for (const image of viewport.querySelectorAll("img")) {
+    const rect = image.getBoundingClientRect();
+    const visible = visiblePart(viewport, image, rect, bounds);
+    if (!visible) continue;
+    const distance = Math.max(visible.top - readingLine, readingLine - visible.bottom, 0);
+    const atPoint = distance === 0 && x >= rect.left && x < rect.right;
+    if (distance > best.distance || (distance === best.distance && (!atPoint || best.atPoint))) continue;
+    // Fractional position is appropriate inside one image, never the transcript.
+    const fraction = Math.max(0, Math.min(1, (readingLine - rect.top) / rect.height));
+    best.distance = distance; best.atPoint = atPoint;
+    best.anchor = {
+      node: image, offset: rect.top + fraction * rect.height - bounds.top,
+      measure: () => {
+        const next = image.getBoundingClientRect();
+        const top = next.top + fraction * next.height;
+        if (next.height <= 0 || !visiblePart(viewport, image, { top: top - 0.25, bottom: top + 0.25, height: 0.5 })) return null;
+        return { top, height: next.height };
+      },
+    };
+  }
+  return best;
 }
 
 function seekReadingCharacter(probe: Range, node: Node, readingLine: number, rect: DOMRect): void {
@@ -81,7 +109,7 @@ function seekReadingCharacter(probe: Range, node: Node, readingLine: number, rec
 
 /** Range boxes include clipped lines. Capture intersects the viewport; restore
  * only checks nested clips, since the anchor may have moved off screen. */
-function visiblePart(viewport: HTMLElement, node: Node, rect: DOMRect, bounds?: DOMRect): { top: number; bottom: number } | null {
+function visiblePart(viewport: HTMLElement, node: Node, rect: Pick<DOMRect, "top" | "bottom" | "height">, bounds?: DOMRect): { top: number; bottom: number } | null {
   if (rect.height <= 0) return null;
   let top = Math.max(rect.top, bounds?.top ?? -Infinity);
   let bottom = Math.min(rect.bottom, bounds?.bottom ?? Infinity);
