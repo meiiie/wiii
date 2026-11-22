@@ -21,7 +21,7 @@ function session(id: string, name: string, overrides: Partial<NekoSession> = {})
 function mount() {
   return render(<SessionSidebar
     overviewActive={false} coworkerActive={false} projects={[]} selectedProjectId={null}
-    externalSessionCount={0} onShowOverview={vi.fn()} onShowCoworker={vi.fn()}
+    onShowOverview={vi.fn()} onShowCoworker={vi.fn()}
     onShowConnections={vi.fn()} onNewSession={vi.fn()} onCreateProject={vi.fn()}
     onSelectProject={vi.fn()} onEditProject={vi.fn()} onOpenSession={vi.fn()}
   />);

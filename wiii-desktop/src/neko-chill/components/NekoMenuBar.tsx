@@ -86,8 +86,8 @@ export function NekoMenuBar(props: NekoMenuBarProps) {
   const actions: MenuAction[][] = [
     [
       { label: "Phiên mới", disabled: !props.ready, run: props.onNewSession },
-      { label: "Tạo Project…", disabled: !props.ready, run: props.onCreateProject },
-      { label: "Tìm Project hoặc phiên…", shortcut: `${modifier}K`, disabled: !props.ready, run: props.onSearch },
+      { label: "Tạo dự án…", disabled: !props.ready, run: props.onCreateProject },
+      { label: "Tìm dự án hoặc phiên…", shortcut: `${modifier}K`, disabled: !props.ready, run: props.onSearch },
       { label: "Tài khoản & ứng dụng…", run: props.onConnections },
       { label: "Thông báo & âm thanh…", run: () => setHelp("notifications") },
     ],
@@ -105,7 +105,7 @@ export function NekoMenuBar(props: NekoMenuBarProps) {
         disabled: !props.workspaceAvailable,
         disabledReason: props.workspaceAvailable
           ? undefined
-          : "Mở Project hoặc phiên có thư mục trước.",
+          : "Mở dự án hoặc phiên có thư mục trước.",
         run: props.onToggleWorkspace,
       },
     ],

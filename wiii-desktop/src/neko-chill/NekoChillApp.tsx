@@ -458,16 +458,6 @@ function NekoChillScreen({
     () => Object.values(providerCatalogsById),
     [providerCatalogsById],
   );
-  const externalSessionCount = useMemo(() => {
-    const attached = new Set(
-      sessions.flatMap((item) =>
-        item.backendSessionId ? [`${item.agentId}:${item.backendSessionId}`] : [],
-      ),
-    );
-    return providerCatalogs
-      .flatMap((catalog) => catalog.sessions)
-      .filter((item) => !attached.has(`${item.providerId}:${item.nativeSessionId}`)).length;
-  }, [providerCatalogs, sessions]);
   const providerDiscoveryLoading = useNekoProviderSessionStore((state) => state.loading);
   const refreshProviderSessions = useNekoProviderSessionStore((state) => state.refresh);
   const projects = useNekoProjectStore((state) => state.projects);
@@ -975,7 +965,6 @@ function NekoChillScreen({
       onShowConnections={openConnectionsFromSidebar}
       projects={projects}
       selectedProjectId={selectedProjectId}
-      externalSessionCount={externalSessionCount}
       onShowOverview={showOverview}
       onShowCoworker={showCoworkerHome}
       onNewSession={handleNewSession}

@@ -73,14 +73,14 @@ describe("application menu and local editing", () => {
   it("routes real project/search/view actions without starting a task implicitly", () => {
     const { actions } = setup();
     fireEvent.click(screen.getByRole("menuitem", { name: "Tệp", exact: true }));
-    fireEvent.click(screen.getByRole("menuitem", { name: "Tạo Project…" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "Tạo dự án…" }));
     expect(actions.onCreateProject).toHaveBeenCalledOnce();
     expect(actions.onNewSession).not.toHaveBeenCalled();
     fireEvent.click(screen.getByRole("menuitem", { name: "Xem", exact: true }));
     fireEvent.click(screen.getByRole("menuitemcheckbox", { name: /Thanh bên/ }));
     expect(actions.onToggleSidebar).toHaveBeenCalledOnce();
     fireEvent.click(screen.getByRole("menuitem", { name: "Tệp", exact: true }));
-    fireEvent.click(screen.getByRole("menuitem", { name: /Tìm Project/ }));
+    fireEvent.click(screen.getByRole("menuitem", { name: /Tìm dự án/ }));
     expect(actions.onSearch).toHaveBeenCalledOnce();
   });
 
@@ -92,7 +92,7 @@ describe("application menu and local editing", () => {
     fireEvent.keyDown(document.activeElement!, { key: "ArrowRight" });
     fireEvent.keyDown(document.activeElement!, { key: "ArrowRight" });
     const tools = screen.getByRole("menuitemcheckbox", { name: /Công cụ dự án/ });
-    expect(tools.getAttribute("title")).toBe("Mở Project hoặc phiên có thư mục trước.");
+    expect(tools.getAttribute("title")).toBe("Mở dự án hoặc phiên có thư mục trước.");
     fireEvent.click(tools);
     expect(actions.onToggleWorkspace).not.toHaveBeenCalled();
   });
