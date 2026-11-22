@@ -150,6 +150,33 @@ describe("Neko transcript reading continuity", () => {
     paragraph.remove(); reflow(750, 240); resize(viewport);
     expect(viewport.scrollTop).toBe(300);
   });
+  it("keeps a nearby paragraph edge in place when the reading line falls in a gap", () => {
+    const { viewport, paragraph, reflow } = readingFixture();
+    const message = document.createElement("div");
+    message.dataset.nekoMessageIndex = "99";
+    paragraph.replaceWith(message);
+    let expanded = false;
+    message.getBoundingClientRect = () => {
+      const top = 100 - viewport.scrollTop;
+      return { top, bottom: top + 1000, height: 1000 } as DOMRect;
+    };
+    paragraph.getBoundingClientRect = () => {
+      const top = 200 - viewport.scrollTop;
+      const height = expanded ? 285 : 205;
+      return { top, bottom: top + height, height } as DOMRect;
+    };
+    const next = document.createElement("p");
+    next.textContent = "Đoạn đang đến gần";
+    next.getBoundingClientRect = () => {
+      const top = 100 + (expanded ? 410 : 330) - viewport.scrollTop;
+      return { top, bottom: top + 30, height: 30 } as DOMRect;
+    };
+    message.append(paragraph, next);
+    resize(viewport); fireEvent.scroll(viewport);
+    expanded = true; reflow(750, 320); resize(viewport); paint();
+    expect(viewport.scrollTop).toBe(380);
+    expect(next.getBoundingClientRect().top).toBe(130);
+  });
   it("does not mistake reflow clamping for choosing to follow the tail", () => {
     const { viewport, paragraph, reflow } = readingFixture();
     resize(viewport); fireEvent.scroll(viewport);

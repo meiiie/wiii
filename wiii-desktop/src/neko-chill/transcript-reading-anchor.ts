@@ -1,6 +1,7 @@
 interface ReadingAnchor {
   node: Node;
   offset: number;
+  edge?: "top" | "bottom";
   measure: () => DOMRect | null;
 }
 
@@ -42,26 +43,35 @@ export function captureTranscriptReadingAnchor(viewport: HTMLElement): ReadingAn
     }
   }
 
-  // Fallback for engines without point-to-text ranges; prefer a visible leaf
-  // paragraph/list item over its much taller enclosing assistant message.
-  const best: { element: HTMLElement | null; distance: number } = { element: null, distance: Infinity };
+  // Fallback for engines without point-to-text ranges. Remove visible enclosing
+  // containers first: their large boxes also cover the gaps between paragraphs.
+  const visible = new Map<HTMLElement, DOMRect>();
   for (const element of viewport.querySelectorAll<HTMLElement>(
     "p,li,pre,blockquote,h1,h2,h3,h4,h5,h6,td,th,[data-neko-message-index]",
   )) {
     const rect = element.getBoundingClientRect();
-    if (rect.height <= 0 || rect.bottom <= bounds.top || rect.top >= bounds.bottom) continue;
-    // A tall paragraph crossing the reading line wins over a later paragraph
-    // whose top happens to be closer. Among enclosing blocks, prefer the leaf.
-    const nextDistance = rect.top <= readingLine && rect.bottom > readingLine
-      ? 0 : Math.abs(rect.top - readingLine);
-    if (nextDistance < best.distance || (nextDistance === best.distance && best.element?.contains(element))) {
+    if (rect.height > 0 && rect.bottom > bounds.top && rect.top < bounds.bottom) visible.set(element, rect);
+  }
+  const containers = new Set<HTMLElement>();
+  for (const element of visible.keys()) {
+    for (let parent = element.parentElement; parent && parent !== viewport; parent = parent.parentElement) {
+      if (visible.has(parent)) containers.add(parent);
+    }
+  }
+  const best: { element: HTMLElement | null; distance: number } = { element: null, distance: Infinity };
+  for (const [element, rect] of visible) {
+    if (containers.has(element)) continue;
+    const nextDistance = Math.max(rect.top - readingLine, readingLine - rect.bottom, 0);
+    if (nextDistance < best.distance) {
       best.element = element;
       best.distance = nextDistance;
     }
   }
   const element = best.element;
   if (!element) return null;
-  return { node: element, offset: element.getBoundingClientRect().top - bounds.top, measure: () => element.getBoundingClientRect() };
+  const rect = visible.get(element)!;
+  const edge = rect.bottom < readingLine ? "bottom" : "top";
+  return { node: element, edge, offset: rect[edge] - bounds.top, measure: () => element.getBoundingClientRect() };
 }
 
 export function restoreTranscriptReadingAnchor(viewport: HTMLElement, anchor: ReadingAnchor | null): boolean {
@@ -70,7 +80,7 @@ export function restoreTranscriptReadingAnchor(viewport: HTMLElement, anchor: Re
   if (!anchor?.node.isConnected || !viewport.contains(anchor.node)) return false;
   const bounds = anchor.measure();
   if (!bounds || bounds.height <= 0) return false;
-  const delta = bounds.top - viewport.getBoundingClientRect().top - anchor.offset;
+  const delta = bounds[anchor.edge ?? "top"] - viewport.getBoundingClientRect().top - anchor.offset;
   if (!Number.isFinite(delta)) return false;
   if (Math.abs(delta) > 0.5) viewport.scrollTop += delta;
   return true;
