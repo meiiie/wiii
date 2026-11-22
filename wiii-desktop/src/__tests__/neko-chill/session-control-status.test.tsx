@@ -58,6 +58,22 @@ function nativeCancellationEvents(before: string, afterRun = "run"): NekoSession
 }
 
 describe("session control presentation facts", () => {
+  it.each(["constructor", "Exit code 0", "Unexpected shutdown"])("preserves other exit details verbatim: %s", statusDetail => {
+    expect(getSessionControlNotices(makeSession({ status: "exited", statusDetail }))[0]?.text).toBe(statusDetail);
+  });
+  it.each([
+    ["Đã kết thúc phiên — nhắn tiếp để khởi động lại agent.", "Đã kết thúc phiên."],
+    ["Phiên đã lưu — nhắn tiếp để khởi động lại agent.", "Phiên đã lưu."],
+  ])("shortens known successful exit copy without changing stored detail: %s", (statusDetail, text) => {
+    const session = makeSession({ status: "exited", statusDetail });
+    expect(getSessionControlNotices(session)).toEqual([{ kind: "detail", tone: "quiet", text, guidance: undefined }]);
+    expect(session.statusDetail).toBe(statusDetail);
+    expect(getSessionControlNotices({ ...session, status: "error" })[0]?.text).toBe(statusDetail);
+    expect(getSessionControlNotices({ ...session, status: "stopping" })[0]?.text).toBe(statusDetail);
+    render(<SessionControlStatus session={session} />);
+    expect(screen.getByTestId("session-control-detail").textContent).toBe(text);
+    expect(screen.queryByText(/khởi động|agent/)).toBeNull();
+  });
   it("offers one recovery action instead of asking a restored chat user to debug logs", () => {
     const onRecover = vi.fn();
     const session = makeSession({ runtime: null, status: "error", events: [native(1, "running")] });
