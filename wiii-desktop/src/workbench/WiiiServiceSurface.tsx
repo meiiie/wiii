@@ -27,7 +27,7 @@ export function WiiiServiceSurface({ view, onBack, onOpenConnect }: {
 
   if (error) return <BootFailure error={error} onRetry={retry} />;
   if (loading) return <BootSplash label="Wiii đang kết nối Service..." />;
-  if (!authenticated || !settings.server_url) return <LoginScreen onOpenLocal={onBack} />;
+  if (!authenticated || !settings.server_url) return <LoginScreen onOpenLocal={onBack} intent={view} />;
   if (view === "connect") return (
     <div className="flex h-screen min-h-0 flex-col bg-surface">
       <TitleBar minimal />
