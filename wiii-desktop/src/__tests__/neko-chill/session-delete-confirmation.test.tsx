@@ -68,8 +68,8 @@ describe("Session delete confirmation", () => {
     const body = within(dialog);
     expect(useNekoSessionStore.getState().deleteSession).not.toHaveBeenCalled();
     expect(body.getByTestId("session-delete-title").textContent).toBe(title);
-    expect(body.getByText(`ID: ${targetId}`)).toBeTruthy();
-    expect(body.getByText(/chọn Kết thúc/)).toBeTruthy();
+    expect(body.queryByText(`ID: ${targetId}`)).toBeNull();
+    expect(body.getByText(/Tệp dự án được giữ nguyên/)).toBeTruthy();
     expect(body.getByText(/Không thể hoàn tác/)).toBeTruthy();
     expect(document.activeElement).toBe(body.getByRole("button", { name: "Hủy" }));
   });
@@ -177,7 +177,7 @@ describe("Session delete confirmation", () => {
       sessions: { ...useNekoSessionStore.getState().sessions, [targetId]: session(targetId, "Tiêu đề đã đổi") },
     }));
     expect(within(dialog).getByTestId("session-delete-title").textContent).toBe(title);
-    expect(within(dialog).getByText(`ID: ${targetId}`)).toBeTruthy();
+    expect(within(dialog).queryByText(`ID: ${targetId}`)).toBeNull();
     expect(document.activeElement).toBe(within(dialog).getByRole("button", { name: "Hủy" }));
     await act(async () => fireEvent.click(within(dialog).getByRole("button", { name: "Xóa phiên và lịch sử" })));
     expect(deleteSession).toHaveBeenCalledExactlyOnceWith(targetId);
@@ -227,7 +227,7 @@ describe("Session delete confirmation", () => {
     expect(useNekoSessionStore.getState().deleteSession).not.toHaveBeenCalled();
   });
 
-  it("retains a complete long title and session id without truncating the confirmation", () => {
+  it("retains a complete long title without exposing technical identifiers", () => {
     const longTitle = "Phiên phân tích dữ liệu rất dài / ".repeat(12);
     useNekoSessionStore.setState({ sessions: { [targetId]: session(targetId, longTitle) } });
     mount();
