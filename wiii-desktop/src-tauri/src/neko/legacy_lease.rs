@@ -1,4 +1,4 @@
-//! Narrow migration for Neko 1.9.3's PID-only locks in Wiii's Linux PID namespaces.
+//! Explicit migration for retired PID-only locks in Wiii's Linux PID namespaces.
 //! Never takes over a live/unknown execution or a newer Core lease format.
 use super::journal::SessionRecord;
 use serde::Deserialize;
@@ -27,6 +27,11 @@ mod request_tests {
             "records",
             "quiescent",
             "agentSessionId",
+            "receipt",
+            "root",
+            "scope",
+            "taskScope",
+            "nativeProof",
         ] {
             let mut forged = request.clone();
             forged[field] = json!(1);
@@ -218,7 +223,8 @@ mod linux {
         snapshot: &Value,
         request: &LegacyLeaseRequest,
         records: &[SessionRecord],
-        acquired: i64,
+        acquired: Option<i64>,
+        scoped: bool,
     ) -> bool {
         let Some(saved) = snapshot.get(format!("session:{}", request.client_session_id)) else {
             return false;
@@ -227,7 +233,7 @@ mod linux {
         if entry["id"].as_str() != Some(&request.client_session_id)
             || entry["agentId"] != "neko"
             || entry["backendSessionId"].as_str() != Some(&request.backend_session_id)
-            || !entry["taskScope"].is_null()
+            || entry["taskScope"].is_null() == scoped
         {
             return false;
         }
@@ -275,6 +281,10 @@ mod linux {
                 native.provider_id == "neko"
                     && terminal(native)
                     && native.task_id == task_id
+                    && (!scoped
+                        || (entry["execution"]["runId"].as_str() == Some(&native.run_id)
+                            && entry["execution"]["environmentId"].as_str()
+                                == Some(&native.environment_id)))
                     && extensions["nativeAgentSessionId"].as_str() == Some(&native.agent_session_id)
                     && extensions["nativeRunId"].as_str() == Some(&native.run_id)
                     && Path::new(&native.workspace_path)
@@ -282,11 +292,184 @@ mod linux {
                         .ok()
                         .as_ref()
                         == Some(&workspace)
-                    && started <= acquired
-                    && acquired <= attached
+                    && started <= attached
+                    && acquired.is_none_or(|acquired| started <= acquired && acquired <= attached)
                     && attached <= ended
             })
         })
+    }
+
+    /// This does not grant a workspace or rotate an activation. Core must still
+    /// independently validate authority/configuration and a later explicit load.
+    fn scoped_checkpoint_matches(
+        saved: &Value,
+        checkpoint: &Value,
+        request: &LegacyLeaseRequest,
+    ) -> bool {
+        let entry = &saved[format!("session:{}", request.client_session_id)]["entry"];
+        let scope = &entry["taskScope"];
+        let receipt = &scope["receipt"];
+        let protocol = &checkpoint["taskProtocol"];
+        let hex_id = |value: &Value| {
+            value
+                .as_str()
+                .is_some_and(|id| id.len() == 32 && id.bytes().all(|b| b.is_ascii_hexdigit()))
+        };
+        let Some(workspace) = entry["workspace"]["path"]
+            .as_str()
+            .and_then(|path| Path::new(path).canonicalize().ok())
+        else {
+            return false;
+        };
+        let Some(root) = workspace.to_str() else {
+            return false;
+        };
+        let Some(label) = receipt["label"].as_str() else {
+            return false;
+        };
+        let Some(tasks) = checkpoint["tasks"].as_array() else {
+            return false;
+        };
+        let active = tasks
+            .iter()
+            .filter(|task| task["id"] == receipt["id"])
+            .collect::<Vec<_>>();
+        matches!(checkpoint["schemaVersion"].as_u64(), Some(2 | 3))
+            && checkpoint["id"].as_str() == Some(&request.backend_session_id)
+            && hex_id(&checkpoint["id"])
+            && hex_id(&receipt["id"])
+            && hex_id(&receipt["activationId"])
+            && checkpoint["id"] != receipt["id"]
+            && checkpoint["id"] != receipt["activationId"]
+            && receipt["id"] != receipt["activationId"]
+            && checkpoint["canonicalRoot"].as_str() == Some(root)
+            && checkpoint["activeTaskId"] == receipt["id"]
+            && active.len() == 1
+            && active[0]["label"] == receipt["label"]
+            && active[0]["canonicalRoot"].as_str() == Some(root)
+            && !label.trim().is_empty()
+            && label.len() <= 256
+            && !label.chars().any(char::is_control)
+            && scope["version"] == 1
+            && scope["mode"] == "fixed-active-task"
+            && (scope["state"] == "bound"
+                || (scope["state"] == "recovery-required"
+                    && scope["reason"] == "writer-unavailable"))
+            && scope["threadId"].as_str() == Some(&request.client_session_id)
+            && scope["backendSessionId"].as_str() == Some(&request.backend_session_id)
+            && scope["execution"] == entry["execution"]
+            && scope["execution"].is_object()
+            && scope["projectId"] == entry["projectId"]
+            && scope["workspacePath"] == entry["workspace"]["path"]
+            && scope["authorizedRoot"].as_str() == Some(root)
+            && scope["label"] == receipt["label"]
+            && receipt["version"] == 1
+            && receipt["mode"] == "fixed-active-task"
+            && receipt["root"].as_str() == Some(root)
+            && receipt["activationEpoch"]
+                .as_u64()
+                .is_some_and(|epoch| epoch > 0 && epoch <= 9_007_199_254_740_991)
+            && protocol["version"] == 1
+            && protocol["mode"] == "fixed-active-task"
+            && protocol["activationEpoch"] == receipt["activationEpoch"]
+            && protocol["activationId"] == receipt["activationId"]
+    }
+
+    fn recover_scoped(
+        home: &Path,
+        app_data: &Path,
+        request: &LegacyLeaseRequest,
+        snapshot: &Value,
+        native_proof: impl FnOnce() -> Result<QuiescentNekoCatalog, String>,
+    ) -> Result<bool, String> {
+        let core = home.join(".neko-core");
+        let sessions = core.join("task-sessions");
+        for directory in [&core, &sessions] {
+            if !fs::symlink_metadata(directory).is_ok_and(|meta| meta.file_type().is_dir()) {
+                return Err("Unsafe Core task session directory".into());
+            }
+        }
+        let path = sessions.join(format!("{}.lock", request.backend_session_id));
+        let lock = match fs::symlink_metadata(&path) {
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => None,
+            Err(_) => return Err("Cannot inspect task lease".into()),
+            Ok(_) => Some(read_regular(&path, 4_096)?),
+        };
+        let acquired = if let Some((bytes, _)) = &lock {
+            let value: Value = serde_json::from_slice(bytes).map_err(|_| "Malformed task lease")?;
+            let object = value.as_object().ok_or("Malformed task lease")?;
+            if object
+                .keys()
+                .any(|key| !["pid", "token", "acquiredAt"].contains(&key.as_str()))
+            {
+                return Ok(false); // Future Core formats remain Core-owned.
+            }
+            let lease: LegacyLock =
+                serde_json::from_value(value).map_err(|_| "Malformed task lease")?;
+            if lease.pid != 1 {
+                return Ok(false);
+            }
+            if lease.token.len() != 32 || !lease.token.bytes().all(|b| b.is_ascii_hexdigit()) {
+                return Err("Malformed task lease".into());
+            }
+            Some(
+                millis(&lease.acquired_at)
+                    .filter(|at| *at >= 0)
+                    .ok_or("Invalid task lease time")?,
+            )
+        } else {
+            None
+        };
+        let checkpoint_path = sessions.join(format!("{}.json", request.backend_session_id));
+        let (bytes, identity) = read_regular(&checkpoint_path, 64 * 1024 * 1024)?;
+        let checkpoint: Value =
+            serde_json::from_slice(&bytes).map_err(|_| "Malformed task checkpoint")?;
+        if !scoped_checkpoint_matches(snapshot, &checkpoint, request) {
+            return Err("Cannot prove scoped checkpoint identity".into());
+        }
+        // Also required when retrying a removal whose later strict save failed.
+        let records = native_proof()?.records;
+        let entry = &snapshot[format!("session:{}", request.client_session_id)]["entry"];
+        if records.iter().any(|native| {
+            native.provider_id == "neko"
+                && entry["execution"]["taskId"].as_str() == Some(&native.task_id)
+                && !terminal(native)
+        }) || !owns_lease(snapshot, request, &records, acquired, true)
+        {
+            return Err("Cannot prove terminal scoped lease ownership".into());
+        }
+        let (current, current_identity) = read_regular(&checkpoint_path, 64 * 1024 * 1024)?;
+        let (saved, _) =
+            read_regular(&app_data.join("neko-chill-sessions.json"), 64 * 1024 * 1024)?;
+        let saved: Value =
+            serde_json::from_slice(&saved).map_err(|_| "Cannot recheck scoped mapping")?;
+        let key = format!("session:{}", request.client_session_id);
+        if current != bytes
+            || identity.dev() != current_identity.dev()
+            || identity.ino() != current_identity.ino()
+            || saved[&key] != snapshot[&key]
+        {
+            return Err("Scoped recovery identity changed".into());
+        }
+        if let Some((bytes, identity)) = lock {
+            let (current, current_identity) = read_regular(&path, 4_096)?;
+            if current != bytes
+                || identity.dev() != current_identity.dev()
+                || identity.ino() != current_identity.ino()
+            {
+                return Err("Task lease changed during recovery".into());
+            }
+            fs::remove_file(&path).map_err(|_| "Cannot remove verified task lease")?;
+            File::open(&sessions)
+                .and_then(|dir| dir.sync_all())
+                .map_err(|_| "Cannot save task lease recovery")?;
+        } else {
+            match fs::symlink_metadata(&path) {
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+                _ => return Err("Cannot prove task writer remained absent".into()),
+            }
+        }
+        Ok(true)
     }
 
     pub(super) fn recover(
@@ -295,6 +478,17 @@ mod linux {
         request: &LegacyLeaseRequest,
         native_proof: impl FnOnce() -> Result<QuiescentNekoCatalog, String>,
     ) -> Result<bool, String> {
+        let store = app_data.join("neko-chill-sessions.json");
+        if store.exists() {
+            let (bytes, _) = read_regular(&store, 64 * 1024 * 1024)?;
+            let snapshot: Value =
+                serde_json::from_slice(&bytes).map_err(|_| "Malformed saved sessions")?;
+            if !snapshot[format!("session:{}", request.client_session_id)]["entry"]["taskScope"]
+                .is_null()
+            {
+                return recover_scoped(home, app_data, request, &snapshot, native_proof);
+            }
+        }
         let core = home.join(".neko-core");
         let sessions = core.join("sessions");
         for directory in [&core, &sessions] {
@@ -338,7 +532,7 @@ mod linux {
             read_regular(&app_data.join("neko-chill-sessions.json"), 64 * 1024 * 1024)?;
         let snapshot: Value =
             serde_json::from_slice(&store).map_err(|_| "Cannot prove saved session ownership")?;
-        if !owns_lease(&snapshot, request, &records, acquired) {
+        if !owns_lease(&snapshot, request, &records, Some(acquired), false) {
             return Err("Cannot prove legacy lease ownership".into());
         }
         // No compliant writer can replace this PID-1 lease while it exists;
@@ -443,6 +637,312 @@ mod tests {
     impl Drop for Fixture {
         fn drop(&mut self) {
             let _ = fs::remove_dir_all(&self.root);
+        }
+    }
+
+    const TASK_BACKEND: &str = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
+    struct ScopedFixture {
+        base: Fixture,
+        checkpoint: Value,
+    }
+    impl ScopedFixture {
+        fn new() -> Self {
+            let mut base = Fixture::new();
+            base.request.backend_session_id = TASK_BACKEND.into();
+            base.record.task_id = "host-task".into();
+            base.record.provider_version = Some("1.9.4".into());
+            let root = base.root.canonicalize().unwrap();
+            let receipt = json!({"version": 1, "mode": "fixed-active-task", "id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                "activationId": "cccccccccccccccccccccccccccccccc", "activationEpoch": 1, "label": "Kept task", "root": root});
+            let execution = json!({"taskId": "host-task", "runId": "run", "environmentId": "env"});
+            let entry = &mut base.saved["session:thread"]["entry"];
+            entry["backendSessionId"] = json!(TASK_BACKEND);
+            entry["projectId"] = json!("project");
+            entry["execution"] = execution.clone();
+            entry["taskScope"] = json!({"version": 1, "mode": "fixed-active-task", "state": "recovery-required",
+                "reason": "writer-unavailable", "threadId": "thread", "backendSessionId": TASK_BACKEND,
+                "projectId": "project", "execution": execution, "workspacePath": base.root, "authorizedRoot": root,
+                "label": "Kept task", "receipt": receipt});
+            base.saved["session:thread"]["events"][0]["data"]["provider"]["backendSessionId"] =
+                json!(TASK_BACKEND);
+            let checkpoint = json!({"schemaVersion": 2, "id": TASK_BACKEND, "canonicalRoot": root,
+                "createdAt": "2026-08-23T00:00:01Z", "activeTaskId": receipt["id"],
+                "taskProtocol": {"version": 1, "mode": "fixed-active-task", "activationEpoch": 1, "activationId": receipt["activationId"]},
+                "tasks": [{"id": receipt["id"], "label": "Kept task", "canonicalRoot": root, "messages": [{"role": "user", "content": "kept context"}]}]});
+            fs::create_dir_all(base.root.join(".neko-core/task-sessions")).unwrap();
+            let this = Self { base, checkpoint };
+            fs::copy(this.base.path(), this.path()).unwrap();
+            this.save();
+            this
+        }
+        fn path(&self) -> PathBuf {
+            self.base
+                .root
+                .join(format!(".neko-core/task-sessions/{TASK_BACKEND}.lock"))
+        }
+        fn checkpoint_path(&self) -> PathBuf {
+            self.path().with_extension("json")
+        }
+        fn save(&self) {
+            self.base.save();
+            fs::write(
+                self.checkpoint_path(),
+                serde_json::to_vec(&self.checkpoint).unwrap(),
+            )
+            .unwrap();
+        }
+        fn recover_with(
+            &self,
+            proof: impl FnOnce() -> Result<QuiescentNekoCatalog, String>,
+        ) -> Result<bool, String> {
+            recover(&self.base.root, &self.base.root, &self.base.request, proof)
+        }
+        fn recover(&self) -> Result<bool, String> {
+            self.recover_with(|| {
+                Ok(QuiescentNekoCatalog {
+                    records: vec![self.base.record.clone()],
+                })
+            })
+        }
+        fn refused(&self) {
+            let bytes = fs::read(self.path()).unwrap();
+            assert!(self.recover().is_err());
+            assert_eq!(fs::read(self.path()).unwrap(), bytes);
+        }
+    }
+
+    #[test]
+    fn scoped_recovery_preserves_context_and_receipt_and_can_retry_after_one_time_removal() {
+        let f = ScopedFixture::new();
+        let history = fs::read(f.base.store()).unwrap();
+        let checkpoint = fs::read(f.checkpoint_path()).unwrap();
+        let colliding_legacy = f
+            .base
+            .root
+            .join(format!(".neko-core/sessions/{TASK_BACKEND}.json.lock"));
+        fs::write(&colliding_legacy, "untouched legacy collision").unwrap();
+        assert_eq!(f.recover(), Ok(true));
+        assert!(!f.path().exists());
+        // A strict frontend save may fail after unlink. Full proof is still
+        // required for the missing-lock retry; it cannot strand the transcript.
+        assert_eq!(f.recover(), Ok(true));
+        assert_eq!(fs::read(f.base.store()).unwrap(), history);
+        assert_eq!(fs::read(f.checkpoint_path()).unwrap(), checkpoint);
+        assert_eq!(
+            fs::read_to_string(colliding_legacy).unwrap(),
+            "untouched legacy collision"
+        );
+    }
+
+    #[test]
+    fn scoped_recovery_handles_later_activations_without_confusing_original_checkpoint_creation_time(
+    ) {
+        let mut f = ScopedFixture::new();
+        let activation = json!("dddddddddddddddddddddddddddddddd");
+        f.checkpoint["taskProtocol"]["activationEpoch"] = json!(2);
+        f.checkpoint["taskProtocol"]["activationId"] = activation.clone();
+        f.base.saved["session:thread"]["entry"]["taskScope"]["receipt"]["activationEpoch"] =
+            json!(2);
+        f.base.saved["session:thread"]["entry"]["taskScope"]["receipt"]["activationId"] =
+            activation;
+        f.base.record.created_at = "2026-08-23T00:00:10Z".into();
+        f.base.record.updated_at = "2026-08-23T00:00:13Z".into();
+        f.base.saved["session:thread"]["events"][0]["at"] =
+            json!(chrono::DateTime::parse_from_rfc3339("2026-08-23T00:00:12Z")
+                .unwrap()
+                .timestamp_millis());
+        fs::write(
+            f.path(),
+            serde_json::to_vec(
+                &json!({"pid": 1, "token": "0123456789abcdef0123456789abcdef",
+            "acquiredAt": "2026-08-23T00:00:11Z"}),
+            )
+            .unwrap(),
+        )
+        .unwrap();
+        f.save();
+        assert_eq!(f.recover(), Ok(true));
+        assert_eq!(f.recover(), Ok(true));
+    }
+
+    #[test]
+    fn scoped_recovery_refuses_foreign_or_uncertain_checkpoint_receipt_and_execution() {
+        for field in [
+            "epoch",
+            "activation",
+            "task",
+            "root",
+            "label",
+            "schema",
+            "backend",
+            "mapping",
+            "run",
+            "environment",
+            "native",
+            "unknown",
+            "phase",
+            "continuity",
+            "no-attach",
+            "time",
+        ] {
+            let mut f = ScopedFixture::new();
+            match field {
+                "epoch" => f.checkpoint["taskProtocol"]["activationEpoch"] = json!(2),
+                "activation" => {
+                    f.checkpoint["taskProtocol"]["activationId"] =
+                        json!("dddddddddddddddddddddddddddddddd")
+                }
+                "task" => f.checkpoint["activeTaskId"] = json!("dddddddddddddddddddddddddddddddd"),
+                "root" => f.checkpoint["canonicalRoot"] = json!("/"),
+                "label" => f.checkpoint["tasks"][0]["label"] = json!("foreign label"),
+                "schema" => f.checkpoint["schemaVersion"] = json!(4),
+                "backend" => {
+                    f.base.saved["session:thread"]["entry"]["backendSessionId"] = json!("foreign")
+                }
+                "mapping" => {
+                    f.base.saved["session:thread"]["entry"]["taskScope"]["reason"] =
+                        json!("load-response-uncertain")
+                }
+                "run" => f.base.record.run_id = "foreign".into(),
+                "environment" => f.base.record.environment_id = "foreign".into(),
+                "native" => f.base.record.agent_session_id = "foreign".into(),
+                "unknown" => f.base.record.state = RunState::UnknownOutcome,
+                "phase" => f.base.record.operation_phase = OperationPhase::UnknownOutcome,
+                "continuity" => f.base.record.continuity = "unknown_outcome".into(),
+                "no-attach" => f.base.saved["session:thread"]["events"] = json!([]),
+                "time" => fs::write(f.path(), serde_json::to_vec(&json!({"pid": 1,
+                    "token": "0123456789abcdef0123456789abcdef", "acquiredAt": "2026-08-23T00:00:04Z"})).unwrap()).unwrap(),
+                _ => unreachable!(),
+            }
+            f.save();
+            f.refused();
+        }
+        let f = ScopedFixture::new();
+        fs::remove_file(f.path()).unwrap();
+        let mut unknown = f.base.record.clone();
+        unknown.state = RunState::UnknownOutcome;
+        assert!(f
+            .recover_with(|| Ok(QuiescentNekoCatalog {
+                records: vec![unknown]
+            }))
+            .is_err());
+    }
+
+    #[test]
+    fn scoped_live_process_and_live_namespace_refuse_the_lock_even_with_terminal_catalog_metadata()
+    {
+        use std::io::{BufRead, BufReader};
+        use std::process::{Command, Stdio};
+        let f = ScopedFixture::new();
+        let bytes = fs::read(f.path()).unwrap();
+        assert_eq!(
+            f.recover_with(|| prove_quiescent(vec![f.base.record.clone()], &["native".into()])),
+            Err(BUSY.into())
+        );
+        let mut child = Command::new("bwrap")
+            .args([
+                "--unshare-pid",
+                "--as-pid-1",
+                "--die-with-parent",
+                "--dev-bind",
+                "/",
+                "/",
+                "--proc",
+                "/proc",
+                "--",
+                "/bin/sh",
+                "-c",
+                "echo ready; read input",
+            ])
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .unwrap();
+        let mut line = String::new();
+        let ready = BufReader::new(child.stdout.take().unwrap()).read_line(&mut line);
+        // No retained process handle in the catalog: native /proc proof must
+        // still detect the real live namespace before touching the task lock.
+        let result = f.recover_with(|| prove_quiescent(vec![f.base.record.clone()], &[]));
+        let _ = child.kill();
+        let _ = child.wait();
+        assert!(ready.is_ok());
+        assert_eq!(line.trim(), "ready");
+        assert_eq!(result, Err(BUSY.into()));
+        assert_eq!(fs::read(f.path()).unwrap(), bytes);
+    }
+
+    #[test]
+    fn scoped_recovery_refuses_unsafe_files_and_checkpoint_or_lease_races() {
+        for field in [
+            "symlink",
+            "hardlink",
+            "oversized",
+            "checkpoint-race",
+            "mapping-race",
+            "lock-race",
+            "inode-race",
+        ] {
+            let f = ScopedFixture::new();
+            let original = fs::read(f.path()).unwrap();
+            match field {
+                "symlink" => {
+                    fs::rename(f.checkpoint_path(), f.base.root.join("original-checkpoint"))
+                        .unwrap();
+                    std::os::unix::fs::symlink(
+                        f.base.root.join("original-checkpoint"),
+                        f.checkpoint_path(),
+                    )
+                    .unwrap();
+                }
+                "hardlink" => fs::hard_link(
+                    f.checkpoint_path(),
+                    f.base.root.join("second-checkpoint-link"),
+                )
+                .unwrap(),
+                "oversized" => fs::File::create(f.checkpoint_path())
+                    .unwrap()
+                    .set_len(64 * 1024 * 1024 + 1)
+                    .unwrap(),
+                _ => {}
+            }
+            let result = f.recover_with(|| {
+                match field {
+                    "checkpoint-race" => fs::write(f.checkpoint_path(), b"{}").unwrap(),
+                    "mapping-race" => fs::write(f.base.store(), b"{}").unwrap(),
+                    "lock-race" => fs::write(f.path(), b"{}").unwrap(),
+                    "inode-race" => {
+                        fs::rename(f.path(), f.base.root.join("original-lock")).unwrap();
+                        fs::write(f.path(), &original).unwrap();
+                    }
+                    _ => {}
+                }
+                Ok(QuiescentNekoCatalog {
+                    records: vec![f.base.record.clone()],
+                })
+            });
+            assert!(result.is_err(), "{field}");
+            assert!(f.path().exists());
+            if field != "lock-race" {
+                assert_eq!(fs::read(f.path()).unwrap(), original);
+            }
+        }
+    }
+
+    #[test]
+    fn scoped_recovery_never_takes_new_format_or_non_namespace_locks() {
+        for lease in [
+            json!({"pid": 42, "token": "0123456789abcdef0123456789abcdef", "acquiredAt": "2026-08-23T00:00:01Z"}),
+            json!({"pid": 1, "token": "0123456789abcdef0123456789abcdef", "acquiredAt": "2026-08-23T00:00:01Z", "startTime": "1234"}),
+        ] {
+            let f = ScopedFixture::new();
+            let bytes = serde_json::to_vec(&lease).unwrap();
+            fs::write(f.path(), &bytes).unwrap();
+            assert_eq!(
+                f.recover_with(|| panic!("unsupported format requires no mutation or global stop")),
+                Ok(false)
+            );
+            assert_eq!(fs::read(f.path()).unwrap(), bytes);
         }
     }
 

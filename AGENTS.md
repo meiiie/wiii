@@ -144,4 +144,5 @@ For Wiii Spec Kit workflow context, read `.specify/memory/constitution.md`
 and `docs/operations/WIII_SPEC_KIT_WORKFLOW.md`. When a Spec Kit feature is
 active, also read that feature's `specs/<feature>/plan.md` and
 `specs/<feature>/tasks.md`.
+Retired Work scoped recovery: `specs/1072-feat-remove-work-surface/plan.md`.
 <!-- SPECKIT END -->

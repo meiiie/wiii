@@ -1,6 +1,6 @@
 /** User-requested orphan stop. Native termination and a saved checkpoint precede reuse. */
 import { persistSessionStrict } from "../persistence";
-import { isNekoTaskScopeMapping } from "../task-scope-mapping";
+import { canRecoverNekoTaskWriter, isNekoTaskScopeMapping, retryNekoTaskWriter } from "../task-scope-mapping";
 import { buildNekoTaskEchoMeta } from "../drivers/acp/task-protocol";
 import { LegacyLeaseRecoveryError } from "@/neko/control-recovery";
 import {
@@ -17,9 +17,10 @@ export function createSessionRecoveryActions(set: SessionSet, get: SessionGet, r
       const current = get().sessions[sessionId];
       if (!current || current.deletePending) return Promise.resolve();
       if (current.closePending) return closeOperations.get(sessionId) ?? Promise.resolve();
-      if (current.taskScope && (!isNekoTaskScopeMapping(current.taskScope) || current.taskScope.state === "recovery-required")) return Promise.resolve();
+      const taskWriter = canRecoverNekoTaskWriter(current.taskScope) ? current.taskScope : null;
+      if (current.taskScope && (!isNekoTaskScopeMapping(current.taskScope) || (current.taskScope.state === "recovery-required" && !taskWriter))) return Promise.resolve();
       if (current.runtime || runtimes.get(sessionId) || runtimes.hasRetainedCleanup(sessionId)
-        || (!current.nativeRecoveryRequired && !nativeRunBlocksRespawn(current))) return Promise.resolve();
+        || (!taskWriter && !current.nativeRecoveryRequired && !nativeRunBlocksRespawn(current))) return Promise.resolve();
 
       set(state => {
         const session = state.sessions[sessionId];
@@ -59,13 +60,23 @@ export function createSessionRecoveryActions(set: SessionSet, get: SessionGet, r
           // A cancel receipt, missing record, or UI flag alone is never stop proof.
           if (nativeRunBlocksRespawn(candidate)) throw new Error("Native stop not proven");
           phase = "lease";
-          if (candidate.agentId === "neko" && candidate.backendSessionId && !candidate.taskScope) {
-            await reader.recoverLegacySessionLease(sessionId, candidate.backendSessionId);
+          if (taskWriter && (candidate.agentId !== "neko" || candidate.backendSessionId !== taskWriter.backendSessionId)) {
+            throw new Error("Scoped backend changed during recovery");
+          }
+          if (candidate.agentId === "neko" && candidate.backendSessionId) {
+            if (candidate.taskScope) await reader.recoverLegacySessionLease(sessionId, candidate.backendSessionId, true);
+            else await reader.recoverLegacySessionLease(sessionId, candidate.backendSessionId);
+            if (taskWriter) {
+              if (get().sessions[sessionId]?.taskScope !== taskWriter
+                || get().sessions[sessionId]?.backendSessionId !== taskWriter.backendSessionId) throw new Error("Scoped mapping changed during recovery");
+              candidate.taskScope = retryNekoTaskWriter(taskWriter);
+            }
           }
           set(state => {
             const target = state.sessions[sessionId];
             target.events = candidate.events;
             target.eventHighWaterMark = candidate.eventHighWaterMark;
+            if (taskWriter) target.taskScope = candidate.taskScope;
           });
           // Keep replay cursors in memory if a later write fails, but keep sending locked.
           phase = "save";
@@ -84,6 +95,10 @@ export function createSessionRecoveryActions(set: SessionSet, get: SessionGet, r
           set(state => {
             const target = state.sessions[sessionId];
             if (!target) return;
+            if (taskWriter && phase === "save" && isNekoTaskScopeMapping(target.taskScope)
+              && target.taskScope.state === "bound" && target.taskScope.receipt.activationId === taskWriter.receipt.activationId) {
+              target.taskScope = taskWriter;
+            }
             target.status = "error";
             target.statusDetail = phase === "lease"
               ? error instanceof LegacyLeaseRecoveryError ? error.message : "Chưa nối lại được cuộc trò chuyện. Bạn có thể thử lại."
