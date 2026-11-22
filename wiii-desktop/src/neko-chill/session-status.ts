@@ -8,7 +8,7 @@ export const NEKO_SESSION_STATUS_LABELS = {
   dispatching: "đang lưu & gửi",
   idle: "sẵn sàng",
   streaming: "đang làm việc",
-  exited: "runtime đã dừng",
+  exited: "đã dừng",
   error: "có lỗi",
 } satisfies Record<NekoSessionStatus, string>;
 
