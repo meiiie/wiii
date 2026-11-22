@@ -152,7 +152,7 @@ describe("Wiii task-first desktop shell", () => {
     });
     render(<WiiiAdeApp />);
     fireEvent.click(screen.getByRole("button", { name: /Saved draft/ }));
-    fireEvent.click(screen.getByRole("button", { name: "Chọn agent" }));
+    fireEvent.click(screen.getByRole("button", { name: "Chọn trợ lý" }));
     expect((await screen.findByTestId("launch-criteria")).textContent).toBe("Keep source | Pass checks");
   });
 
@@ -161,7 +161,7 @@ describe("Wiii task-first desktop shell", () => {
       workspace: { name: "Wiii", path: "C:\\src\\wiii" }, title: "Choose later",
     });
     render(<WiiiAdeApp />);
-    expect(screen.getByText("0 lượt đang thực hiện")).toBeTruthy();
+    expect(screen.queryByLabelText(/lượt đang thực hiện/)).toBeNull();
     expect(screen.getByRole("button", { name: /Choose later/ }).textContent).toContain("Đang chuẩn bị thực thi");
   });
 
@@ -178,10 +178,10 @@ describe("Wiii task-first desktop shell", () => {
     render(<WiiiAdeApp />);
     const row = screen.getByRole("button", { name: /Continued conversation/ });
     expect(row.textContent).toContain("Lần chạy: Đã dừng");
-    expect(row.textContent).toContain("Phiên: sẵn sàng");
     fireEvent.click(row);
+    expect(screen.getByText("Trò chuyện: sẵn sàng")).toBeTruthy();
     expect(screen.getByText(/Phiên hiện còn mở/)).toBeTruthy();
-    expect(screen.getByRole("button", { name: "Mở phiên agent" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Mở trò chuyện" })).toBeTruthy();
     expect(useAdeWorkStore.getState().graph.runs[0].state).toBe("cancelled");
     expect(useAdeWorkStore.getState().graph.tasks[0].state).toBe("cancelled");
   });
@@ -210,8 +210,8 @@ describe("Wiii task-first desktop shell", () => {
     fireEvent.click(screen.getByRole("button", { name: /Interrupted work/ }));
     expect(screen.getByText(/Kết quả lần chạy chưa xác định/)).toBeTruthy();
     expect(screen.getByText(/không tự gửi lại yêu cầu/)).toBeTruthy();
-    if (hasSession) expect(screen.getByRole("button", { name: "Mở phiên agent" })).toBeTruthy();
-    else expect(screen.queryByRole("button", { name: "Mở phiên agent" })).toBeNull();
+    if (hasSession) expect(screen.getByRole("button", { name: "Mở trò chuyện" })).toBeTruthy();
+    else expect(screen.queryByRole("button", { name: "Mở trò chuyện" })).toBeNull();
     expect(useAdeWorkStore.getState().graph.runs[0].state).toBe("unknown_outcome");
   });
 
@@ -224,8 +224,9 @@ describe("Wiii task-first desktop shell", () => {
     } as NekoSession } });
     render(<WiiiAdeApp />);
     const row = screen.getByRole("button", { name: /Saved only/ });
-    expect(row.textContent).toContain("Phiên: đã lưu · chưa kết nối");
-    expect(row.textContent).not.toContain("Phiên: sẵn sàng");
+    fireEvent.click(row);
+    expect(screen.getByText("Trò chuyện: đã lưu · chưa kết nối")).toBeTruthy();
+    expect(screen.queryByText("Trò chuyện: sẵn sàng")).toBeNull();
   });
 
   it("does not borrow the status of a session belonging to another Run", async () => {
@@ -237,7 +238,9 @@ describe("Wiii task-first desktop shell", () => {
       status: "streaming", events: [], runtime: { instanceId: "other-live" },
     } as NekoSession } });
     render(<WiiiAdeApp />);
-    expect(screen.getByRole("button", { name: /Isolated row/ }).textContent).not.toContain("Phiên:");
+    fireEvent.click(screen.getByRole("button", { name: /Isolated row/ }));
+    expect(screen.queryByText(/Trò chuyện:/)).toBeNull();
+    expect(screen.queryByRole("button", { name: "Mở trò chuyện" })).toBeNull();
   });
 
   it("projects authoritative native completion to review and releases the environment", async () => {
@@ -328,8 +331,8 @@ describe("Wiii task-first desktop shell", () => {
     expect(useAdeWorkStore.getState().graph.runs[0].state).toBe("review");
     expect(useNekoSessionStore.getState().sessions.visible.runtime).toBe(session.runtime);
     fireEvent.click(screen.getByRole("button", { name: /Review ACP answer/ }));
-    expect(screen.getByText(/Lần chạy: Sẵn sàng duyệt/)).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: /Mở phiên agent/ }));
+    expect(screen.getByText("Sẵn sàng duyệt")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Mở trò chuyện" }));
     expect(useNekoSessionStore.getState().activeSessionId).toBe("visible");
   });
 
