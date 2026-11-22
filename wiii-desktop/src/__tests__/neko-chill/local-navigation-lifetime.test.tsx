@@ -6,6 +6,7 @@ const runtime = vi.hoisted(() => ({
   start: vi.fn(() => vi.fn()),
   dispose: vi.fn(async () => {}),
   loadService: undefined as (() => void) | undefined,
+  loadWork: undefined as (() => void) | undefined,
 }));
 vi.mock("@/neko-chill/stores/neko-session-store", () => ({
   startIdleReaper: runtime.start,
@@ -17,10 +18,18 @@ vi.mock("@/neko-chill/stores/neko-outbox-store", () => ({
 }));
 vi.mock("@/neko-chill/NekoChillApp", async () => {
   const { NekoRuntimeScope } = await import("@/neko-chill/NekoRuntimeScope");
-  return { default: ({ active, onOpenConnections }: { active: boolean; onOpenConnections: () => void }) => (
+  return { default: ({ active, onOpenConnections, onOpenWork }: { active: boolean; onOpenConnections: () => void; onOpenWork: () => void }) => (
     <NekoRuntimeScope>
       <button onClick={onOpenConnections}>{active ? "Local ready" : "Local hidden"}</button>
+      <button onClick={onOpenWork}>Open Work</button>
     </NekoRuntimeScope>
+  ) };
+});
+vi.mock("@/ade/WiiiAdeApp", async () => {
+  await new Promise<void>((resolve) => { runtime.loadWork = resolve; });
+  const { NekoRuntimeScope } = await import("@/neko-chill/NekoRuntimeScope");
+  return { default: ({ onOpenConnections }: { onOpenConnections: () => void }) => (
+    <NekoRuntimeScope><button onClick={onOpenConnections}>Work ready</button></NekoRuntimeScope>
   ) };
 });
 vi.mock("@/workbench/WiiiServiceSurface", async () => {
@@ -46,6 +55,26 @@ it("keeps runtime ownership while a first Connections visit loads and returns", 
   await act(async () => { runtime.loadService?.(); });
   fireEvent.click(await screen.findByRole("button", { name: "Back from Service" }));
   expect(await screen.findByRole("button", { name: "Local ready" })).toBe(local);
+  expect(runtime.dispose).toHaveBeenCalledTimes(initialDisposals);
+  view.unmount();
+  expect(runtime.dispose).toHaveBeenCalledTimes(initialDisposals + 1);
+});
+
+it("keeps existing runtimes while Work first loads and through a Work Connections detour", async () => {
+  const view = render(<StrictMode><Suspense fallback={<p>Loading screen</p>}>
+    <LocalWorkbenchSurface />
+  </Suspense></StrictMode>);
+  await screen.findByRole("button", { name: "Local ready" });
+  const initialDisposals = runtime.dispose.mock.calls.length;
+  fireEvent.click(screen.getByRole("button", { name: "Open Work" }));
+  await screen.findByText(/Loading screen|Wiii đang mở Công việc/);
+  expect(runtime.dispose).toHaveBeenCalledTimes(initialDisposals);
+  await act(async () => { runtime.loadWork?.(); });
+  const work = await screen.findByRole("button", { name: "Work ready" });
+  expect(runtime.dispose).toHaveBeenCalledTimes(initialDisposals);
+  fireEvent.click(work);
+  fireEvent.click(await screen.findByRole("button", { name: "Back from Service" }));
+  expect(await screen.findByRole("button", { name: "Work ready" })).toBe(work);
   expect(runtime.dispose).toHaveBeenCalledTimes(initialDisposals);
   view.unmount();
   expect(runtime.dispose).toHaveBeenCalledTimes(initialDisposals + 1);

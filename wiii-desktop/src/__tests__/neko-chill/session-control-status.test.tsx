@@ -87,6 +87,26 @@ describe("session control presentation facts", () => {
     expect(getSessionControlNotices(session)[0]?.stage).toBe("cancelled");
   });
 
+  it("simplifies the historical normal exit notice without rewriting failure details", () => {
+    const statusDetail = "Runtime đã dừng khi rời Neko Chill.";
+    const session = makeSession({ status: "exited", statusDetail });
+    expect(getSessionControlNotices(session)[0]?.text).toBe("Phiên đã dừng.");
+    expect(getSessionControlNotices({ ...session, status: "error" })[0]?.text).toBe(statusDetail);
+    expect(session.statusDetail).toBe(statusDetail);
+  });
+
+  it("does not repeat a confirmed stopped session in a second notice", () => {
+    const notices = getSessionControlNotices(makeSession({
+      status: "exited", runtime: null, events: [cancel, invoked, exit],
+      statusDetail: "Runtime đã dừng khi rời Neko Chill.",
+    }));
+    expect(notices).toHaveLength(1);
+    expect(notices[0]).toMatchObject({ kind: "cancel", stage: "runtime-stopped", text: "Phiên đã dừng." });
+    expect(getSessionControlNotices(makeSession({
+      status: "error", runtime: null, events: [cancel, invoked, exit], statusDetail: "Phiên đã dừng.",
+    })).find((notice) => notice.kind === "detail")?.tone).toBe("danger");
+  });
+
   it.each(["missing", "other-session", "other-run"])("does not confirm native cancellation when attached identity is %s", (scenario) => {
     const session = makeSession();
     session.runtime!.providerCapabilities = scenario === "missing" ? undefined : createProviderCapabilitySnapshot({
@@ -226,7 +246,7 @@ describe("correlated runtime turn completion", () => {
   it("confirms canonical cancelled even when the ACP host remains alive", () => {
     const session = makeSession({ status: "idle", events: [input, prompt, command, dispatch, terminal()] });
     expect(getSessionControlNotices(session)[0]?.stage).toBe("cancelled");
-    expect(getSessionControlNotices(session)[0]?.text).toContain("lượt đã dừng");
+    expect(getSessionControlNotices(session)[0]?.text).toBe("Đã dừng.");
   });
   it("joins terminal before the cancel dispatch marker, using sequence not array arrival", () => {
     const session = makeSession({ events: [dispatch, terminal(), command, prompt, input] });
@@ -241,7 +261,7 @@ describe("correlated runtime turn completion", () => {
   it.each(["end_turn", "error", "refusal", "max_tokens"])("reports %s without claiming cancellation applied", (reason) => {
     const notice = getSessionControlNotices(makeSession({ events: [input, prompt, command, dispatch, terminal(reason)] }))[0];
     expect(notice.stage).toBe("turn-ended");
-    expect(notice.text).not.toContain("lượt đã dừng");
+    expect(notice.text).not.toBe("Đã dừng.");
   });
   it("preserves unknown outcome priority over a cancelled terminal", () => {
     expect(getSessionControlNotices(makeSession({ events: [input, prompt, command, dispatch, terminal(), native(15, "unknown_outcome")] }))[0].kind).toBe("unknown");

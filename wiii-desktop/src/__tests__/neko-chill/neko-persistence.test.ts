@@ -1432,9 +1432,7 @@ describe("neko-chill persistence", () => {
       status: "error",
       closePending: false,
     });
-    expect(useNekoSessionStore.getState().sessions[id].statusDetail).toContain(
-      "báo lỗi khi thu hồi tài nguyên",
-    );
+    expect(useNekoSessionStore.getState().sessions[id].statusDetail).toBe("Chưa thể đóng phiên an toàn.");
   });
 
   it("cancels a native start retained while mode-exit joins runtime preparation", async () => {

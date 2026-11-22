@@ -10,7 +10,7 @@ export interface SessionControlNotice {
 }
 
 const DIAGNOSTICS_GUIDANCE =
-  "Kiểm tra nhật ký phiên và trạng thái tiến trình agent trước khi thao tác tiếp. Giữ nguyên phiên và bản nháp trong lúc kiểm tra.";
+  "Giữ nguyên phiên và bản nháp; mở nhật ký phiên để kiểm tra.";
 
 function hasUnknownOutcome(events: NekoSessionEvent[]): boolean {
   type NativeIdentity = { agentSessionId: string; runId: string; providerId: string };
@@ -53,7 +53,7 @@ function cancellationNotice(session: NekoSession): SessionControlNotice | null {
   if (!command || command.data.type !== "runtime-command") {
     return session.cancelPending ? {
       kind: "cancel", tone: "warning", stage: "saving",
-      text: "Đang chuẩn bị lưu yêu cầu dừng. Chưa xác nhận agent đã dừng.",
+      text: "Đang chuẩn bị dừng…",
     } : null;
   }
   const instanceId = command.data.providerInstanceId;
@@ -84,13 +84,13 @@ function cancellationNotice(session: NekoSession): SessionControlNotice | null {
     && data.providerInstanceId === instanceId && data.promptEventId === promptEventId) : undefined;
   if (terminal?.data.type === "turn-terminal") {
     return terminal.data.stopReason === "cancelled"
-      ? { kind: "cancel", tone: "quiet", stage: "cancelled", text: "Runtime đã xác nhận lượt đã dừng." }
-      : { kind: "cancel", tone: "warning", stage: "turn-ended", text: `Runtime báo lượt đã kết thúc (${terminal.data.stopReason}); không xác nhận yêu cầu hủy đã áp dụng.` };
+      ? { kind: "cancel", tone: "quiet", stage: "cancelled", text: "Đã dừng." }
+      : { kind: "cancel", tone: "warning", stage: "turn-ended", text: "Lượt đã kết thúc; chưa xác nhận đã hủy." };
   }
   const processExited = laterEvents.some(({ data }) => data.type === "runtime-detached"
     && data.reason === "process-exit" && data.instanceId === instanceId);
   if (processExited) {
-    return { kind: "cancel", tone: "quiet", stage: "runtime-stopped", text: "Đã ghi nhận tiến trình runtime thoát." };
+    return { kind: "cancel", tone: "quiet", stage: "runtime-stopped", text: "Phiên đã dừng." };
   }
 
   // A native completion needs the same checkpoint before and after the request.
@@ -126,17 +126,17 @@ function cancellationNotice(session: NekoSession): SessionControlNotice | null {
       && data.providerId === native.providerId && data.state === "cancelled"
       && data.operationPhase !== "unknown_outcome" && data.continuity !== "unknown_outcome");
   if (nativeCancelled) {
-    return { kind: "cancel", tone: "quiet", stage: "cancelled", text: "Nhật ký runtime đã xác nhận lần chạy native được hủy." };
+    return { kind: "cancel", tone: "quiet", stage: "cancelled", text: "Đã dừng." };
   }
   if (invoked) {
-    return { kind: "cancel", tone: "warning", stage: "requested", text: "Đã gửi yêu cầu dừng tới runtime. Chưa có xác nhận agent đã dừng." };
+    return { kind: "cancel", tone: "warning", stage: "requested", text: "Đang chờ xác nhận dừng…" };
   }
   return session.cancelPending ? {
     kind: "cancel", tone: "warning", stage: "saving",
-    text: "Đang lưu yêu cầu dừng. Chưa có xác nhận gửi sang runtime.",
+    text: "Đang lưu yêu cầu dừng…",
   } : {
     kind: "cancel", tone: "warning", stage: "staged",
-    text: "Đã ghi nhận yêu cầu dừng. Chưa có xác nhận gửi sang runtime.",
+    text: "Đã nhận yêu cầu dừng; chưa gửi.",
   };
 }
 
@@ -146,7 +146,7 @@ export function getSessionControlNotices(session: NekoSession): SessionControlNo
   if (unknown) {
     notices.push({
       kind: "unknown", tone: "danger",
-      text: "Chưa xác định được kết quả lần chạy từ nhật ký runtime.",
+      text: "Chưa rõ kết quả lượt này.",
       guidance: DIAGNOSTICS_GUIDANCE,
     });
   } else {
@@ -154,12 +154,21 @@ export function getSessionControlNotices(session: NekoSession): SessionControlNo
     if (cancel) notices.push(cancel);
   }
   if (session.statusDetail?.trim() || session.status === "error") {
-    notices.push({
-      kind: "detail",
-      tone: session.status === "error" ? "danger" : session.status === "exited" ? "quiet" : "warning",
-      text: session.statusDetail?.trim() ? session.statusDetail : "Phiên gặp lỗi; chưa có chi tiết từ runtime.",
-      guidance: session.status === "error" && !unknown ? DIAGNOSTICS_GUIDANCE : undefined,
-    });
+    // Older saved sessions used the internal surface name for a normal exit.
+    // Translate only that known success notice, never arbitrary failure details.
+    const detail = session.status === "exited"
+      && session.statusDetail === "Runtime đã dừng khi rời Neko Chill."
+      ? "Phiên đã dừng." : session.statusDetail;
+    const duplicateStop = session.status === "exited"
+      && notices.some((notice) => notice.tone === "quiet" && notice.text === detail);
+    if (!duplicateStop) {
+      notices.push({
+        kind: "detail",
+        tone: session.status === "error" ? "danger" : session.status === "exited" ? "quiet" : "warning",
+        text: detail?.trim() ? detail : "Phiên gặp lỗi; xem nhật ký để biết thêm.",
+        guidance: session.status === "error" && !unknown ? DIAGNOSTICS_GUIDANCE : undefined,
+      });
+    }
   }
   return notices;
 }

@@ -454,8 +454,8 @@ export function createSessionRuntime(getStore: () => SessionStoreApi, presentati
           session.cancelPending = false;
           session.updatedAt = Date.now();
           session.statusDetail = cleanup.failed
-            ? "Đã rời Neko Chill nhưng runtime báo lỗi khi thu hồi tài nguyên."
-            : "Runtime đã dừng khi rời Neko Chill.";
+            ? "Chưa thể đóng phiên an toàn."
+            : "Phiên đã dừng.";
           if (provider) {
             appendRuntimeCleanupFact(session, provider, "mode-exit", cleanup);
           }
