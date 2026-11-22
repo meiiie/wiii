@@ -174,6 +174,34 @@ describe("composer context and keyboard UX", () => {
     fireEvent.click(send);
     expect(props.onSend).not.toHaveBeenCalled();
   });
+
+  it("refreshes Send's description relation as the draft changes without replacing the control", () => {
+    const { props } = mount();
+    const input = screen.getByTestId("neko-composer-input") as HTMLTextAreaElement;
+    const send = screen.getByTestId("neko-send") as HTMLButtonElement;
+    const emptyDescriptionId = send.getAttribute("aria-describedby")!;
+    expect(document.getElementById(emptyDescriptionId)?.textContent).toBe("Nhập nội dung trước khi gửi.");
+
+    fireEvent.change(input, { target: { value: "Giữ bản nháp" } });
+    const readyDescriptionId = send.getAttribute("aria-describedby")!;
+    expect(readyDescriptionId).not.toBe(emptyDescriptionId);
+    expect(document.getElementById(emptyDescriptionId)).toBeNull();
+    expect(document.getElementById(readyDescriptionId)?.textContent).toBe("Gửi");
+    expect(send.disabled).toBe(false);
+    expect(screen.getByTestId("neko-send")).toBe(send);
+    act(() => send.focus());
+    expect(document.activeElement).toBe(send);
+    expect(input.value).toBe("Giữ bản nháp");
+
+    act(() => input.focus());
+    fireEvent.change(input, { target: { value: "" } });
+    expect(send.getAttribute("aria-describedby")).toBe(emptyDescriptionId);
+    expect(document.getElementById(readyDescriptionId)).toBeNull();
+    expect(send.disabled).toBe(true);
+    expect(screen.getByTestId("neko-send")).toBe(send);
+    expect(props.onSend).not.toHaveBeenCalled();
+    expect(props.onCancel).not.toHaveBeenCalled();
+  });
   it.each(["streaming", "dispatching"] as const)("allows drafting during %s without submitting or cancelling", status => {
     const props = { session: { ...session, status }, disabled: true, streaming: true,
       onSend: vi.fn(), onCancel: vi.fn(), onSetConfigOption: vi.fn(), onClientCommand: vi.fn() };

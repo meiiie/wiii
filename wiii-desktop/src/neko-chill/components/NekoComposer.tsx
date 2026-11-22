@@ -145,7 +145,8 @@ function ComposerSendButton({ disabled, submitting, queueAllowed, busy, tooltip,
   onSend(): void;
 }) {
   const [open, setOpen] = useState(false);
-  const tooltipId = useId();
+  // Invalidate cached native descriptions without replacing the focused control.
+  const tooltipId = `${useId()}-${encodeURIComponent(tooltip)}`;
   useEffect(() => setOpen(false), [disabled, tooltip]);
   useEffect(() => {
     if (!open) return;
