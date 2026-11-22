@@ -24,6 +24,7 @@ import NekoChillApp from "@/neko-chill/NekoChillApp";
 import type { NekoTaskLaunchRequest } from "@/neko-chill/components/ProjectHome";
 import { useNekoSessionStore, type NekoSession } from "@/neko-chill/stores/neko-session-store";
 import { NEKO_SESSION_STATUS_LABELS } from "@/neko-chill/session-status";
+import { persistSessionStrict } from "@/neko-chill/persistence";
 import { chooseWorkspaceFolder, workspaceFromPath, type WorkspaceRef } from "@/neko-chill/workspace";
 import type { AdeRun, AdeRunState, AdeTask } from "./domain";
 import {
@@ -33,6 +34,7 @@ import {
   type AdeNativeOutcome,
 } from "./native-lifecycle";
 import { useAdeWorkStore } from "./store";
+import { deriveAdeTurnResult } from "./turn-lifecycle";
 import "@/neko-chill/theme.css";
 
 const RUN_LABELS: Record<AdeRunState, string> = {
@@ -326,6 +328,29 @@ function WiiiAdeScreen({ active = true, onOpenManaged = () => {}, onOpenConnecti
       if (!run || terminalStates.includes(run.state)) continue;
 
       const durableOutcome = deriveAdeOutcomeFromSessionEvents(session.events, execution.runId);
+      const turnResult = deriveAdeTurnResult(session);
+      // ACP hosts stay alive between turns. Project the correlated result only
+      // after its transcript + boundary events have crossed a strict save. A
+      // cleanup uncertainty still takes precedence over any apparent result.
+      if (turnResult && durableOutcome !== "unknown_outcome") {
+        if (run.state === "review") continue;
+        const key = `${execution.runId}:turn-result`;
+        if (lifecycleSyncs.current.has(key)) continue;
+        lifecycleSyncs.current.add(key);
+        void persistSessionStrict(session).then(async () => {
+          const current = useNekoSessionStore.getState().sessions[session.id];
+          if (!current || current.execution?.runId !== execution.runId
+            || deriveAdeTurnResult(current)?.event.eventId !== turnResult.event.eventId)
+            return;
+          const nativeOutcome = deriveAdeOutcomeFromSessionEvents(current.events, execution.runId);
+          await projectOutcome(execution.runId, nativeOutcome === "unknown_outcome" ? nativeOutcome : turnResult.outcome);
+        }).catch(() => {
+          setNavigationError("Chưa lưu được kết quả lần chạy. Thử mở lại công việc.");
+        }).finally(() => {
+          lifecycleSyncs.current.delete(key);
+        });
+        continue;
+      }
       if (durableOutcome) {
         void projectOutcome(execution.runId, durableOutcome).catch(() => {});
         continue;
