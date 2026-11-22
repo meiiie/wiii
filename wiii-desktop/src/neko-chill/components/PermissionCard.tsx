@@ -66,8 +66,12 @@ export function PermissionCard({
               <div key={index} className="min-w-0">
                 {change.path && <p className="mb-1 font-mono text-[11px]">{permissionPreviewText(change.path, 320)}</p>}
                 <div className="max-h-52 overflow-auto rounded border border-[var(--nk-border)] bg-[var(--nk-base)]" tabIndex={0} role="region" aria-label={change.before !== undefined ? "Thay đổi sắp ghi" : "Nội dung sắp ghi"}>
-                  {change.before !== undefined && <pre dir="ltr" aria-label="Nội dung cũ" className="whitespace-pre-wrap break-words border-b border-[var(--nk-border)] bg-red-500/5 px-2.5 py-2 font-mono text-[11px] text-[var(--nk-text-2)]">{permissionCodeText(change.before) || "(Trống)"}</pre>}
-                  <pre dir="ltr" aria-label="Nội dung mới" className={`whitespace-pre-wrap break-words px-2.5 py-2 font-mono text-[11px] text-[var(--nk-text)] ${change.before !== undefined ? "bg-green-500/5" : ""}`}>{permissionCodeText(change.after) || "(Tệp trống)"}</pre>
+                  {change.before !== undefined && <>
+                    <p className="px-2.5 pt-1 text-[10px] text-[var(--nk-text-3)]">− Trước</p>
+                    <pre dir="ltr" aria-label="Nội dung cũ" className="whitespace-pre-wrap break-words border-b border-[var(--nk-border)] bg-red-500/5 px-2.5 py-2 font-mono text-[11px] text-[var(--nk-text-2)]">{permissionCodeText(change.before) || (change.beforeTruncated ? "(Đã rút gọn)" : "(Trống)")}{change.beforeTruncated && change.before ? "\n…" : ""}</pre>
+                    <p className="px-2.5 pt-1 text-[10px] text-[var(--nk-text-3)]">+ Sau</p>
+                  </>}
+                  <pre dir="ltr" aria-label="Nội dung mới" className={`whitespace-pre-wrap break-words px-2.5 py-2 font-mono text-[11px] text-[var(--nk-text)] ${change.before !== undefined ? "bg-green-500/5" : ""}`}>{permissionCodeText(change.after) || (change.afterTruncated ? "(Đã rút gọn)" : change.before !== undefined ? "(Xoá đoạn này)" : "(Tệp trống)")}{change.afterTruncated && change.after ? "\n…" : ""}</pre>
                 </div>
               </div>
             )) : <p>{fileAction ? "Agent chưa gửi nội dung thay đổi." : permissionPreviewText(request.title)}</p>}

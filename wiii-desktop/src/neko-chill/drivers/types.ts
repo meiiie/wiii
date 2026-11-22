@@ -96,7 +96,7 @@ export interface PermissionRequest {
   toolPreview?: {
     toolName?: string;
     locations: DriverFileLocation[];
-    changes: Array<{ path?: string; before?: string; after: string }>;
+    changes: Array<{ path?: string; before?: string; after: string; beforeTruncated?: boolean; afterTruncated?: boolean }>;
     truncated: boolean;
   };
   options: PermissionOption[];

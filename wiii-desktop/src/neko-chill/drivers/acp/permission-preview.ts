@@ -32,8 +32,15 @@ export function acpPermissionPreview(value: unknown): PermissionRequest["toolPre
   const changes: NonNullable<PermissionRequest["toolPreview"]>["changes"] = [];
   const add = (after: string, before?: string, path?: string) => {
     if (changes.length >= 5) { truncated = true; return; }
-    changes.push({ ...(path !== undefined ? { path: bounded(path, 320) } : {}),
-      ...(before !== undefined ? { before: bounded(before) } : {}), after: bounded(after) });
+    const displayPath = path !== undefined ? bounded(path, 320) : undefined;
+    // Reserve space for the proposed replacement, even when old text is huge.
+    const displayBefore = before !== undefined ? bounded(before, Math.floor(budget / 2)) : undefined;
+    const displayAfter = bounded(after);
+    changes.push({ ...(displayPath !== undefined ? { path: displayPath } : {}),
+      ...(displayBefore !== undefined ? { before: displayBefore } : {}), after: displayAfter,
+      ...(before !== undefined && displayBefore!.length < before.length ? { beforeTruncated: true } : {}),
+      ...(displayAfter.length < after.length ? { afterTruncated: true } : {}),
+    });
   };
   // Standard ACP diff blocks take precedence over provider-specific rawInput.
   if (Array.isArray(tool.content)) {

@@ -102,6 +102,24 @@ describe("pending request content", () => {
     expect(screen.getByText("Bản xem trước đã rút gọn.")).toBeTruthy();
     expect(screen.getByRole("region", { name: "Nội dung sắp ghi" }).className).toContain("max-h-52");
   });
+
+  it("distinguishes deleting an edit snippet from writing an empty file", () => {
+    render(<PermissionCard request={pending({ name: "edit", rawInput: { old_string: "remove this snippet", new_string: "" } })} onResolve={vi.fn()} />);
+    expect(screen.getByLabelText("Nội dung mới").textContent).toBe("(Xoá đoạn này)");
+    expect(screen.queryByText("(Tệp trống)")).toBeNull();
+  });
+
+  it("keeps replacement text visible when the old snippet is huge and marks omitted content honestly", () => {
+    const large = pending({ name: "multi_edit", rawInput: { edits: [
+      { old_string: "old".repeat(20_000), new_string: "REPLACEMENT".repeat(2000) },
+      { old_string: "a", new_string: "STILL_NONEMPTY" },
+    ] } });
+    render(<PermissionCard request={large} onResolve={vi.fn()} />);
+    expect(screen.getAllByLabelText("Nội dung mới")[0].textContent).toContain("REPLACEMENT");
+    expect(screen.getAllByLabelText("Nội dung mới")[1].textContent).toBe("(Đã rút gọn)");
+    expect(screen.queryByText("(Tệp trống)")).toBeNull();
+    expect(screen.queryByText("(Xoá đoạn này)")).toBeNull();
+  });
 });
 
 describe("permission preview evidence", () => {
