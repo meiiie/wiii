@@ -70,18 +70,18 @@ function WorkTaskRow({ task, run, projectName, onSelect }: {
   onSelect: () => void;
 }) {
   return (
-    <button type="button" onClick={onSelect}
+    <button type="button" onClick={onSelect} title={task.title}
       className="group flex w-full items-center gap-4 rounded-xl border border-[var(--nk-border)] bg-[var(--nk-composer)] px-4 py-3.5 text-left hover:border-[var(--nk-border-strong)] hover:bg-[var(--nk-raised)]">
-      <span className="grid h-9 w-9 place-items-center rounded-lg bg-[var(--nk-inset)]">
+      <span className="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-[var(--nk-inset)]">
         <BriefcaseBusiness aria-hidden="true" className="h-4 w-4 text-[var(--nk-text-3)]" />
       </span>
       <span className="min-w-0 flex-1">
-        <strong className="block truncate text-[13.5px] font-medium">{task.title}</strong>
-        <small className="mt-0.5 block truncate text-[10.5px] text-[var(--nk-ghost)]">
-          {projectName}
-        </small>
+        <strong className="line-clamp-2 break-words text-[13.5px] font-medium leading-5">{task.title}</strong>
+        <span className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1">
+          <small className="min-w-0 max-w-full truncate text-[10.5px] text-[var(--nk-ghost)]">{projectName}</small>
+          {run ? <span className={`shrink-0 text-[11px] ${statusTone(run.state)}`}><span className="sr-only">Lần chạy: </span>{RUN_LABELS[run.state]}</span> : null}
+        </span>
       </span>
-      {run ? <span className={`shrink-0 text-[11px] ${statusTone(run.state)}`}><span className="sr-only">Lần chạy: </span>{RUN_LABELS[run.state]}</span> : null}
       <ChevronRight aria-hidden="true" className="h-3.5 w-3.5 text-[var(--nk-ghost)] transition-transform group-hover:translate-x-0.5" />
     </button>
   );
@@ -180,7 +180,7 @@ function NewTaskForm({
 
         <div className="mt-8 v3-space-y-6">
           <section>
-            <label className="mb-2 block text-[11.5px] font-semibold uppercase tracking-wide text-[var(--nk-text-3)]">Project</label>
+            <label className="mb-2 block text-[11.5px] font-semibold uppercase tracking-wide text-[var(--nk-text-3)]">Dự án</label>
             <button
               type="button"
               data-testid="choose-task-workspace"
@@ -205,20 +205,20 @@ function NewTaskForm({
               rows={3}
               value={title}
               onChange={(event) => setTitle(event.target.value)}
-              placeholder="Ví dụ: Refactor luồng đăng nhập và giữ nguyên toàn bộ hành vi hiện có"
+              placeholder="Ví dụ: Đọc biên bản họp và tóm tắt các quyết định"
               className="w-full resize-none rounded-xl border border-[var(--nk-border-strong)] bg-[var(--nk-composer)] px-4 py-3 text-[14px] leading-6 v3-outline-none placeholder:text-[var(--nk-ghost)] focus:ring-2 focus:ring-[var(--nk-focus-soft)]"
             />
           </section>
 
           <details>
-            <summary className="cursor-pointer text-[12px] font-medium text-[var(--nk-text-3)]">Tiêu chí chấp nhận · tùy chọn</summary>
-            <label htmlFor="wiii-task-criteria" className="mb-2 mt-3 block text-[11.5px] text-[var(--nk-text-3)]">Mỗi dòng một tiêu chí</label>
+            <summary className="cursor-pointer text-[12px] font-medium text-[var(--nk-text-3)]">Yêu cầu thêm · tùy chọn</summary>
+            <label htmlFor="wiii-task-criteria" className="mb-2 mt-3 block text-[11.5px] text-[var(--nk-text-3)]">Mỗi dòng một yêu cầu</label>
             <textarea
               id="wiii-task-criteria"
               rows={3}
               value={criteria}
               onChange={(event) => setCriteria(event.target.value)}
-              placeholder={"Đăng nhập hiện tại không regression\nTypeScript và test đều pass"}
+              placeholder={"Nêu rõ quyết định và người phụ trách\nKhông sửa các tài liệu gốc"}
               className="w-full resize-none rounded-xl border border-[var(--nk-border)] bg-[var(--nk-composer)] px-4 py-3 text-[13px] leading-5 v3-outline-none placeholder:text-[var(--nk-ghost)] focus:ring-2 focus:ring-[var(--nk-focus-soft)]"
             />
           </details>
@@ -237,7 +237,7 @@ function NewTaskForm({
             onClick={() => void submit()}
           >
             {submitting ? <LoaderCircle aria-hidden="true" className="h-3.5 w-3.5 animate-spin" /> : null}
-            Chọn agent <ArrowRight aria-hidden="true" className="h-3.5 w-3.5" />
+            Chọn trợ lý <ArrowRight aria-hidden="true" className="h-3.5 w-3.5" />
           </button>
         </div>
       </div>
@@ -550,7 +550,7 @@ function WiiiAdeScreen({ active = true, onOpenManaged = () => {}, onOpenConnecti
             )) : <p className="px-2 py-2 text-[11.5px] leading-5 text-[var(--nk-ghost)]">Chưa có dự án</p>}
           </div>
           <div className="border-t border-[var(--nk-border)] p-2">
-            <button type="button" data-testid="open-neko" className="flex min-h-10 w-full items-center gap-2 rounded-lg px-2.5 text-left hover:bg-[var(--nk-overlay)]" onClick={() => openNeko()}><Bot aria-hidden="true" className="h-3.5 w-3.5 text-[var(--nk-text-3)]" /><span><strong className="block text-[12.5px] font-medium">Chat và dự án</strong><small className="block text-[10px] text-[var(--nk-ghost)]">Trò chuyện và theo dõi agent · Neko</small></span></button>
+            <button type="button" data-testid="open-neko" className="flex min-h-10 w-full items-center gap-2 rounded-lg px-2.5 text-left hover:bg-[var(--nk-overlay)]" onClick={() => openNeko()}><Bot aria-hidden="true" className="h-3.5 w-3.5 text-[var(--nk-text-3)]" /><span><strong className="block text-[12.5px] font-medium">Chat và dự án</strong><small className="block text-[10px] text-[var(--nk-ghost)]">Trò chuyện với Neko</small></span></button>
             <button type="button" className="mt-1 flex min-h-10 w-full items-center gap-2 rounded-lg px-2.5 text-left hover:bg-[var(--nk-overlay)]" onClick={onOpenManaged}><Cloud aria-hidden="true" className="h-3.5 w-3.5 text-[var(--nk-text-3)]" /><span><strong className="block text-[12.5px] font-medium">Wiii Service</strong><small className="block text-[10px] text-[var(--nk-ghost)]">Đồng bộ và tri thức · tùy chọn</small></span></button>
           </div>
         </aside>
