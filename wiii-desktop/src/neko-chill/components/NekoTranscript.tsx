@@ -419,10 +419,15 @@ export function NekoTranscript({
     virtualizer.measureElement(node);
     if (!node) return;
     return () => {
-      // Paging can recycle the focused question. Keep keyboard scrolling in
-      // this viewport rather than letting focus fall back to the document.
-      if (node.contains(document.activeElement)) scrollRef.current?.focus({ preventScroll: true });
-      virtualizer.measureElement(null);
+      const ownedFocus = node.contains(document.activeElement);
+      // Ref cleanup also runs during StrictMode replay, without a DOM removal.
+      // Wait for the commit, then recover only a truly removed focus owner.
+      queueMicrotask(() => {
+        if (ownedFocus && !node.isConnected && document.activeElement === document.body) {
+          scrollRef.current?.focus({ preventScroll: true });
+        }
+        virtualizer.measureElement(null);
+      });
     };
   }, [virtualizer]);
 

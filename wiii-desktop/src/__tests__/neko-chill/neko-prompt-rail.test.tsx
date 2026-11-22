@@ -1,5 +1,6 @@
 import { act, fireEvent, render, screen } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { StrictMode } from "react";
 import { NekoTranscript } from "@/neko-chill/components/NekoTranscript";
 import {
   activePromptIdAtScroll,
@@ -203,7 +204,7 @@ describe("Neko question navigation", () => {
     outside.remove();
   });
 
-  it("keeps keyboard scrolling in the transcript when paging unmounts the focused virtual row", () => {
+  it("keeps keyboard scrolling in the transcript when paging unmounts the focused virtual row", async () => {
     const session = makeSession();
     session.messages = Array.from({ length: 60 }, (_, index) => ({
       id: `page-${index}`, role: "user", text: `Câu hỏi dài ${index + 1}`,
@@ -217,9 +218,28 @@ describe("Neko question navigation", () => {
 
     viewport.scrollTop = 3600;
     virtual.rows = [{ index: 20, start: 3600 }];
-    view.rerender(<div style={{ height: 400 }}><NekoTranscript {...view.props} /></div>);
+    await act(async () => {
+      view.rerender(<div style={{ height: 400 }}><NekoTranscript {...view.props} /></div>);
+    });
     expect(document.querySelector('[data-neko-message-index="0"]')).toBeNull();
     expect(document.activeElement).toBe(viewport);
     expect(viewport.scrollTop).toBe(3600);
+  });
+
+  it("does not mistake StrictMode ref replay for removal of the selected virtual question", async () => {
+    const session = makeSession();
+    session.messages = Array.from({ length: 60 }, (_, index) => ({
+      id: `strict-${index}`, role: "user", text: `Câu hỏi dài ${index + 1}`,
+    }));
+    virtual.rows = [{ index: 0, start: 0 }];
+    const props = { session, onResolvePermission: vi.fn(), onInsertPrompt: vi.fn() };
+    const view = render(<StrictMode><div style={{ height: 400 }}><NekoTranscript {...props} /></div></StrictMode>);
+    fireEvent.click(screen.getByRole("button", { name: "Câu hỏi 60" }));
+    fireEvent.click(screen.getByRole("button", { name: "Đi tới lời nhắn 58: Câu hỏi dài 58" }));
+    virtual.rows = [{ index: 57, start: 10260 }];
+    await act(async () => {
+      view.rerender(<StrictMode><div style={{ height: 400 }}><NekoTranscript {...props} /></div></StrictMode>);
+    });
+    expect(document.activeElement).toBe(document.querySelector('[data-neko-message-index="57"]'));
   });
 });
