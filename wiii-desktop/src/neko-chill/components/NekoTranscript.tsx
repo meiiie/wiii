@@ -458,8 +458,10 @@ export function NekoTranscript({
     initialMeasurementsCache: readingPositions?.get(session.id)?.virtualMeasurements,
     scrollToFn: (offset, options, instance) => {
       elementScroll(offset, options, instance);
-      // Bootstrap and row measurements also scroll; none is reader intent.
-      if (options.behavior !== "smooth") automaticScrollTopRef.current = instance.scrollElement?.scrollTop ?? null;
+      // Follow/bootstrap scrolls are automatic. For older readers, only row
+      // adjustments preserve the anchor; an explicit question jump replaces it.
+      if (options.behavior !== "smooth") automaticScrollTopRef.current = followingTailRef.current || options.adjustments !== undefined
+        ? instance.scrollElement?.scrollTop ?? null : null;
     },
   });
 
