@@ -293,33 +293,17 @@ async function main() {
     if (readFileSync(written, "utf8") !== APPROVED_CONTENT) throw new Error("approved file has unexpected content");
     await capture(driver, "permission-approved");
 
-    log("starting a slow turn, queueing a follow-up and cancelling");
-    await until(async () => !(await driver.findAll('[data-testid="neko-cancel"]')).length, "first turn to finish");
-    await typeInto(driver, '[data-testid="neko-composer-input"]', SLOW_PROMPT);
-    await clickEnabled(driver, await element(driver, '[data-testid="neko-send"]'));
-    await until(() => model.requests.some((request) => request.user.includes(MARKERS.slow)), "slow turn to reach the model", 60_000);
-    await element(driver, '[data-testid="neko-cancel"]', "running turn cancel control");
-    await typeInto(driver, '[data-testid="neko-composer-input"]', QUEUED_TEXT);
-    await clickEnabled(driver, await elementWithText(driver, "button", "Xếp hàng tin nhắn"));
-    await element(driver, '[data-testid="neko-outbox-row"]', "queued outbox row");
-    await capture(driver, "outbox-queued");
-    await driver.click(await element(driver, '[data-testid="neko-cancel"]'));
-    await until(async () => !(await driver.findAll('[data-testid="neko-cancel"]')).length, "turn cancellation", 30_000);
-    await elementWithText(driver, '[data-testid="neko-outbox"] button', "Tiếp tục hàng đợi", "outbox paused after cancel");
-    await capture(driver, "cancelled");
-    if (model.requests.some((request) => request.user.includes("E2E_QUEUED"))) {
-      throw new Error("the queued follow-up reached the model after cancellation");
-    }
-
+    // Exercise explicit recovery before queueing: a paused outbox deliberately
+    // routes subsequent drafts to queue/review rather than bypassing old items.
+    await until(async () => !(await driver.findAll('[data-testid="neko-cancel"]')).length, "permission turn to finish");
     log("recovering the same chat after a live WebView reload");
     const recoveryDraft = "E2E_RECOVERY_DRAFT: respond briefly without changing files";
     const composer = await element(driver, '[data-testid="neko-composer-input"]');
     await driver.clear(composer);
     await driver.type(composer, recoveryDraft);
     await driver.call("POST", "/refresh", {});
-    // WebKit can select a pre-created auxiliary webview while main reloads.
-    // Reacquire the actual workbench, then reopen the existing chat if home
-    // is the restored surface. Never create a replacement conversation.
+    // Reload can restore home instead of the selected conversation. Reopen
+    // the existing chat through the UI, never create a new conversation.
     await focusMainWindow(driver);
     await element(driver, '[data-testid="neko-recover-session"], [data-testid="neko-overview"]', "reloaded chat or home", 60_000);
     if (await driver.execute('return Boolean(document.querySelector(\'[data-testid="neko-overview"]\'));')) {
@@ -340,8 +324,23 @@ async function main() {
     await driver.click(await element(driver, '[data-testid="neko-send"]'));
     await waitText(driver, MARKERS.generic, "explicit follow-up after recovery", 60_000);
     await until(async () => !(await driver.findAll('[data-testid="neko-cancel"]')).length, "recovered turn finished", 60_000);
-    if (model.requests.some(request => request.user.includes("E2E_QUEUED"))) {
-      throw new Error("recovery bypassed outbox review");
+
+    log("starting a slow turn, queueing a follow-up and cancelling");
+    await until(async () => !(await driver.findAll('[data-testid="neko-cancel"]')).length, "first turn to finish");
+    await typeInto(driver, '[data-testid="neko-composer-input"]', SLOW_PROMPT);
+    await clickEnabled(driver, await element(driver, '[data-testid="neko-send"]'));
+    await until(() => model.requests.some((request) => request.user.includes(MARKERS.slow)), "slow turn to reach the model", 60_000);
+    await element(driver, '[data-testid="neko-cancel"]', "running turn cancel control");
+    await typeInto(driver, '[data-testid="neko-composer-input"]', QUEUED_TEXT);
+    await clickEnabled(driver, await elementWithText(driver, "button", "Xếp hàng tin nhắn"));
+    await element(driver, '[data-testid="neko-outbox-row"]', "queued outbox row");
+    await capture(driver, "outbox-queued");
+    await driver.click(await element(driver, '[data-testid="neko-cancel"]'));
+    await until(async () => !(await driver.findAll('[data-testid="neko-cancel"]')).length, "turn cancellation", 30_000);
+    await elementWithText(driver, '[data-testid="neko-outbox"] button', "Tiếp tục hàng đợi", "outbox paused after cancel");
+    await capture(driver, "cancelled");
+    if (model.requests.some((request) => request.user.includes("E2E_QUEUED"))) {
+      throw new Error("the queued follow-up reached the model after cancellation");
     }
 
     log("restarting Wiii");
