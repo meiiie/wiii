@@ -20,6 +20,7 @@ function session(id: string, name: string, overrides: Partial<NekoSession> = {})
 
 function mount() {
   return render(<SessionSidebar
+    viewState={{ query: "", collapsed: new Set() }} onViewStateChange={vi.fn()}
     overviewActive={false} coworkerActive={false} projects={[]} selectedProjectId={null}
     onShowOverview={vi.fn()} onShowCoworker={vi.fn()}
     onShowConnections={vi.fn()} onNewSession={vi.fn()} onCreateProject={vi.fn()}
