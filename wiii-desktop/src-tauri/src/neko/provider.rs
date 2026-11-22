@@ -633,14 +633,27 @@ pub(crate) fn terminate_child_tree(owned: &mut OwnedChild) -> io::Result<()> {
 
 #[cfg(windows)]
 fn terminate_child_tree_before(owned: &mut OwnedChild, deadline: Instant) -> io::Result<()> {
-    use windows_sys::Win32::System::JobObjects::{
-        JobObjectBasicAccountingInformation, QueryInformationJobObject, TerminateJobObject,
-        JOBOBJECT_BASIC_ACCOUNTING_INFORMATION,
-    };
+    force_child_tree(owned)?;
+    reap_child_tree_before(owned, deadline)
+}
+
+#[cfg(windows)]
+fn force_child_tree(owned: &mut OwnedChild) -> io::Result<()> {
+    use windows_sys::Win32::System::JobObjects::TerminateJobObject;
 
     if unsafe { TerminateJobObject(owned.job.raw(), 1) } == 0 {
         return Err(io::Error::last_os_error());
     }
+    Ok(())
+}
+
+#[cfg(windows)]
+fn reap_child_tree_before(owned: &mut OwnedChild, deadline: Instant) -> io::Result<()> {
+    use windows_sys::Win32::System::JobObjects::{
+        JobObjectBasicAccountingInformation, QueryInformationJobObject,
+        JOBOBJECT_BASIC_ACCOUNTING_INFORMATION,
+    };
+
     reap_child_before(&mut owned.child, deadline)?;
     loop {
         let mut accounting = JOBOBJECT_BASIC_ACCOUNTING_INFORMATION::default();
@@ -676,6 +689,12 @@ pub(crate) fn terminate_child_tree(owned: &mut OwnedChild) -> io::Result<()> {
 
 #[cfg(target_os = "linux")]
 fn terminate_child_tree_before(owned: &mut OwnedChild, deadline: Instant) -> io::Result<()> {
+    force_child_tree(owned)?;
+    reap_child_tree_before(owned, deadline)
+}
+
+#[cfg(target_os = "linux")]
+fn force_child_tree(owned: &mut OwnedChild) -> io::Result<()> {
     match owned.child.kill() {
         Ok(()) => {}
         Err(error) if error.kind() == io::ErrorKind::InvalidInput => {
@@ -683,6 +702,11 @@ fn terminate_child_tree_before(owned: &mut OwnedChild, deadline: Instant) -> io:
         }
         Err(error) => return Err(error),
     }
+    Ok(())
+}
+
+#[cfg(target_os = "linux")]
+fn reap_child_tree_before(owned: &mut OwnedChild, deadline: Instant) -> io::Result<()> {
     reap_child_before(&mut owned.child, deadline)?;
     // Killing the outer bwrap supervisor tears down the PID namespace; with
     // --as-pid-1, leftovers in that namespace are reaped by the kernel. Mark
@@ -716,17 +740,26 @@ pub(crate) fn shutdown_children(children: &mut [&mut OwnedChild]) -> Vec<io::Res
         }
     }
     wait(children, Instant::now() + Duration::from_millis(1500));
+    #[cfg(any(windows, target_os = "linux"))]
+    let terminations = children
+        .iter_mut()
+        .map(|owned| force_child_tree(owned))
+        .collect::<Vec<_>>();
     let deadline = Instant::now() + Duration::from_millis(500);
     children
         .iter_mut()
-        .map(|owned| {
+        .enumerate()
+        .map(|(index, owned)| {
             #[cfg(any(windows, target_os = "linux"))]
             {
-                terminate_child_tree_before(owned, deadline)
+                match &terminations[index] {
+                    Ok(()) => reap_child_tree_before(owned, deadline),
+                    Err(error) => Err(io::Error::new(error.kind(), error.to_string())),
+                }
             }
             #[cfg(not(any(windows, target_os = "linux")))]
             {
-                let _ = deadline;
+                let _ = (index, deadline);
                 terminate_child_tree(owned)
             }
         })
@@ -1349,14 +1382,18 @@ mod tests {
         let script = "trap '' TERM; echo ready; while :; do :; done";
         let mut first = shutdown_fixture(script);
         let mut second = shutdown_fixture(script);
+        let mut third = shutdown_fixture(script);
         let start = Instant::now();
-        for result in shutdown_children(&mut [&mut first, &mut second]) {
+        let results = shutdown_children(&mut [&mut first, &mut second, &mut third]);
+        assert_eq!(results.len(), 3);
+        for result in results {
             result.unwrap();
         }
         assert!(start.elapsed() >= Duration::from_secs(3));
         assert!(start.elapsed() < Duration::from_secs(4));
         assert_eq!(first.child.wait().unwrap().signal(), Some(libc::SIGKILL));
         assert_eq!(second.child.wait().unwrap().signal(), Some(libc::SIGKILL));
+        assert_eq!(third.child.wait().unwrap().signal(), Some(libc::SIGKILL));
     }
 
     #[test]
