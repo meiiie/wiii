@@ -238,7 +238,9 @@ function NekoComputerSurfaceComponent({
     };
     window.addEventListener("message", onMessage);
     const timeout = window.setTimeout(() => {
-      setViewerState((current) => current === "visible" ? current : "stalled");
+      setViewerState((current) =>
+        current === "loading" || current === "connected" ? "stalled" : current,
+      );
     }, 16_000);
     return () => {
       window.removeEventListener("message", onMessage);
@@ -828,9 +830,6 @@ function ComputerViewerStatus({
         <p className="mt-3 text-[11px] font-medium text-[#e7e3dc]">{copy}</p>
         {!waiting ? (
           <>
-            <p className="mx-auto mt-1.5 text-[9.5px] leading-4 text-[#928e87]">
-              Phiên Computer vẫn được giữ nguyên; kết nối lại không tạo thêm máy hay mất dữ liệu.
-            </p>
             <button
               type="button"
               className="mx-auto mt-3 inline-flex h-8 items-center gap-1.5 rounded-lg bg-[#eeeae1] px-3 text-[10px] font-semibold text-[#171716] hover:bg-white"

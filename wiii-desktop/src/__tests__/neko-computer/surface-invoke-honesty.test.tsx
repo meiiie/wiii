@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { ComputerTerminalResult, CoworkerComputerStatus } from "@/neko-computer/contracts";
 import type { ProjectComputerState } from "@/neko-computer/store";
@@ -191,6 +191,43 @@ describe("Neko Computer tools-pane invoke honesty", () => {
     report("rfb.security_failure");
     expect(screen.getByText("Wiii không thể mở màn hình Computer.")).toBeTruthy();
     expect(screen.getByRole("button", { name: "Kết nối lại" })).toBeTruthy();
+  });
+
+  it.each([
+    { phases: ["rfb.connected", "framebuffer.visible", "rfb.disconnected"], copy: "Kết nối màn hình đã bị gián đoạn." },
+    { phases: ["rfb.security_failure"], copy: "Wiii không thể mở màn hình Computer." },
+    { phases: ["framebuffer.visible"], copy: null },
+    { phases: ["rfb.connected"], copy: "Computer đang chạy nhưng chưa gửi được hình ảnh." },
+    { phases: [], copy: "Computer đang chạy nhưng chưa gửi được hình ảnh." },
+  ])("shows truthful viewer status past the startup deadline ($phases)", async ({ phases, copy }) => {
+    vi.useFakeTimers();
+    readyComputer();
+    const view = render(<NekoComputerSurface mode="computer" projectId="project-1" projectName="CONT3"
+      workspace={{ path: "/tmp/cont3", name: "CONT3" }} />);
+    try {
+      const frame = screen.getByTitle("Local Computer · CONT3") as HTMLIFrameElement;
+      const display = within(frame.parentElement!);
+      for (const phase of phases) {
+        fireEvent(window, new MessageEvent("message", {
+          origin: "http://127.0.0.1:4317", source: frame.contentWindow,
+          data: { source: "wiii-computer-viewer-v1", phase, at: 1 },
+        }));
+      }
+      await act(async () => { vi.advanceTimersByTime(16_001); });
+      if (copy) {
+        expect(display.getByText(copy)).toBeTruthy();
+        expect(display.getByRole("button", { name: "Kết nối lại" })).toBeTruthy();
+      } else {
+        expect(display.queryByText("Đang mở màn hình Computer…")).toBeNull();
+        expect(display.queryByRole("button", { name: "Kết nối lại" })).toBeNull();
+      }
+      if (phases.includes("rfb.disconnected") || phases.includes("rfb.security_failure")) {
+        expect(display.queryByText("Computer đang chạy nhưng chưa gửi được hình ảnh.")).toBeNull();
+      }
+    } finally {
+      view.unmount();
+      vi.useRealTimers();
+    }
   });
 
   it("returns keyboard focus only from the current controlled viewer without changing the seat", async () => {
