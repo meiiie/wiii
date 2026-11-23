@@ -10,14 +10,15 @@ import { useNekoAgentStore } from "@/neko-chill/stores/neko-agent-store";
 import { useNekoProjectStore } from "@/neko-chill/stores/neko-project-store";
 import { useNekoSessionStore } from "@/neko-chill/stores/neko-session-store";
 import { useNekoWorkspaceStore } from "@/neko-chill/stores/neko-workspace-store";
+import { getThemeMode, setTheme } from "@/lib/theme";
 
 vi.mock("@/neko-computer/NekoComputerSurface", () => ({
   NekoComputerSurface: ({ mode }: { mode: string }) => <div data-testid="computer-surface">{mode}</div>,
 }));
 
 vi.mock("@/neko-chill/workspace-monaco", () => ({
-  Editor: ({ value }: { value: string }) => <pre data-testid="workspace-editor-value">{value}</pre>,
-  DiffEditor: ({ modified }: { modified: string }) => <pre data-testid="workspace-diff-value">{modified}</pre>,
+  Editor: ({ value, theme }: { value: string; theme: string }) => <pre data-testid="workspace-editor-value" data-theme={theme}>{value}</pre>,
+  DiffEditor: ({ modified, theme }: { modified: string; theme: string }) => <pre data-testid="workspace-diff-value" data-theme={theme}>{modified}</pre>,
 }));
 
 const workspace = { name: "workspace", path: "C:/ux-fixtures/project" };
@@ -242,6 +243,45 @@ describe("calm workbench interaction contracts", () => {
     expect(document.body.textContent).toContain("clamp.mjs");
     expect(screen.queryByTestId("workspace-editor-value")).toBeNull();
     expect(document.body.textContent).not.toContain(file.content);
+  });
+
+  it.each(["files", "changes"] as const)("updates the mounted %s editor theme without refreshing its selection", async (surface) => {
+    const media = Object.assign(new EventTarget(), { matches: false });
+    vi.stubGlobal("matchMedia", vi.fn(() => media));
+    setTheme("light");
+    const file = { path: "count.ts", name: "count.ts", kind: "text" as const, language: "typescript",
+      mimeType: "text/plain", size: 16, modifiedAt: 1, content: "const count = 2;", dataUrl: null };
+    const store = useNekoWorkspaceStore.getState();
+    useNekoWorkspaceStore.setState({ sessions: { ...store.sessions, [project.id]: {
+      ...store.sessions[project.id], selectedPath: file.path, selectedFile: file,
+      selectedDiff: { path: file.path, status: "modified", language: file.language,
+        original: "const count = 1;", modified: file.content, binary: false },
+    } } });
+    const view = render(<NekoWorkspacePane target={{ id: project.id, projectId: project.id, workspace }} requestedSurface={surface} />);
+    try {
+      const testId = surface === "files" ? "workspace-editor-value" : "workspace-diff-value";
+      const editor = await screen.findByTestId(testId);
+      const selection = useNekoWorkspaceStore.getState().sessions[project.id];
+      expect(editor.getAttribute("data-theme")).toBe("light");
+      act(() => setTheme("dark"));
+      await vi.waitFor(() => expect(editor.getAttribute("data-theme")).toBe("vs-dark"));
+      act(() => setTheme("light"));
+      await vi.waitFor(() => expect(editor.getAttribute("data-theme")).toBe("light"));
+      act(() => setTheme("system"));
+      act(() => {
+        media.matches = true;
+        media.dispatchEvent(Object.assign(new Event("change"), { matches: true }));
+      });
+      await vi.waitFor(() => expect(editor.getAttribute("data-theme")).toBe("vs-dark"));
+      expect(getThemeMode()).toBe("system");
+      expect(screen.getByTestId(testId)).toBe(editor);
+      expect(editor.textContent).toBe(file.content);
+      expect(useNekoWorkspaceStore.getState().sessions[project.id]).toBe(selection);
+    } finally {
+      view.unmount();
+      setTheme("light");
+      vi.unstubAllGlobals();
+    }
   });
 
   it("does not render a previous workspace before its new binding is established", () => {
