@@ -1,7 +1,11 @@
 import { act, fireEvent, render, screen } from "@testing-library/react";
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
+import postcss from "postcss";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ChillCatalogPicker } from "@/neko-chill/components/ChillCatalogPicker";
 import { NekoComposer } from "@/neko-chill/components/NekoComposer";
+import { NekoInput } from "@/neko-chill/components/ui";
 import { clearNekoComposerDraft, readNekoComposerDraft } from "@/neko-chill/composer-drafts";
 import type { NekoSession } from "@/neko-chill/stores/neko-session-store";
 
@@ -96,6 +100,48 @@ describe("ChillCatalogPicker", () => {
 
 describe("NekoComposer catalog + draft keep", () => {
   const workspace = { name: "workspace", path: "C:/ux-fixtures/project" };
+
+  it.each(["mode", "model"])("keeps the nested %s search independent of the composer's input-field styles", (category) => {
+    // jsdom cannot apply @layer: flatten only the shared input rules to exercise their real cascade.
+    const styles = document.createElement("style");
+    const theme = postcss.parse(readFileSync(resolve(process.cwd(), "src/neko-chill/theme.css"), "utf8"));
+    theme.walkRules(rule => {
+      if (rule.selector.includes(".nk-control-input") || rule.selector.includes(".nk-input-field")) {
+        styles.appendChild(document.createTextNode(rule.toString()));
+      }
+    });
+    document.head.appendChild(styles);
+    const onSetConfigOption = vi.fn();
+    const session = {
+      id: `picker-style-${category}`, agentName: "Neko Core", status: "idle", commands: [], workspace,
+      controls: [{
+        id: category, label: category, category, kind: "select", currentValue: "a",
+        choices: [{ value: "a", label: "Auto" }, { value: "b", label: "Plan" }],
+      }],
+    } as unknown as NekoSession;
+
+    try {
+      render(<div className="nk-root">
+        <label className="nk-input-field"><NekoInput aria-label="Inline field" /><span>Suffix</span></label>
+        <NekoComposer session={session} disabled={false} streaming={false} onSend={vi.fn()} onCancel={vi.fn()}
+          onSetConfigOption={onSetConfigOption} onClientCommand={vi.fn()} />
+      </div>);
+      expect(getComputedStyle(screen.getByRole("textbox", { name: "Inline field" })).flexGrow).toBe("1");
+      fireEvent.click(screen.getByRole("button", { name: category }));
+      const search = screen.getByRole("combobox") as HTMLInputElement;
+      expect(getComputedStyle(search).width).toBe("100%");
+      expect(document.activeElement).toBe(search);
+      fireEvent.change(search, { target: { value: "Auto" } });
+      expect(search.value).toBe("Auto");
+      expect(screen.getAllByRole("option")).toHaveLength(1);
+      fireEvent.click(screen.getByRole("button", { name: "Xóa bộ lọc" }));
+      expect(search.value).toBe("");
+      expect(screen.getAllByRole("option")).toHaveLength(2);
+      expect(onSetConfigOption).not.toHaveBeenCalled();
+    } finally {
+      styles.remove();
+    }
+  });
 
   it("keeps the draft when switching model via the searchable picker", () => {
     clearNekoComposerDraft("session:picker-draft");
