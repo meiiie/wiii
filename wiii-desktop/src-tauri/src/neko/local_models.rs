@@ -222,25 +222,24 @@ fn has_connection(data: &Map<String, Value>) -> bool {
                 "kimi",
                 "opencode-account",
                 "cline-account",
-                "ollama",
-                "lmstudio",
-                "local",
             ]
             .contains(&id)
         })
     {
         return true;
     }
+    if let Some(id) = data.get("active_profile").and_then(Value::as_str) {
+        let profile = data.get("profiles").and_then(|profiles| profiles.get(id));
+        if has_keyless_local_connection(data, id, profile) {
+            return true;
+        }
+    }
     data.get("profiles")
         .and_then(Value::as_object)
         .is_some_and(|profiles| {
             profiles.iter().any(|(id, profile)| {
                 has_text(profile.get("api_key"))
-                    || ["ollama", "lmstudio", "local"].contains(&id.as_str())
-                    || profile
-                        .get("base_url")
-                        .and_then(Value::as_str)
-                        .is_some_and(is_core_local_endpoint)
+                    || has_keyless_local_connection(data, id, Some(profile))
                     || profile
                         .get("key_env")
                         .and_then(Value::as_str)
@@ -249,6 +248,22 @@ fn has_connection(data: &Map<String, Value>) -> bool {
                         })
             })
         })
+}
+
+fn has_keyless_local_connection(
+    data: &Map<String, Value>,
+    id: &str,
+    profile: Option<&Value>,
+) -> bool {
+    // Core merges explicit top-level connection fields over the active
+    // profile. A builtin name alone cannot prove its endpoint is still local.
+    match data
+        .get("base_url")
+        .or_else(|| profile.and_then(|value| value.get("base_url")))
+    {
+        Some(endpoint) => endpoint.as_str().is_some_and(is_core_local_endpoint),
+        None => ["ollama", "lmstudio", "local"].contains(&id),
+    }
 }
 
 // Match Neko 1.9.5 NekoConfig.isLocalEndpoint, not a wider idea of local
@@ -765,6 +780,14 @@ mod tests {
             json!({"profiles":{"mine":{"base_url":"http://localhost:11434/v1", "model":"llama3.2"}}}),
         ] {
             assert!(has_connection(value.as_object().unwrap()));
+        }
+        for value in [
+            json!({"active_profile":"ollama", "base_url":"https://remote.example/v1"}),
+            json!({"active_profile":"local", "profiles":{"local":{"base_url":"https://remote.example/v1"}}}),
+            json!({"profiles":{"lmstudio":{"base_url":"https://remote.example/v1"}}}),
+            json!({"base_url":"https://remote.example/v1", "profiles":{"ollama":{"base_url":"http://localhost:11434/v1"}}}),
+        ] {
+            assert!(!has_connection(value.as_object().unwrap()));
         }
         assert!(!has_connection(
             json!({"profiles":{"mine":{"base_url":"https://remote.example/v1", "auth":"none"}}})
