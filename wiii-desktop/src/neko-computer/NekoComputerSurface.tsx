@@ -127,7 +127,7 @@ function NekoComputerSurfaceComponent({
   const takeControl = useNekoComputerStore((state) => state.takeControl);
   const [url, setUrl] = useState("https://www.google.com");
   const [command, setCommand] = useState("pwd && ls -la");
-  const [terminalResult, setTerminalResult] = useState<ComputerTerminalResult | null>(null);
+  const [terminalResult, setTerminalResult] = useState<(ComputerTerminalResult & { command: string }) | null>(null);
   const [terminalBusy, setTerminalBusy] = useState(false);
   const [browserBusy, setBrowserBusy] = useState(false);
   const [resetOpen, setResetOpen] = useState(false);
@@ -262,7 +262,8 @@ function NekoComputerSurfaceComponent({
     if (!command.trim()) return;
     setTerminalBusy(true);
     try {
-      setTerminalResult(await execute(projectRef, command));
+      const result = await execute(projectRef, command);
+      setTerminalResult({ ...result, command });
     } catch {} finally {
       setTerminalBusy(false);
     }
@@ -741,7 +742,7 @@ function NekoComputerSurfaceComponent({
           </form>
           <pre className="min-h-0 flex-1 overflow-auto whitespace-pre-wrap wrap-break-word p-4 font-mono text-[10.5px] leading-5 text-[#d8d6cf]">
             {terminalResult
-              ? `$ ${command}\n${terminalResult.stdout}${terminalResult.stderr ? `\n${terminalResult.stderr}` : ""}\n\n[exit ${terminalResult.exitCode ?? "unknown"}${terminalResult.truncated ? ", output truncated" : ""}]`
+              ? `$ ${terminalResult.command}\n${terminalResult.stdout}${terminalResult.stderr ? `\n${terminalResult.stderr}` : ""}\n\n[exit ${terminalResult.exitCode ?? "unknown"}${terminalResult.truncated ? ", output truncated" : ""}]`
               : "Terminal này chạy bên trong Local Computer — không phải PowerShell/cmd của máy bạn."}
           </pre>
         </div>
