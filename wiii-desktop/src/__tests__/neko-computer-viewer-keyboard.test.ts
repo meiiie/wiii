@@ -3,8 +3,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { fireEvent } from "@testing-library/react";
 
 const html = readFileSync("src-tauri/src/neko/computer/image/wiii.html", "utf8");
-const script = html.match(/<script type="module">([\s\S]*?)<\/script>/)![1]
+const fixture = new DOMParser().parseFromString(html, "text/html");
+const script = fixture.querySelector('script[type="module"]')!.textContent!
   .replace(/import RFB from '[^']+';/, "");
+fixture.querySelectorAll("script").forEach((element) => element.remove());
 
 describe("Computer viewer keyboard entry", () => {
   const listeners = vi.spyOn(window, "addEventListener");
@@ -27,12 +29,14 @@ describe("Computer viewer keyboard entry", () => {
     vi.useRealTimers();
     vi.mocked(window.postMessage).mockRestore();
     vi.mocked(HTMLCanvasElement.prototype.getContext).mockRestore();
-    document.body.innerHTML = "";
+    document.body.replaceChildren();
   });
 
   function mount(viewOnly = "0") {
     history.replaceState(null, "", `/wiii.html?view_only=${viewOnly}`);
-    document.body.innerHTML = html.replace(/<script[\s\S]*?<\/script>/, "");
+    // Trusted repository fixture, parsed inertly; scripts run only via the RFB stub below.
+    document.body.replaceChildren(...Array.from(fixture.body.childNodes,
+      (node) => document.importNode(node, true)));
     let rfb!: Viewer;
     class Viewer extends EventTarget {
       canvas = document.createElement("canvas");
