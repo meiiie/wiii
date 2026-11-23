@@ -1,6 +1,6 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { CoworkerComputerStatus } from "@/neko-computer/contracts";
+import type { ComputerTerminalResult, CoworkerComputerStatus } from "@/neko-computer/contracts";
 import type { ProjectComputerState } from "@/neko-computer/store";
 
 const mocks = vi.hoisted(() => ({
@@ -93,6 +93,7 @@ function readyComputer() {
 describe("Neko Computer tools-pane invoke honesty", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mocks.execute.mockReset();
     mocks.observeSemantics.mockReset().mockResolvedValue(undefined);
     mocks.hasNativeComputerAuthority.mockReturnValue(false);
     mocks.project = {
@@ -219,6 +220,58 @@ describe("Neko Computer tools-pane invoke honesty", () => {
     expect(mocks.resume).not.toHaveBeenCalled();
     expect(mocks.suspend).not.toHaveBeenCalled();
     expect(mocks.takeControl).not.toHaveBeenCalled();
+  });
+
+  it("keeps completed Terminal output labeled with its executed command while editing the next draft", async () => {
+    readyComputer();
+    const result: ComputerTerminalResult = {
+      environmentId: "computer-fixture", stdout: "5 tests passed\n", stderr: "", exitCode: 0,
+      truncated: false, replayedWithoutOutput: false,
+    };
+    mocks.execute.mockResolvedValueOnce(result).mockResolvedValueOnce({ ...result, stdout: " M src/export.mjs\n" });
+    render(<NekoComputerSurface mode="terminal" projectId="project-1" projectName="CONT3"
+      workspace={{ path: "/tmp/cont3", name: "CONT3" }} />);
+    const input = screen.getByRole("textbox", { name: "Lệnh trong Local Computer" }) as HTMLInputElement;
+    fireEvent.change(input, { target: { value: "node --test" } });
+    fireEvent.click(screen.getByRole("button", { name: "Chạy" }));
+    const output = await screen.findByText(/5 tests passed/);
+    expect(output.textContent).toContain("$ node --test\n");
+
+    fireEvent.change(input, { target: { value: "git status" } });
+    fireEvent.blur(input);
+    expect(input.value).toBe("git status");
+    expect(output.textContent).toContain("$ node --test\n");
+    expect(output.textContent).not.toContain("$ git status\n");
+    expect(mocks.execute).toHaveBeenCalledTimes(1);
+
+    fireEvent.click(screen.getByRole("button", { name: "Chạy" }));
+    const nextOutput = await screen.findByText(/M src\/export.mjs/);
+    expect(nextOutput.textContent).toContain("$ git status\n");
+    expect(nextOutput.textContent).not.toContain("5 tests passed");
+    expect(mocks.execute.mock.calls.map(([, command]) => command)).toEqual(["node --test", "git status"]);
+  });
+
+  it("pairs an asynchronous Terminal result with the submitted command rather than an in-flight edit", async () => {
+    readyComputer();
+    let finish!: (result: ComputerTerminalResult) => void;
+    mocks.execute.mockReturnValueOnce(new Promise<ComputerTerminalResult>((resolve) => { finish = resolve; }));
+    render(<NekoComputerSurface mode="terminal" projectId="project-1" projectName="CONT3"
+      workspace={{ path: "/tmp/cont3", name: "CONT3" }} />);
+    const input = screen.getByRole("textbox", { name: "Lệnh trong Local Computer" }) as HTMLInputElement;
+    fireEvent.change(input, { target: { value: "printf ready" } });
+    fireEvent.click(screen.getByRole("button", { name: "Chạy" }));
+    expect((screen.getByRole("button", { name: "Đang chạy…" }) as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.change(input, { target: { value: "git status" } });
+
+    await act(async () => finish({
+      environmentId: "computer-fixture", stdout: "ready", stderr: "", exitCode: 0,
+      truncated: false, replayedWithoutOutput: false,
+    }));
+    expect(input.value).toBe("git status");
+    const output = screen.getByText(/\[exit 0\]/);
+    expect(output.textContent).toContain("$ printf ready\nready");
+    expect(output.textContent).not.toContain("$ git status\n");
+    expect(mocks.execute).toHaveBeenCalledTimes(1);
   });
 
   it("acknowledges actual inspection and never reports success over a newer error", async () => {
