@@ -123,7 +123,7 @@
   }
   .nk-control-input::placeholder { color: var(--nk-ghost); opacity: 1; }
   .nk-input-field { display: flex; align-items: center; border: 1px solid var(--nk-border-strong); border-radius: var(--nk-radius-control); background: var(--nk-composer); }
-  .nk-input-field .nk-control-input { flex: 1; width: 0; border: 0; border-radius: inherit; background: transparent; }
+  .nk-input-field > .nk-control-input { flex: 1; width: 0; border: 0; border-radius: inherit; background: transparent; }
   .nk-card { min-width: 0; border: 1px solid var(--nk-border); border-radius: var(--nk-radius-card); background: var(--nk-composer); }
   .nk-card[data-tone="inset"] { background: var(--nk-raised); }
   .nk-badge { display: inline-flex; align-items: center; flex-shrink: 0; padding: 1px 6px; border-radius: 6px; background: var(--nk-inset); color: var(--nk-text-2); font-size: 11px; font-weight: 500; line-height: 18px; }
@@ -186,7 +186,7 @@
   outline-offset: -1px;
   box-shadow: 0 0 0 2px var(--nk-focus-soft);
 }
-.nk-root .nk-input-field :is(input, textarea):focus-visible {
+.nk-root .nk-input-field > :is(input, textarea):focus-visible {
   outline: none;
 }
 .nk-project-home {
