@@ -625,7 +625,7 @@ function NekoChillScreen({
     if (!sidebarOpen && narrowWorkspace && sidebarWorkspaceId
       && useNekoWorkspaceStore.getState().sessions[sidebarWorkspaceId]?.open) {
       const focused = document.activeElement;
-      if (commandCenterOpen || sessionPresence.ref.current?.contains(focused)
+      if (sessionPresence.ref.current?.contains(focused)
         || projectPresence.ref.current?.contains(focused)
         || sessionDividerRef.current === focused || projectDividerRef.current === focused) {
         sidebarToggleRef.current?.focus({ preventScroll: true });
@@ -633,7 +633,7 @@ function NekoChillScreen({
       toggleWorkspace(sidebarWorkspaceId);
     }
     setSidebarOpen((value) => !value);
-  }, [commandCenterOpen, narrowWorkspace, projectPresence.ref, sessionPresence.ref, sidebarOpen, sidebarWorkspaceId, toggleWorkspace]);
+  }, [narrowWorkspace, projectPresence.ref, sessionPresence.ref, sidebarOpen, sidebarWorkspaceId, toggleWorkspace]);
 
   useEffect(() => {
     void detect("neko");
@@ -710,11 +710,11 @@ function NekoChillScreen({
         if (!value) markWiiiPerformance("wiii:command:open-start");
         return !value;
       });
-      else handleToggleSidebar();
+      else if (!commandCenterOpen) handleToggleSidebar();
     };
     window.addEventListener("keydown", onKeyDown, true);
     return () => window.removeEventListener("keydown", onKeyDown, true);
-  }, [active, handleToggleSidebar]);
+  }, [active, commandCenterOpen, handleToggleSidebar]);
 
   useEffect(() => {
     if (compactSidebar) setSidebarOpen(false);
@@ -889,7 +889,10 @@ function NekoChillScreen({
 
   const handleWorkbenchAction = (action: WorkbenchActionName) => {
     if (action === "new") handleNewSession();
-    else if (action === "toggle-sidebar") handleToggleSidebar();
+    else if (action === "toggle-sidebar") {
+      handleToggleSidebar();
+      sidebarToggleRef.current?.focus({ preventScroll: true });
+    }
     else if (action === "project") void handleProjectCommand();
     else setInspectorOpen(true);
   };

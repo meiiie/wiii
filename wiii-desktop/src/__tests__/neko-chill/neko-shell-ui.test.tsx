@@ -890,9 +890,22 @@ describe("Neko Chill shell UI", () => {
       else if (entry === "command center") {
         within(screen.getByRole("navigation", { name: "Công cụ Project" })).getByRole("button", { name: "Tệp" }).focus();
         fireEvent.keyDown(window, { key: "k", ctrlKey: true });
-        const dialog = await screen.findByRole("dialog", { name: "Trung tâm lệnh Neko Chill" });
+        let dialog = await screen.findByRole("dialog", { name: "Trung tâm lệnh Neko Chill" });
         await act(() => new Promise<void>((resolve) => requestAnimationFrame(() => resolve())));
         expect(dialog.contains(document.activeElement)).toBe(true);
+        const search = document.activeElement as HTMLInputElement;
+        fireEvent.keyDown(search, { key: "b", ctrlKey: true });
+        expect(document.activeElement).toBe(search);
+        expect(useNekoWorkspaceStore.getState().sessions.one.open).toBe(true);
+        fireEvent.change(search, { target: { value: "cây dự án" } });
+        expect(search.value).toBe("cây dự án");
+        fireEvent.keyDown(search, { key: "Escape" });
+        await act(() => new Promise<void>((resolve) => requestAnimationFrame(() => resolve())));
+        expect(screen.queryByRole("dialog", { name: "Trung tâm lệnh Neko Chill" })).toBeNull();
+        expect(document.activeElement).toBe(within(screen.getByRole("navigation", { name: "Công cụ Project" })).getByRole("button", { name: "Tệp" }));
+        fireEvent.keyDown(window, { key: "k", ctrlKey: true });
+        dialog = await screen.findByRole("dialog", { name: "Trung tâm lệnh Neko Chill" });
+        await act(() => new Promise<void>((resolve) => requestAnimationFrame(() => resolve())));
         fireEvent.click(within(dialog).getByRole("option", { name: /Hiện cây dự án và phiên/ }));
         await act(() => new Promise<void>((resolve) => requestAnimationFrame(() => resolve())));
         expect(document.activeElement).toBe(screen.getByTestId("neko-sidebar-toggle"));
