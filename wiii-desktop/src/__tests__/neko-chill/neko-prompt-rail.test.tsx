@@ -128,6 +128,21 @@ describe("Neko question navigation", () => {
     expect(buildPromptLandmarks(messages).map(({ id }) => id)).toEqual(messages.map(({ id }) => id));
   });
 
+  it("keeps a virtual Retry compact without renumbering the remaining question destinations", () => {
+    const session = makeSession();
+    session.messages = Array.from({ length: 52 }, (_, index) => ({
+      id: `virtual-${index}`, role: "user", text: `Câu hỏi ${index + 1}`,
+    }));
+    session.messages[2] = { id: "virtual-retry", role: "user", text: "Câu hỏi 1", retryOfMessageId: "virtual-0" };
+    virtual.rows = [{ index: 0, start: 0 }, { index: 2, start: 360 }];
+    mount(session);
+    expect(screen.getByText("Thử lại câu trả lời")).toBeTruthy();
+    expect(screen.getAllByText("Câu hỏi 1")).toHaveLength(1);
+    fireEvent.click(screen.getByRole("button", { name: "Câu hỏi 51" }));
+    fireEvent.click(screen.getByRole("button", { name: "Đi tới lời nhắn 51: Câu hỏi 52" }));
+    expect(virtual.scrollToIndex).toHaveBeenCalledWith(51, { align: "start", behavior: "auto" });
+  });
+
   it("closes the index and anchors keyboard navigation at the selected message, not the transcript start", () => {
     const { scrollIntoView, props } = mount();
     const trigger = screen.getByRole("button", { name: "Câu hỏi 2" });
