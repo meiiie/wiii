@@ -21,6 +21,7 @@ import {
 } from "@/neko-chill/stores/neko-session-store";
 import { useNekoWorkspaceStore } from "@/neko-chill/stores/neko-workspace-store";
 import { useNekoProjectStore } from "@/neko-chill/stores/neko-project-store";
+import { useCompletionNoticeStore } from "@/neko-chill/stores/completion-notice-store";
 import { clearNekoComposerDraft, readNekoComposerDraft, writeNekoComposerDraft } from "@/neko-chill/composer-drafts";
 import { canChooseWorkspaceFolder, chooseWorkspaceFolder, createQuickChatWorkspace } from "@/neko-chill/workspace";
 
@@ -103,6 +104,28 @@ describe("Neko Chill shell UI", () => {
       error: null,
       hydrate: hydrateProjects,
     });
+  });
+
+  it("only consumes the selected chat's completion while the local surface is active", () => {
+    const focus = vi.spyOn(document, "hasFocus").mockReturnValue(true);
+    const visibility = vi.spyOn(document, "visibilityState", "get").mockReturnValue("visible");
+    try {
+      useNekoSessionStore.setState({
+        activeSessionId: "one",
+        sessions: { one: makeSession("one", "Foreground chat", { path: "/qa", name: "qa" }) },
+      });
+      useCompletionNoticeStore.setState({ sound: false, notices: [] });
+      const { rerender } = render(<NekoChillApp active={false} />);
+      act(() => useCompletionNoticeStore.getState().publish({ id: "result", sessionId: "one", title: "Finished chat" }));
+      expect(screen.getByText("Finished chat")).toBeTruthy();
+      rerender(<NekoChillApp active />);
+      expect(screen.queryByText("Đã trả lời xong")).toBeNull();
+      expect(useCompletionNoticeStore.getState().notices).toEqual([]);
+    } finally {
+      focus.mockRestore();
+      visibility.mockRestore();
+      useCompletionNoticeStore.setState({ notices: [] });
+    }
   });
 
   it("opens quick chat without a selected project or dispatching a session", async () => {

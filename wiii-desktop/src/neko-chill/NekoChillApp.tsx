@@ -957,7 +957,7 @@ function NekoChillScreen({
 
   return (
     <div className="nk-root flex h-screen flex-col bg-[var(--nk-canvas)] text-[var(--nk-text)]">
-      <CompletionNotices onOpen={(sessionId) => {
+      <CompletionNotices visibleSessionId={active ? session?.id : null} onOpen={(sessionId) => {
         if (useNekoSessionStore.getState().sessions[sessionId]) openSessionFromCatalog(sessionId);
       }} />
       <TitleBar
