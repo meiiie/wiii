@@ -45,6 +45,15 @@ function session(index: number, overrides: Partial<NekoSession> = {}): NekoSessi
 }
 
 describe("Neko command items", () => {
+  it("keeps model info lookups without newly hiding Vietnamese transcript matches", () => {
+    const active = session(1, {
+      messages: [{ id: "model-question", role: "user", text: "Kiểm tra mô hình đang dùng" }],
+    });
+    const items = buildNekoCommandItems([active], active, true);
+    expect(filterNekoCommandItems(items, "mô hình").map(item => item.id)).toEqual([`session:${active.id}`]);
+    expect(filterNekoCommandItems(items, "model").map(item => item.id)).toEqual(["action:info"]);
+  });
+
   it("keeps all 200 persisted sessions reachable and searches transcript text", () => {
     const sessions = Array.from({ length: 200 }, (_, index) => session(index));
     sessions[0] = session(0, {
@@ -112,10 +121,10 @@ describe("Neko command items", () => {
     expect(transcriptSearchText).toHaveBeenCalledTimes(1);
   });
 
-  it("explains that Phiên mới needs a Project when none exist", () => {
+  it("explains that Phiên mới needs a project when none exist", () => {
     const items = buildNekoCommandItems([], null, true, false);
     const neu = items.find((item) => item.id === "action:new");
-    expect(neu?.description).toContain("Cần tạo Project trước");
+    expect(neu?.description).toContain("Tạo dự án trước");
   });
 
 
