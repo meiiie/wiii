@@ -167,8 +167,8 @@ describe("Neko transcript reading continuity", () => {
     expect(screen.getByRole("button", { name: "Đi tới tin nhắn mới nhất" })).toBeTruthy();
   });
 
-  it("treats reduced-motion virtual question jumps as intentional new reading positions", () => {
-    vi.stubGlobal("matchMedia", () => ({ matches: true, addEventListener() {}, removeEventListener() {} }));
+  it.each([false, true])("keeps virtual question jumps as the new reading position (reduced motion: %s)", (reducedMotion) => {
+    vi.stubGlobal("matchMedia", () => ({ matches: reducedMotion, addEventListener() {}, removeEventListener() {} }));
     const session = makeSession();
     session.messages = Array.from({ length: 52 }, (_, index) => ({ id: `question-${index}`, role: "user" as const, text: `Câu hỏi ${index + 1}` }));
     const fakeVirtualizer = {

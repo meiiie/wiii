@@ -540,7 +540,9 @@ export function NekoTranscript({
     (landmark: NekoPromptLandmark) => {
       const reducedMotion = typeof window.matchMedia === "function"
         && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-      const behavior: ScrollBehavior = reducedMotion ? "auto" : "smooth";
+      // Virtual rows are measured while seeking. Do not animate through stale
+      // estimates and let an intermediate row become the new reading anchor.
+      const behavior: ScrollBehavior = reducedMotion || useVirtual ? "auto" : "smooth";
       updateFollowingTail(false);
       pendingPromptFocusRef.current = { sessionId: session.id, messageId: landmark.id };
       if (useVirtual) {
