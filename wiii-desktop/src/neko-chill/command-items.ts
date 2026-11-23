@@ -130,8 +130,8 @@ export function buildNekoCommandItems(
       "new",
       "Phiên mới",
       hasProjects
-        ? "Soạn lời nhắn trong Project hiện tại"
-        : "Cần tạo Project trước — rồi mở phiên trong Project đó",
+        ? "Trong dự án hiện tại"
+        : "Tạo dự án trước khi mở phiên",
     ),
     actionItem(
       "toggle-sidebar",
@@ -144,7 +144,7 @@ export function buildNekoCommandItems(
       actionItem(
         "project",
         activeSession.workspace ? "Xem dự án hiện tại" : "Gắn dự án cho phiên",
-        activeSession.workspace?.path ?? "Chọn ranh giới làm việc của agent",
+        activeSession.workspace?.path ?? "Chọn thư mục làm việc",
         !activeSession.workspace && !canChooseWorkspaceFolder()
           ? {
             disabled: true,
@@ -152,7 +152,7 @@ export function buildNekoCommandItems(
           }
           : undefined,
       ),
-      actionItem("info", "Thông tin phiên", "Agent, model, trạng thái và điều khiển"),
+      actionItem("info", "Thông tin phiên", "Mô hình và trạng thái"),
     );
   }
 

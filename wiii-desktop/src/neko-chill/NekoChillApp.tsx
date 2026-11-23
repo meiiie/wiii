@@ -955,13 +955,14 @@ function NekoChillScreen({
         || event.key.toLowerCase() !== "b" || !workspaceAvailable) return;
       event.preventDefault();
       event.stopPropagation();
+      if (commandCenterOpen) return;
       if (session?.workspace) handleToggleSessionWorkspace();
       else toggleProjectWorkspace();
       workspaceToggleRef.current?.focus();
     };
     window.addEventListener("keydown", onKeyDown, true);
     return () => window.removeEventListener("keydown", onKeyDown, true);
-  }, [active, handleToggleSessionWorkspace, session?.workspace, toggleProjectWorkspace, workspaceAvailable]);
+  }, [active, commandCenterOpen, handleToggleSessionWorkspace, session?.workspace, toggleProjectWorkspace, workspaceAvailable]);
 
   const titleWorkspaceToggle = session?.workspace || (projectHome && projectWorkspaceRoot) ? (
     <button

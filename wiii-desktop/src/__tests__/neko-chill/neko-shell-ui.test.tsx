@@ -863,7 +863,7 @@ describe("Neko Chill shell UI", () => {
     const commandSearch = screen.getByRole("searchbox", { name: "Tìm phiên hoặc lệnh",
     });
     fireEvent.change(commandSearch, { target: { value: "memory" } });
-    fireEvent.click(screen.getByRole("option", { name: /memory show.*Agent/i }));
+    fireEvent.click(screen.getByRole("option", { name: /memory show.*Chèn/i }));
     expect((composer as HTMLTextAreaElement).value).toBe("/memory show");
     await vi.waitFor(() => expect(document.activeElement).toBe(composer));
   });
@@ -1187,6 +1187,51 @@ describe("Neko Chill shell UI", () => {
     expect(workspace.getAttribute("aria-expanded")).toBe("true");
     fireEvent.keyDown(window, { key: "b", metaKey: true, altKey: true });
     expect(workspace.getAttribute("aria-expanded")).toBe("false");
+  });
+
+  it.each(["session", "project"])("keeps %s Tools shortcuts behind command-search keyboard ownership", async (scope) => {
+    const workspace = { path: "/qa", name: "QA" };
+    useNekoProjectStore.setState({ projects: [{ id: "qa", name: "QA", roots: [workspace], createdAt: 1, updatedAt: 1 }] });
+    if (scope === "session") useNekoSessionStore.setState({
+      sessions: { active: makeSession("active", "QA chat", workspace) }, activeSessionId: "active",
+    });
+    render(<NekoChillApp />);
+    if (scope === "project") fireEvent.click(screen.getByTestId("new-session"));
+    const toggle = screen.getByTestId(`${scope}-workspace-toggle`);
+    fireEvent.keyDown(window, { key: "b", ctrlKey: true, altKey: true });
+    const pane = await screen.findByTestId("neko-workspace-pane");
+    const opener = within(screen.getByRole("navigation", { name: "Công cụ Project" })).getByRole("button", { name: "Tệp" });
+    opener.focus();
+    fireEvent.keyDown(opener, { key: "k", ctrlKey: true });
+    const search = screen.getByRole("searchbox", { name: "Tìm phiên hoặc lệnh" });
+    await act(() => new Promise<void>(resolve => requestAnimationFrame(() => resolve())));
+    expect(document.activeElement).toBe(search);
+    for (const modifiers of [{ ctrlKey: true }, { metaKey: true }]) {
+      fireEvent.keyDown(search, { key: "b", altKey: true, ...modifiers });
+      expect(screen.getByTestId("neko-workspace-pane")).toBe(pane);
+      expect(toggle.getAttribute("aria-expanded")).toBe("true");
+      expect(document.activeElement).toBe(search);
+    }
+    fireEvent.change(search, { target: { value: "GAMMA" } });
+    expect(screen.getByDisplayValue("GAMMA")).toBe(search);
+    fireEvent.change(search, { target: { value: "" } });
+    const result = screen.getByRole("option", { name: /Phiên mới/ });
+    result.focus();
+    fireEvent.keyDown(result, { key: "Escape" });
+    expect(screen.queryByRole("dialog", { name: "Trung tâm lệnh Neko Chill" })).toBeNull();
+    await act(() => new Promise<void>(resolve => requestAnimationFrame(() => resolve())));
+    expect(document.activeElement).toBe(opener);
+    fireEvent.keyDown(opener, { key: "b", ctrlKey: true, altKey: true });
+    expect(screen.queryByTestId("neko-workspace-pane")).toBeNull();
+    expect(toggle.getAttribute("aria-expanded")).toBe("false");
+    fireEvent.keyDown(toggle, { key: "k", ctrlKey: true });
+    await act(() => new Promise<void>(resolve => requestAnimationFrame(() => resolve())));
+    const secondSearch = screen.getByRole("searchbox", { name: "Tìm phiên hoặc lệnh" });
+    fireEvent.keyDown(secondSearch, { key: "b", ctrlKey: true, altKey: true });
+    expect(screen.queryByTestId("neko-workspace-pane")).toBeNull();
+    expect(document.activeElement).toBe(secondSearch);
+    fireEvent.keyDown(secondSearch, { key: "Escape" });
+    expect(screen.queryByRole("dialog", { name: "Trung tâm lệnh Neko Chill" })).toBeNull();
   });
 
   it("lets the navigation menu own Escape without closing the workspace", async () => {
@@ -1698,7 +1743,7 @@ describe("Neko Chill shell UI", () => {
     const search = screen.getByRole("searchbox", { name: "Tìm phiên hoặc lệnh" });
     await vi.waitFor(() => expect(document.activeElement).toBe(search));
     fireEvent.change(search, { target: { value: "memory show" } });
-    fireEvent.click(screen.getByRole("option", { name: /memory show.*Agent/i }));
+    fireEvent.click(screen.getByRole("option", { name: /memory show.*Chèn/i }));
     await vi.waitFor(() => expect(document.activeElement).toBe(composer));
     expect(screen.queryByRole("dialog", { name: "Trung tâm lệnh Neko Chill" })).toBeNull();
     expect(composer.value).toBe("/memory show");

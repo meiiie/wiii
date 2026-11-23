@@ -46,7 +46,7 @@ const COMMAND_RECENT_RESULT_LIMIT = 8;
 
 const GROUP_LABELS: Record<NekoCommandItem["kind"], string> = {
   action: "Thao tác",
-  command: "Lệnh của agent",
+  command: "Lệnh",
   session: "Phiên cục bộ",
 };
 
@@ -187,9 +187,6 @@ function NekoCommandCenterComponent({
     } else if (event.key === "Enter") {
       event.preventDefault();
       execute(visibleItems[selectedIndex]);
-    } else if (event.key === "Escape") {
-      event.preventDefault();
-      onClose();
     }
   };
 
@@ -208,6 +205,12 @@ function NekoCommandCenterComponent({
         ref={dialogRef}
         className="w-full max-w-[620px] overflow-hidden rounded-2xl border border-[var(--nk-border-strong)] bg-[var(--nk-composer)] shadow-[0_24px_70px_rgba(20,20,20,0.22)]"
         onKeyDown={(event) => {
+          if (event.key === "Escape") {
+            event.preventDefault();
+            event.stopPropagation();
+            onClose();
+            return;
+          }
           if (event.key !== "Tab") return;
           const focusable = dialogRef.current?.querySelectorAll<HTMLElement>(
             'button:not([disabled]), input:not([disabled]), [tabindex]:not([tabindex="-1"])',
@@ -305,7 +308,7 @@ function NekoCommandCenterComponent({
                       </span>
                       {item.kind === "command" ? (
                         <span className="rounded-md bg-[var(--nk-inset)] px-1.5 py-0.5 text-[9.5px] text-[var(--nk-ghost)]">
-                          {item.source}
+                          Chèn
                         </span>
                       ) : item.kind === "session" && item.active ? (
                         <span className="text-[10px] text-[var(--nk-accent)]">Đang mở</span>
@@ -322,11 +325,9 @@ function NekoCommandCenterComponent({
           <span className="inline-flex items-center gap-1"><kbd className="rounded border border-[var(--nk-border)] bg-[var(--nk-raised)] px-1 py-px text-[9.5px]">↑↓</kbd> di chuyển</span>
           <span className="inline-flex items-center gap-1"><kbd className="rounded border border-[var(--nk-border)] bg-[var(--nk-raised)] px-1 py-px text-[9.5px]">Enter</kbd> chọn</span>
           <span className="inline-flex items-center gap-1"><kbd className="rounded border border-[var(--nk-border)] bg-[var(--nk-raised)] px-1 py-px text-[9.5px]">Esc</kbd> đóng</span>
-          <span className="ml-auto">
-            {filtered.length > visibleItems.length
-              ? `${visibleItems.length}/${filtered.length} kết quả · nhập thêm để thu hẹp`
-              : "Lệnh agent được chèn để bạn xem lại trước khi gửi"}
-          </span>
+          {filtered.length > visibleItems.length ? (
+            <span className="ml-auto">{visibleItems.length}/{filtered.length} kết quả</span>
+          ) : null}
         </footer>
       </div>
     </div>
