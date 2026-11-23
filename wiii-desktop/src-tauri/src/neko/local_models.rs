@@ -255,12 +255,19 @@ fn has_keyless_local_connection(
     id: &str,
     profile: Option<&Value>,
 ) -> bool {
-    // Core merges explicit top-level connection fields over the active
-    // profile. A builtin name alone cannot prove its endpoint is still local.
-    match data
-        .get("base_url")
-        .or_else(|| profile.and_then(|value| value.get("base_url")))
-    {
+    // Core1.9.5 config.ts drops saved connection globals when --profile
+    // selects a different stored owner. Unscoped legacy globals still apply
+    // to every profile; builtin names alone do not prove locality.
+    let stored = data
+        .get("active_profile")
+        .and_then(Value::as_str)
+        .filter(|id| !id.is_empty());
+    let top_endpoint = if stored.is_none_or(|owner| owner == id) {
+        data.get("base_url")
+    } else {
+        None
+    };
+    match top_endpoint.or_else(|| profile.and_then(|value| value.get("base_url"))) {
         Some(endpoint) => endpoint.as_str().is_some_and(is_core_local_endpoint),
         None => ["ollama", "lmstudio", "local"].contains(&id),
     }
@@ -778,11 +785,14 @@ mod tests {
             json!({"profiles":{"ollama":{"model":"llama3.2"}}}),
             json!({"base_url":"http://127.0.0.1:8080/v1"}),
             json!({"profiles":{"mine":{"base_url":"http://localhost:11434/v1", "model":"llama3.2"}}}),
+            json!({"active_profile":"openai", "base_url":"https://remote.example/v1", "profiles":{"ollama":{"base_url":"http://localhost:11434/v1"}}}),
+            json!({"active_profile":"openai", "base_url":"https://remote.example/v1", "profiles":{"lmstudio":{"model":"local-model"}}}),
         ] {
             assert!(has_connection(value.as_object().unwrap()));
         }
         for value in [
             json!({"active_profile":"ollama", "base_url":"https://remote.example/v1"}),
+            json!({"active_profile":"ollama", "base_url":"https://remote.example/v1", "profiles":{"ollama":{"base_url":"http://localhost:11434/v1"}}}),
             json!({"active_profile":"local", "profiles":{"local":{"base_url":"https://remote.example/v1"}}}),
             json!({"profiles":{"lmstudio":{"base_url":"https://remote.example/v1"}}}),
             json!({"base_url":"https://remote.example/v1", "profiles":{"ollama":{"base_url":"http://localhost:11434/v1"}}}),
