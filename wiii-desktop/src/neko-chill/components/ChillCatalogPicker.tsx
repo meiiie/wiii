@@ -48,19 +48,29 @@ export function ChillCatalogPicker({ items, value, onChange, ariaLabel, disabled
   useEffect(() => { if (blocked) close(); }, [blocked, close]);
   useLayoutEffect(() => {
     if (!visible) return;
+    const panel = rootRef.current?.closest<HTMLElement>("[data-panel]");
     const place = () => {
       const rect = rootRef.current?.getBoundingClientRect();
       if (!rect) return;
-      const width = Math.min(320, Math.max(0, window.innerWidth - 24));
-      const left = Math.max(12, Math.min(rect.left, window.innerWidth - width - 12)) - rect.left;
-      const above = rect.top - 12;
-      const below = window.innerHeight - rect.bottom - 12;
+      // This is not a portal: the containing panel clips every edge of the menu.
+      const bounds = panel?.getBoundingClientRect();
+      const minLeft = Math.max(12, (bounds?.left ?? 0) + 12);
+      const maxRight = Math.min(window.innerWidth - 12, (bounds?.right ?? window.innerWidth) - 12);
+      const minTop = Math.max(12, (bounds?.top ?? 0) + 12);
+      const maxBottom = Math.min(window.innerHeight - 12, (bounds?.bottom ?? window.innerHeight) - 12);
+      const width = Math.min(320, Math.max(0, maxRight - minLeft));
+      const left = Math.max(minLeft, Math.min(rect.left, maxRight - width)) - rect.left;
+      const above = Math.max(0, rect.top - minTop);
+      const below = Math.max(0, maxBottom - rect.bottom);
       const useBelow = above < 200 && below > above;
-      setPlacement({ left, width, height: Math.max(80, Math.min(340, (useBelow ? below : above) - 4)), below: useBelow });
+      setPlacement({ left, width, height: Math.max(0, Math.min(340, (useBelow ? below : above) - 4)), below: useBelow });
     };
     place(); searchRef.current?.focus();
+    // Divider/sidebar reflow can resize the panel without resizing the window.
+    const observer = panel && typeof ResizeObserver !== "undefined" ? new ResizeObserver(place) : null;
+    if (panel) observer?.observe(panel);
     window.addEventListener("resize", place);
-    return () => window.removeEventListener("resize", place);
+    return () => { window.removeEventListener("resize", place); observer?.disconnect(); };
   }, [visible]);
   useEffect(() => {
     if (!visible) return;

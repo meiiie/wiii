@@ -1,16 +1,59 @@
-import { fireEvent, render, screen } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
+import { act, fireEvent, render, screen } from "@testing-library/react";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { ChillCatalogPicker } from "@/neko-chill/components/ChillCatalogPicker";
 import { NekoComposer } from "@/neko-chill/components/NekoComposer";
 import { clearNekoComposerDraft, readNekoComposerDraft } from "@/neko-chill/composer-drafts";
 import type { NekoSession } from "@/neko-chill/stores/neko-session-store";
 
 describe("ChillCatalogPicker", () => {
+  afterEach(() => { vi.restoreAllMocks(); vi.unstubAllGlobals(); });
   const items = [
     { id: "neko", label: "Neko Core", group: "Harness trên máy" },
     { id: "gemini", label: "Gemini CLI", group: "Harness trên máy" },
     { id: "missing", label: "Missing", group: "Harness trên máy", disabled: true, title: "Chưa sẵn sàng" },
   ];
+
+  function mountInPanel(bounds: () => DOMRect, anchor: DOMRect) {
+    vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(function (this: HTMLElement) {
+      return this.hasAttribute("data-panel") ? bounds() : anchor;
+    });
+    render(<div data-panel=""><ChillCatalogPicker items={items} value="neko" onChange={vi.fn()} ariaLabel="Catalog" testId="bounded-picker" /></div>);
+    fireEvent.click(screen.getByRole("button", { name: "Catalog" }));
+    return screen.getByTestId("bounded-picker-menu");
+  }
+
+  it.each([
+    [new DOMRect(292, 90, 258, 410), new DOMRect(450, 460, 80, 20)],
+    [new DOMRect(292, 300, 308, 350), new DOMRect(500, 330, 70, 20)],
+  ])("keeps search/reset inside the containing panel, case %#", (bounds, anchor) => {
+    const menu = mountInPanel(() => bounds, anchor);
+    const left = anchor.left + parseFloat(menu.style.left);
+    const width = parseFloat(menu.style.width);
+    const height = parseFloat(menu.style.maxHeight);
+    const top = menu.style.top ? anchor.bottom + 4 : anchor.top - 4 - height;
+    expect(left).toBeGreaterThanOrEqual(bounds.left + 12);
+    expect(left + width).toBeLessThanOrEqual(bounds.right - 12);
+    expect(top).toBeGreaterThanOrEqual(bounds.top + 12);
+    expect(top + height).toBeLessThanOrEqual(bounds.bottom - 12);
+    fireEvent.change(screen.getByRole("combobox"), { target: { value: "gem" } });
+    fireEvent.click(screen.getByRole("button", { name: "Xóa bộ lọc" }));
+    expect((screen.getByRole("combobox") as HTMLInputElement).value).toBe("");
+  });
+
+  it("refits an open catalog when only its split panel resizes", () => {
+    let resize = () => {};
+    vi.stubGlobal("ResizeObserver", class {
+      constructor(callback: () => void) { resize = callback; }
+      observe() {}
+      disconnect() {}
+    });
+    let bounds = new DOMRect(292, 90, 600, 510);
+    const anchor = new DOMRect(450, 460, 80, 20);
+    const menu = mountInPanel(() => bounds, anchor);
+    bounds = new DOMRect(292, 90, 258, 510);
+    act(() => resize()); // No window resize: divider/sidebar changed only the panel.
+    expect(anchor.left + parseFloat(menu.style.left) + parseFloat(menu.style.width)).toBeLessThanOrEqual(bounds.right - 12);
+  });
 
   it("filters by search and selects with keyboard", () => {
     const onChange = vi.fn();
