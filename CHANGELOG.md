@@ -11,6 +11,9 @@ always `wiii-v<version>` and requires a dated matching section below.
 
 ### Fixed
 
+- Bundle Neko Core 1.9.5 with verified per-platform release hashes, including
+  task writer-lock release on clean shutdown (Quit then reopen continues the
+  chat) and no hidden verification turn on plain tool-free answers.
 - Bundle Neko Core 1.9.4 with verified per-platform release hashes, including
   tool-free turn verification and cross-PID-namespace writer-lock recovery fixes.
 

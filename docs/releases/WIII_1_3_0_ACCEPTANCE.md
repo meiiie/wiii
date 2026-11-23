@@ -36,8 +36,8 @@ Follow-up acceptance work (not claimed complete by this release):
 - [x] Verify unavailable writer and stale-receipt recovery remain fail-closed with a typed recovery error and no admitted prompt
 - [ ] Verify unknown-outcome recovery against the bundled bytes (covered by synthetic driver tests only)
 
-Resolution: the bundle lock now pins immutable Neko Core v1.9.4 (source
-`9523581b387178f27ad63ba821aaf6c4847c4fd1`). Desktop CI job `neko-contract`
+Resolution: the bundle lock now pins immutable Neko Core v1.9.5 (source
+`e8a6ae0e2d6fd862d9fa0735212306d28fd76fdb`). Desktop CI job `neko-contract`
 prepares the pinned Linux x64 artifact and runs
 `wiii-desktop/src/__tests__/neko-chill/neko-core-acp-contract.real.test.ts`,
 which drives the production `AcpDriver` against the real binary through
