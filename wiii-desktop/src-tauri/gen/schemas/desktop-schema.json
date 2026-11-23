@@ -819,6 +819,12 @@
           "markdownDescription": "Enables the pick_document command without any pre-configured scope."
         },
         {
+          "description": "Enables the quit_app command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-quit-app",
+          "markdownDescription": "Enables the quit_app command without any pre-configured scope."
+        },
+        {
           "description": "Denies the check_server_reachable command without any pre-configured scope.",
           "type": "string",
           "const": "deny-check-server-reachable",
@@ -1111,6 +1117,12 @@
           "type": "string",
           "const": "deny-pick-document",
           "markdownDescription": "Denies the pick_document command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the quit_app command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-quit-app",
+          "markdownDescription": "Denies the quit_app command without any pre-configured scope."
         },
         {
           "description": "Default core plugins set.\n#### This default permission set includes:\n\n- `core:path:default`\n- `core:event:default`\n- `core:window:default`\n- `core:webview:default`\n- `core:app:default`\n- `core:image:default`\n- `core:resources:default`\n- `core:menu:default`\n- `core:tray:default`",

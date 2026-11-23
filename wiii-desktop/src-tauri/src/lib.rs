@@ -38,6 +38,7 @@ pub fn run() {
             commands::files::neko_workspace_changes,
             commands::files::neko_workspace_diff,
             commands::splash::close_splash,
+            commands::lifecycle::quit_app,
             commands::neko_agent::neko_control_provider_list,
             commands::neko_agent::neko_control_provider_profiles,
             commands::neko_agent::neko_control_provider_sessions,

@@ -9,6 +9,7 @@ fn main() {
         "neko_workspace_changes",
         "neko_workspace_diff",
         "close_splash",
+        "quit_app",
         "neko_control_provider_list",
         "neko_control_provider_profiles",
         "neko_control_provider_sessions",

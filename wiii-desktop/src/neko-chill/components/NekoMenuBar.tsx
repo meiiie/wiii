@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent } from "react";
 import { Check, X } from "lucide-react";
+import { canQuitApp, quitApp } from "@/lib/desktop-lifecycle";
 import { APP_VERSION } from "@/lib/constants";
 import { getThemeMode, setTheme, type ThemeMode } from "@/lib/theme";
 import { CompletionPreferences } from "./CompletionPreferences";
@@ -50,8 +51,10 @@ export function NekoMenuBar(props: NekoMenuBarProps) {
   const editTarget = useRef<TextEditTarget | null>(null);
   const dialog = useRef<HTMLDialogElement>(null);
   const pendingEdit = useRef(false);
+  const pendingQuit = useRef(false);
   const focusLastItem = useRef(false);
   const modifier = /Mac|iPhone|iPad/.test(navigator.platform) ? "⌘" : "Ctrl+";
+  const native = canQuitApp();
 
   const capture = useCallback(() => {
     if (root.current?.contains(document.activeElement)) return;
@@ -82,6 +85,17 @@ export function NekoMenuBar(props: NekoMenuBarProps) {
       pendingEdit.current = false;
     }
   };
+  const quit = async () => {
+    if (pendingQuit.current) return;
+    pendingQuit.current = true;
+    try {
+      await quitApp();
+    } catch {
+      setError("Chưa thể thoát Wiii. Hãy thử lại trong menu Tệp.");
+    } finally {
+      pendingQuit.current = false;
+    }
+  };
 
   const actions: MenuAction[][] = [
     [
@@ -90,6 +104,7 @@ export function NekoMenuBar(props: NekoMenuBarProps) {
       { label: "Tìm dự án hoặc phiên…", shortcut: `${modifier}K`, disabled: !props.ready, run: props.onSearch },
       { label: "Tài khoản & ứng dụng…", run: props.onConnections },
       { label: "Thông báo & âm thanh…", run: () => setHelp("notifications") },
+      ...(native ? [{ label: "Thoát Wiii", disabled: pendingQuit.current, run: () => { void quit(); } }] : []),
     ],
     EDIT_ITEMS.map(([command, label, key]) => ({
       label, shortcut: `${modifier}${key}`, disabled: !editTarget.current?.enabled[command],

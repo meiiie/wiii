@@ -4,6 +4,7 @@
   "description": "Base window, local store, and safe external-link authority for Wiii Workbench",
   "windows": ["main"],
   "permissions": [
+    "allow-quit-app",
     "core:default",
     "core:window:allow-close",
     "core:window:allow-minimize",
