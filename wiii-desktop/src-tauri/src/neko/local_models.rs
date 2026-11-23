@@ -886,6 +886,7 @@ mod tests {
             "https://example.com/v1?api_key=private",
             "https://example.com/v1#key",
             "https://api.z.ai/api/paas/v4",
+            "https://api.z.ai./api/paas/v4",
             "file:///etc/passwd",
         ] {
             assert!(normalized_url(address).is_err());

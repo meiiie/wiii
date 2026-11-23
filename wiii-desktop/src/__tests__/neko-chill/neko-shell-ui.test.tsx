@@ -25,6 +25,13 @@ import { useNekoProjectStore } from "@/neko-chill/stores/neko-project-store";
 import { useCompletionNoticeStore } from "@/neko-chill/stores/completion-notice-store";
 import { clearNekoComposerDraft, readNekoComposerDraft, writeNekoComposerDraft } from "@/neko-chill/composer-drafts";
 import { canChooseWorkspaceFolder, chooseWorkspaceFolder, createQuickChatWorkspace } from "@/neko-chill/workspace";
+import { canConfigureLocalModels, getLocalModelStatus } from "@/lib/local-model-setup";
+
+vi.mock("@/lib/local-model-setup", async (importOriginal) => ({
+  ...await importOriginal<typeof import("@/lib/local-model-setup")>(),
+  canConfigureLocalModels: vi.fn(() => false),
+  getLocalModelStatus: vi.fn(async () => ({ configured: true, presets: [] })),
+}));
 
 vi.mock("@/neko-chill/workspace", async (importOriginal) => ({
   ...await importOriginal<typeof import("@/neko-chill/workspace")>(),
@@ -90,6 +97,8 @@ function stubViewport(width: number) {
 describe("Neko Chill shell UI", () => {
   const hydrateProjects = useNekoProjectStore.getState().hydrate;
   beforeEach(() => {
+    vi.mocked(canConfigureLocalModels).mockReturnValue(false);
+    vi.mocked(getLocalModelStatus).mockReset().mockResolvedValue({ configured: true, presets: [] });
     vi.mocked(createQuickChatWorkspace).mockReset().mockResolvedValue({ path: "/qa/quick-chats/one", name: "Chat riêng", kind: "scratch" });
     vi.mocked(canChooseWorkspaceFolder).mockReset().mockReturnValue(true);
     vi.mocked(chooseWorkspaceFolder).mockReset().mockResolvedValue(null);
@@ -210,6 +219,34 @@ describe("Neko Chill shell UI", () => {
     expect(create).not.toHaveBeenCalled();
     expect(useNekoProjectStore.getState().projects[0]?.roots[0]?.kind).toBe("scratch");
     useNekoSessionStore.setState({ createSession: originalCreate });
+  });
+
+  it("does not block an existing Core profile when the stricter setup check fails", async () => {
+    vi.mocked(canConfigureLocalModels).mockReturnValue(true);
+    vi.mocked(getLocalModelStatus).mockRejectedValue(new Error("setup rejects linked config"));
+    const agentStore = await import("@/neko-chill/stores/neko-agent-store");
+    const profiles = vi.spyOn(agentStore, "loadAgentProfiles").mockResolvedValue([
+      { id: "local", provider: "openai_compat", model: "llama3.2", active: true },
+    ]);
+    const originalCreate = useNekoSessionStore.getState().createSession;
+    const originalSend = useNekoSessionStore.getState().sendPromptToSession;
+    const create = vi.fn(async () => "created");
+    try {
+      useNekoAgentStore.setState({ agents: [{ id: "neko", name: "Neko Core", version: "test", found: true, availability: "available", supportsProfiles: true }] });
+      useNekoSessionStore.setState({ createSession: create, sendPromptToSession: vi.fn(async () => {}) });
+      await act(async () => { render(<NekoChillApp />); });
+      await act(async () => { fireEvent.click(screen.getByTestId("overview-quick-chat")); });
+      fireEvent.change(await screen.findByTestId("project-home-input"), { target: { value: "Giữ bản nháp này" } });
+      const send = screen.getByRole("button", { name: "Gửi và mở phiên" }) as HTMLButtonElement;
+      await vi.waitFor(() => expect(send.disabled).toBe(false));
+      await act(async () => { fireEvent.click(send); });
+      expect(getLocalModelStatus).toHaveBeenCalledOnce();
+      expect(create).toHaveBeenCalledOnce();
+      expect(screen.queryByRole("dialog", { name: "Thiết lập mô hình" })).toBeNull();
+    } finally {
+      profiles.mockRestore();
+      useNekoSessionStore.setState({ createSession: originalCreate, sendPromptToSession: originalSend });
+    }
   });
 
   it("keeps quick-chat failure retryable without substituting a project", async () => {
