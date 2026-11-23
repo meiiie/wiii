@@ -17,6 +17,8 @@ export interface NekoMessage {
   role: "user" | "assistant";
   /** Plain text for user messages. */
   text?: string;
+  /** Presentation-only identity for an explicit Retry; the full input stays durable. */
+  retryOfMessageId?: string;
   /** Streamed blocks for assistant messages (ContentBlock vocabulary). */
   blocks?: ContentBlock[];
 }
@@ -99,7 +101,7 @@ export interface NekoSessionState {
   /** One-time migration path for a legacy transcript with no workspace. */
   attachWorkspace: (sessionId: string, workspace: WorkspaceRef) => Promise<void>;
   sendPrompt: (text: string, onAccepted?: () => void) => Promise<void>;
-  sendPromptToSession: (sessionId: string, text: string, onAccepted?: () => void, stillAuthorized?: () => boolean) => Promise<void>;
+  sendPromptToSession: (sessionId: string, text: string, onAccepted?: () => void, stillAuthorized?: () => boolean, retryOfPromptEventId?: string) => Promise<void>;
   cancelTurn: () => Promise<void>;
   resolvePermission: (optionId: string | null) => Promise<void>;
   setConfigOption: (optionId: string, value: string | boolean) => Promise<void>;

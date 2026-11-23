@@ -1,6 +1,7 @@
 import { memo, useEffect, useId, useMemo, useRef, useState, type RefObject } from "react";
 import { ChevronDown, List } from "lucide-react";
 import type { NekoMessage } from "../stores/neko-session-store";
+import { retriedMessageIds } from "../transcript-retries";
 
 export interface NekoPromptLandmark {
   id: string;
@@ -9,8 +10,9 @@ export interface NekoPromptLandmark {
 }
 
 export function buildPromptLandmarks(messages: NekoMessage[]): NekoPromptLandmark[] {
+  const retries = retriedMessageIds(messages);
   return messages.flatMap((message, messageIndex) => {
-    if (message.role !== "user" || !message.text?.trim()) return [];
+    if (message.role !== "user" || !message.text?.trim() || retries.has(message.id)) return [];
     const title = message.text.replace(/```[\s\S]*?```/g, " ")
       .replace(/[`*_>#\[\]()]/g, " ").replace(/\s+/g, " ").trim();
     return [{ id: message.id, messageIndex,

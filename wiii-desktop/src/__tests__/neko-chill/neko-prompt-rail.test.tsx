@@ -92,6 +92,42 @@ describe("Neko question navigation", () => {
     return { ...render(<div style={{ height: 400 }}><NekoTranscript {...props} /></div>), props, scrollIntoView };
   }
 
+  it("keeps explicit retries compact without hiding an ordinary repeated question or changing row indexes", () => {
+    const session = makeSession();
+    const text = session.messages[0].text!;
+    session.messages.splice(2, 0,
+      { id: "retry", role: "user", text, retryOfMessageId: "user-1" },
+      { id: "retried-answer", role: "assistant", blocks: [{ id: "retried", type: "answer", content: "Câu trả lời mới" }] });
+    session.messages[4].text = text; // An ordinary, deliberately repeated question.
+    const before = JSON.stringify(session);
+    const view = mount(session);
+    expect(screen.getAllByText(text)).toHaveLength(2);
+    expect(screen.getByText("Thử lại câu trả lời")).toBeTruthy();
+    expect(screen.getByText("Đã xác định dữ liệu cũ vẫn còn trong IndexedDB.")).toBeTruthy();
+    expect(screen.getByText("Câu trả lời mới")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Câu hỏi 2" }));
+    fireEvent.click(screen.getByRole("button", { name: `Đi tới lời nhắn 2: ${text}` }));
+    expect(document.activeElement?.getAttribute("data-neko-message-index")).toBe("4");
+    expect(JSON.stringify(session)).toBe(before);
+    view.unmount();
+    mount(JSON.parse(before));
+    expect(screen.getAllByText(text)).toHaveLength(2);
+    expect(screen.getByRole("button", { name: "Câu hỏi 2" })).toBeTruthy();
+  });
+
+  it("does not suppress unmarked, missing, forward, self or mismatched Retry links", () => {
+    const messages: NekoSession["messages"] = [
+      { id: "first", role: "user", text: "Giữ nguyên" },
+      { id: "ordinary", role: "user", text: "Giữ nguyên" },
+      { id: "missing", role: "user", text: "Giữ nguyên", retryOfMessageId: "absent" },
+      { id: "forward", role: "user", text: "Giữ nguyên", retryOfMessageId: "last" },
+      { id: "self", role: "user", text: "Giữ nguyên", retryOfMessageId: "self" },
+      { id: "mismatch", role: "user", text: "Lời nhắn khác", retryOfMessageId: "first" },
+      { id: "last", role: "user", text: "Giữ nguyên" },
+    ];
+    expect(buildPromptLandmarks(messages).map(({ id }) => id)).toEqual(messages.map(({ id }) => id));
+  });
+
   it("closes the index and anchors keyboard navigation at the selected message, not the transcript start", () => {
     const { scrollIntoView, props } = mount();
     const trigger = screen.getByRole("button", { name: "Câu hỏi 2" });

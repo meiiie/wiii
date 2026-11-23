@@ -14,6 +14,7 @@ import type { NekoSessionEvent } from "../session-events";
 import type { SessionSet, SessionGet, NekoSessionState } from "./session-store-types";
 import type { SessionRuntime } from "./session-runtime-lifecycle";
 import { AcpRpcError } from "../drivers/acp/errors";
+import { getStoppedPrompt } from "../session-control-status";
 export function createSessionPromptActions(set: SessionSet, get: SessionGet, runtime: SessionRuntime): Pick<NekoSessionState, "sendPrompt" | "sendPromptToSession"> {
   const { runtimes, acquireHold, runtimeOperations, retainTaskAdmissionFailure, defaultDriverFactory, taskAdmissionLaunch, assertScopedRuntimeAdmitted, persistSessionNowOrReport, dispatchBarriers, observeInvocationAfterMarker } = runtime;
   return {
@@ -22,7 +23,7 @@ export function createSessionPromptActions(set: SessionSet, get: SessionGet, run
       if (sessionId)
         await get().sendPromptToSession(sessionId, text, onAccepted);
     },
-    sendPromptToSession: async (sessionId, text, onAccepted, stillAuthorized) => {
+    sendPromptToSession: async (sessionId, text, onAccepted, stillAuthorized, retryOfPromptEventId) => {
       // Capture the intended session before any asynchronous launch/binding work.
       // Navigation must never redirect an already explicit user submission.
       const activeModeExit = runtime.modeExitOperation;
@@ -39,6 +40,15 @@ export function createSessionPromptActions(set: SessionSet, get: SessionGet, run
         session.closePending ||
         session.deletePending) {
         return;
+      }
+      let retryOfMessageId: string | undefined;
+      if (retryOfPromptEventId !== undefined) {
+        const stopped = getStoppedPrompt(session);
+        const input = session.events.find(({ eventId }) => eventId === retryOfPromptEventId)?.data;
+        if (stopped?.eventId !== retryOfPromptEventId || stopped.text !== text
+          || input?.type !== "model-input"
+          || !session.messages.some(message => message.id === input.messageId && message.role === "user" && message.text === text)) return;
+        retryOfMessageId = input.messageId;
       }
       if (session.taskScope && (!isNekoTaskScopeMapping(session.taskScope)
         || session.taskScope.state === "recovery-required" || session.taskScope.state === "pending-new"
@@ -244,7 +254,7 @@ export function createSessionPromptActions(set: SessionSet, get: SessionGet, run
           const s = state.sessions[sessionId];
           if (!s)
             return;
-          s.messages.push({ id: messageId, role: "user", text });
+          s.messages.push({ id: messageId, role: "user", text, ...(retryOfMessageId ? { retryOfMessageId } : {}) });
           inputEventId = appendOwnedSessionEvent(s, "model", {
             type: "model-input",
             source: "live",
