@@ -2,6 +2,7 @@ export const COMPUTER_VIEWER_SOURCE = "wiii-computer-viewer-v1" as const;
 
 export type ComputerViewerPhase =
   | "viewer.loaded"
+  | "keyboard.release"
   | "rfb.connected"
   | "rfb.timeout"
   | "rfb.disconnected"
@@ -32,6 +33,7 @@ export function buildComputerViewerUrl(
 
 const PHASES: ReadonlySet<string> = new Set<ComputerViewerPhase>([
   "viewer.loaded",
+  "keyboard.release",
   "rfb.connected",
   "rfb.timeout",
   "rfb.disconnected",

@@ -221,6 +221,12 @@ function NekoComputerSurfaceComponent({
       if (event.source !== viewerFrameRef.current?.contentWindow) return;
       const message = parseComputerViewerMessage(event.data);
       if (!message) return;
+      if (message.phase === "keyboard.release") {
+        if (userOwnsSeat && document.activeElement === viewerFrameRef.current) {
+          detailsRef.current?.querySelector("summary")?.focus();
+        }
+        return;
+      }
       if (message.phase === "rfb.connected") setViewerState("connected");
       else if (message.phase === "framebuffer.visible") setViewerState("visible");
       else if (message.phase === "rfb.disconnected") setViewerState("disconnected");
@@ -238,7 +244,7 @@ function NekoComputerSurfaceComponent({
       window.removeEventListener("message", onMessage);
       window.clearTimeout(timeout);
     };
-  }, [displayRevision, environment?.attachUrl, mode, viewerOrigin]);
+  }, [displayRevision, environment?.attachUrl, mode, userOwnsSeat, viewerOrigin]);
 
   useEffect(() => {
     if (mode !== "computer" || environment?.state !== "ready") return;
@@ -756,7 +762,7 @@ function NekoComputerSurfaceComponent({
               src={viewerUrl}
               sandbox="allow-scripts allow-same-origin"
               referrerPolicy="no-referrer"
-              className="h-full w-full border-0 bg-[#111]"
+              className="h-full w-full border-0 bg-[#111] focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-[#f4ca70]"
             />
           ) : (
             <ComputerCentered dark>

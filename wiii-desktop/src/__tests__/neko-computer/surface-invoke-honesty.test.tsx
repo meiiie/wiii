@@ -193,6 +193,45 @@ describe("Neko Computer tools-pane invoke honesty", () => {
     expect(screen.getByRole("button", { name: "Kết nối lại" })).toBeTruthy();
   });
 
+  it("returns keyboard focus only from the current controlled viewer without changing the seat", async () => {
+    readyComputer();
+    mocks.project.environment!.seat.state = "user_controlled";
+    const props = { mode: "computer" as const, projectId: "project-1", projectName: "CONT3",
+      workspace: { path: "/tmp/cont3", name: "CONT3" } };
+    const view = render(<NekoComputerSurface {...props} />);
+    await act(async () => { await Promise.resolve(); });
+    let frame = screen.getByTitle("Local Computer · CONT3") as HTMLIFrameElement;
+    const summary = screen.getByText("Chi tiết").closest("summary")!;
+    const control = screen.getByRole("button", { name: "Kết thúc can thiệp" });
+    const report = (source: Window | null, origin = "http://127.0.0.1:4317") => fireEvent(window,
+      new MessageEvent("message", { origin, source,
+        data: { source: "wiii-computer-viewer-v1", phase: "keyboard.release", at: 1 } }));
+    control.focus();
+    report(frame.contentWindow, "https://untrusted.example");
+    report(window);
+    report(frame.contentWindow);
+    expect(document.activeElement).toBe(control);
+    frame.focus();
+    report(frame.contentWindow);
+    expect(document.activeElement).toBe(summary);
+    expect(new URL(frame.src).searchParams.get("view_only")).toBe("0");
+    const previousWindow = frame.contentWindow;
+    mocks.project.environment!.seat.state = "available";
+    await act(async () => { view.rerender(<NekoComputerSurface {...props} workspace={{ ...props.workspace }} />); });
+    frame = screen.getByTitle("Local Computer · CONT3") as HTMLIFrameElement;
+    const takeover = screen.getByRole("button", { name: "Nhận điều khiển" });
+    frame.focus();
+    report(previousWindow);
+    report(frame.contentWindow);
+    expect(document.activeElement).toBe(frame);
+    expect(takeover).toBeTruthy();
+    expect(new URL(frame.src).searchParams.get("view_only")).toBe("1");
+    expect(mocks.handBack).not.toHaveBeenCalled();
+    expect(mocks.takeControl).not.toHaveBeenCalled();
+    expect(mocks.execute).not.toHaveBeenCalled();
+    expect(mocks.navigate).not.toHaveBeenCalled();
+  });
+
   it("waits for a fresh viewer on each display-mode switch and ignores the old frame", async () => {
     readyComputer();
     const props = { projectId: "project-1", projectName: "CONT3", workspace: { path: "/tmp/cont3", name: "CONT3" } };
