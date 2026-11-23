@@ -1,7 +1,8 @@
-import { Suspense } from "react";
+import { createRef, Suspense, useEffect, useRef } from "react";
 import { act, fireEvent, render, screen, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import NekoChillApp from "@/neko-chill/NekoChillApp";
+import { NekoCommandCenter } from "@/neko-chill/components/NekoCommandCenter";
 import { LocalWorkbenchSurface } from "@/App";
 import {
   formatReasoningDuration,
@@ -76,6 +77,16 @@ function makeSession(
   };
 }
 
+function stubViewport(width: number) {
+  vi.stubGlobal("matchMedia", vi.fn((query: string) => {
+    const max = query.match(/max-width:\s*(\d+)px/);
+    return {
+      matches: Boolean(max && width <= Number(max[1])),
+      addEventListener: vi.fn(), removeEventListener: vi.fn(),
+    };
+  }));
+}
+
 describe("Neko Chill shell UI", () => {
   const hydrateProjects = useNekoProjectStore.getState().hydrate;
   beforeEach(() => {
@@ -129,15 +140,13 @@ describe("Neko Chill shell UI", () => {
   });
 
   it.each([
-    { compact: true, queued: false }, { compact: true, queued: true },
-    { compact: false, queued: false }, { compact: false, queued: true },
-  ])("only keeps the current chat's card when tools fully cover it (compact=$compact, queued=$queued)", async ({ compact, queued }) => {
+    { width: 640, compact: true, queued: false }, { width: 640, compact: true, queued: true },
+    { width: 800, compact: false, queued: false }, { width: 800, compact: false, queued: true },
+    { width: 1200, compact: false, queued: false }, { width: 1200, compact: false, queued: true },
+  ])("only keeps the current chat's card when tools fully cover it (width=$width, queued=$queued)", async ({ width, compact, queued }) => {
     const focus = vi.spyOn(document, "hasFocus").mockReturnValue(true);
     const visibility = vi.spyOn(document, "visibilityState", "get").mockReturnValue("visible");
-    vi.stubGlobal("matchMedia", vi.fn((query: string) => ({
-      matches: compact && query === "(max-width: 1039px)",
-      addEventListener: vi.fn(), removeEventListener: vi.fn(),
-    })));
+    stubViewport(width);
     try {
       const workspace = { path: "/qa", name: "qa" };
       useNekoSessionStore.setState({
@@ -149,6 +158,7 @@ describe("Neko Chill shell UI", () => {
       const notice = { id: "result", sessionId: "one", title: "Completed reply" };
       useCompletionNoticeStore.setState({ sound: false, notices: queued ? [notice] : [] });
       await act(async () => { render(<NekoChillApp />); });
+      expect(Boolean(screen.queryByRole("separator", { name: "Điều chỉnh độ rộng công cụ" }))).toBe(!compact);
       if (!queued) act(() => useCompletionNoticeStore.getState().publish(notice));
       expect(Boolean(screen.queryByText("Completed reply"))).toBe(compact);
       if (compact) {
@@ -166,10 +176,7 @@ describe("Neko Chill shell UI", () => {
   });
 
   it("opens a background result without unpinning its already hidden tools", async () => {
-    vi.stubGlobal("matchMedia", vi.fn((query: string) => ({
-      matches: query === "(max-width: 1039px)",
-      addEventListener: vi.fn(), removeEventListener: vi.fn(),
-    })));
+    stubViewport(640);
     try {
       const workspace = { path: "/qa", name: "qa" };
       useNekoSessionStore.setState({ activeSessionId: "other", sessions: {
@@ -852,6 +859,184 @@ describe("Neko Chill shell UI", () => {
     expect(screen.queryByTestId("session-sidebar")).toBeNull();
     fireEvent.keyDown(window, { key: "b", metaKey: true });
     expect(screen.getByTestId("session-sidebar")).toBeTruthy();
+  });
+
+  it.each(["button", "shortcut", "divider shortcut", "menu", "command center"])("keeps room for chat when reopening navigation at 800px with %s", async (entry) => {
+    stubViewport(800);
+    const draft = "Giữ nguyên bản nháp.";
+    try {
+      const workspace = { path: "/qa", name: "qa" };
+      useNekoSessionStore.setState({
+        activeSessionId: "one", sessions: { one: makeSession("one", "Chat", workspace) },
+      });
+      useNekoWorkspaceStore.getState().ensureSession("one", workspace);
+      useNekoWorkspaceStore.getState().setPinned("one", true);
+      render(<NekoChillApp />);
+      fireEvent.change(screen.getByRole("textbox", { name: "Tin nhắn cho Neko Core" }), { target: { value: draft } });
+      const tools = screen.getByTestId("session-workspace-toggle");
+      fireEvent.click(tools);
+      await screen.findByTestId("neko-workspace-pane");
+      expect(screen.queryByTestId("session-sidebar")).toBeNull();
+      expect(screen.getByRole("separator", { name: "Điều chỉnh độ rộng công cụ" })).toBeTruthy();
+      if (entry === "button") fireEvent.click(screen.getByTestId("neko-sidebar-toggle"));
+      else if (entry === "shortcut" || entry === "divider shortcut") {
+        const source = entry === "divider shortcut"
+          ? screen.getByRole("separator", { name: "Điều chỉnh độ rộng công cụ" })
+          : within(screen.getByRole("navigation", { name: "Công cụ Project" })).getByRole("button", { name: "Tệp" });
+        source.focus();
+        fireEvent.keyDown(window, { key: "b", ctrlKey: true });
+        expect(document.activeElement).toBe(screen.getByTestId("neko-sidebar-toggle"));
+      }
+      else if (entry === "command center") {
+        within(screen.getByRole("navigation", { name: "Công cụ Project" })).getByRole("button", { name: "Tệp" }).focus();
+        fireEvent.keyDown(window, { key: "k", ctrlKey: true });
+        let dialog = await screen.findByRole("dialog", { name: "Trung tâm lệnh Neko Chill" });
+        await act(() => new Promise<void>((resolve) => requestAnimationFrame(() => resolve())));
+        expect(dialog.contains(document.activeElement)).toBe(true);
+        const search = document.activeElement as HTMLInputElement;
+        fireEvent.keyDown(search, { key: "b", ctrlKey: true });
+        expect(document.activeElement).toBe(search);
+        expect(useNekoWorkspaceStore.getState().sessions.one.open).toBe(true);
+        fireEvent.change(search, { target: { value: "cây dự án" } });
+        expect(search.value).toBe("cây dự án");
+        fireEvent.keyDown(search, { key: "Escape" });
+        await act(() => new Promise<void>((resolve) => requestAnimationFrame(() => resolve())));
+        expect(screen.queryByRole("dialog", { name: "Trung tâm lệnh Neko Chill" })).toBeNull();
+        expect(document.activeElement).toBe(within(screen.getByRole("navigation", { name: "Công cụ Project" })).getByRole("button", { name: "Tệp" }));
+        fireEvent.keyDown(window, { key: "k", ctrlKey: true });
+        dialog = await screen.findByRole("dialog", { name: "Trung tâm lệnh Neko Chill" });
+        await act(() => new Promise<void>((resolve) => requestAnimationFrame(() => resolve())));
+        fireEvent.click(within(dialog).getByRole("option", { name: /Hiện cây dự án và phiên/ }));
+        await act(() => new Promise<void>((resolve) => requestAnimationFrame(() => resolve())));
+        expect(document.activeElement).toBe(screen.getByTestId("neko-sidebar-toggle"));
+      }
+      else {
+        fireEvent.click(screen.getByRole("menuitem", { name: "Xem" }));
+        fireEvent.click(screen.getByRole("menuitemcheckbox", { name: /Thanh bên/ }));
+      }
+      expect(screen.getByTestId("session-sidebar")).toBeTruthy();
+      expect(useNekoWorkspaceStore.getState().sessions.one.open).toBe(false);
+      expect(useNekoWorkspaceStore.getState().sessions.one.pinned).toBe(true);
+      expect((screen.getByRole("textbox", { name: "Tin nhắn cho Neko Core" }) as HTMLTextAreaElement).value).toBe(draft);
+      fireEvent.click(tools);
+      expect(screen.queryByTestId("session-sidebar")).toBeNull();
+      expect(useNekoWorkspaceStore.getState().sessions.one.open).toBe(true);
+    } finally {
+      clearNekoComposerDraft("session:one");
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it.each([800, 1200])("returns sidebar-command focus to the visible composer at %ipx", async (width) => {
+    stubViewport(width);
+    try {
+      const workspace = { path: "/qa", name: "qa" };
+      useNekoSessionStore.setState({ activeSessionId: "one", sessions: { one: makeSession("one", "Chat", workspace) } });
+      useNekoWorkspaceStore.getState().ensureSession("one", workspace);
+      render(<NekoChillApp />);
+      fireEvent.click(screen.getByTestId("session-workspace-toggle"));
+      const composer = screen.getByRole("textbox", { name: "Tin nhắn cho Neko Core" });
+      composer.focus();
+      fireEvent.change(composer, { target: { value: "Giữ nơi đang soạn." } });
+      fireEvent.keyDown(window, { key: "k", ctrlKey: true });
+      const dialog = await screen.findByRole("dialog", { name: "Trung tâm lệnh Neko Chill" });
+      await act(() => new Promise<void>((resolve) => requestAnimationFrame(() => resolve())));
+      fireEvent.click(within(dialog).getByRole("option", { name: /cây dự án và phiên/ }));
+      await act(() => new Promise<void>((resolve) => requestAnimationFrame(() => resolve())));
+      expect(document.activeElement).toBe(composer);
+      expect((composer as HTMLTextAreaElement).value).toBe("Giữ nơi đang soạn.");
+    } finally {
+      clearNekoComposerDraft("session:one");
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it.each([800, 1200])("uses navigation fallback with no focused origin at %ipx", async (width) => {
+    stubViewport(width);
+    try {
+      const workspace = { path: "/qa", name: "qa" };
+      useNekoSessionStore.setState({ activeSessionId: "one", sessions: { one: makeSession("one", "Chat", workspace) } });
+      useNekoWorkspaceStore.getState().ensureSession("one", workspace);
+      render(<NekoChillApp />);
+      fireEvent.click(screen.getByTestId("session-workspace-toggle"));
+      (document.activeElement as HTMLElement)?.blur();
+      expect(document.activeElement === document.body).toBe(true);
+      fireEvent.keyDown(window, { key: "k", ctrlKey: true });
+      const dialog = await screen.findByRole("dialog", { name: "Trung tâm lệnh Neko Chill" });
+      await act(() => new Promise<void>((resolve) => requestAnimationFrame(() => resolve())));
+      fireEvent.click(within(dialog).getByRole("option", { name: /cây dự án và phiên/ }));
+      await act(() => new Promise<void>((resolve) => requestAnimationFrame(() => resolve())));
+      expect(document.activeElement === screen.getByTestId("neko-sidebar-toggle")).toBe(true);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it.each(["action", "command"])("lets a deferred %s destination own focus instead of the fallback", async (entry) => {
+    const fallbackRef = createRef<HTMLButtonElement>();
+    const session = makeSession("one", "Chat", null, { commands: [{ name: "plan", description: "Lập kế hoạch" }] });
+    let destination = false;
+    function DeferredDestination() {
+      const inputRef = useRef<HTMLInputElement>(null);
+      useEffect(() => {
+        const focusAtRequest = document.activeElement;
+        const frame = requestAnimationFrame(() => {
+          if (document.activeElement === focusAtRequest || document.activeElement === document.body) inputRef.current?.focus();
+        });
+        return () => cancelAnimationFrame(frame);
+      }, []);
+      return <input ref={inputRef} aria-label="Nơi soạn mới" />;
+    }
+    const view = (open: boolean) => <>
+      <button ref={fallbackRef}>Mở thanh bên</button><button hidden={destination}>Điều khiển tệp</button>
+      <NekoCommandCenter open={open} sessions={[session]} activeSession={session} sidebarOpen={false}
+        returnFocusFallbackRef={fallbackRef} onClose={() => rerender(view(false))}
+        onAction={() => { destination = true; return "destination"; }}
+        onSelectSession={vi.fn()} onInsertCommand={() => { destination = true; }} />
+      {destination && <DeferredDestination />}
+    </>;
+    const { rerender } = render(view(false));
+    screen.getByRole("button", { name: "Điều khiển tệp" }).focus();
+    rerender(view(true));
+    await act(() => new Promise<void>((resolve) => requestAnimationFrame(() => resolve())));
+    fireEvent.click(screen.getByRole("option", { name: entry === "action" ? /Phiên mới/ : /^\/plan/ }));
+    await act(() => new Promise<void>((resolve) => requestAnimationFrame(() => resolve())));
+    expect(document.activeElement === screen.getByRole("textbox", { name: "Nơi soạn mới" })).toBe(true);
+  });
+
+  it("keeps the command action's new focus instead of returning to an exiting tool", async () => {
+    const view = (open: boolean) => <>
+      <button>Điều khiển tệp</button><button>Mở thanh bên</button>
+      <NekoCommandCenter open={open} sessions={[]} activeSession={null} sidebarOpen={false}
+        onClose={() => rerender(view(false))}
+        onAction={() => screen.getByRole("button", { name: "Mở thanh bên" }).focus()}
+        onSelectSession={vi.fn()} onInsertCommand={vi.fn()} />
+    </>;
+    const { rerender } = render(view(false));
+    screen.getByRole("button", { name: "Điều khiển tệp" }).focus();
+    rerender(view(true));
+    await act(() => new Promise<void>((resolve) => requestAnimationFrame(() => resolve())));
+    fireEvent.click(screen.getByRole("option", { name: /Hiện cây dự án và phiên/ }));
+    await act(() => new Promise<void>((resolve) => requestAnimationFrame(() => resolve())));
+    expect(document.activeElement).toBe(screen.getByRole("button", { name: "Mở thanh bên" }));
+  });
+
+  it("keeps Project tools beside the home surface without squeezing in navigation at 800px", async () => {
+    stubViewport(800);
+    try {
+      useNekoProjectStore.setState({ projects: [{ id: "alpha", name: "Alpha", roots: [{ name: "Alpha", path: "/alpha" }], createdAt: 1, updatedAt: 1 }] });
+      render(<NekoChillApp />);
+      fireEvent.click(screen.getByTestId("new-session"));
+      fireEvent.click(screen.getByTestId("project-workspace-toggle"));
+      await screen.findByTestId("neko-workspace-pane");
+      act(() => useNekoWorkspaceStore.getState().setPinned("project:alpha", true));
+      expect(screen.getByRole("separator", { name: "Điều chỉnh độ rộng công cụ" })).toBeTruthy();
+      expect(screen.queryByTestId("session-sidebar")).toBeNull();
+      fireEvent.click(screen.getByTestId("neko-sidebar-toggle"));
+      expect(screen.getByTestId("session-sidebar")).toBeTruthy();
+      expect(useNekoWorkspaceStore.getState().sessions["project:alpha"].open).toBe(false);
+      expect(useNekoWorkspaceStore.getState().sessions["project:alpha"].pinned).toBe(true);
+    } finally { vi.unstubAllGlobals(); }
   });
 
   it("keeps the sidebar filter and collapsed projects across hide and reopen", () => {

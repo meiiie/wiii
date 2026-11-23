@@ -6,6 +6,7 @@ import {
   useMemo,
   useRef,
   useState,
+  type RefObject,
 } from "react";
 import {
   Command,
@@ -32,8 +33,10 @@ interface NekoCommandCenterProps {
   activeSession: NekoSession | null;
   sidebarOpen: boolean;
   hasProjects?: boolean;
+  returnFocusFallbackRef?: RefObject<HTMLElement | null>;
   onClose: () => void;
-  onAction: (action: WorkbenchActionName) => void;
+  /** A destination result delegates focus to the next screen/dialog, even if deferred. */
+  onAction: (action: WorkbenchActionName) => "destination" | void;
   onSelectSession: (sessionId: string) => void;
   onInsertCommand: (text: string) => void;
 }
@@ -69,6 +72,7 @@ function NekoCommandCenterComponent({
   activeSession,
   sidebarOpen,
   hasProjects = true,
+  returnFocusFallbackRef,
   onClose,
   onAction,
   onSelectSession,
@@ -80,6 +84,7 @@ function NekoCommandCenterComponent({
   const listRef = useRef<HTMLDivElement>(null);
   const dialogRef = useRef<HTMLDivElement>(null);
   const returnFocusRef = useRef<HTMLElement | null>(null);
+  const destinationOwnsFocusRef = useRef(false);
   const wasOpenRef = useRef(false);
   const items = useMemo(
     () => buildNekoCommandItems(sessions, activeSession, sidebarOpen, hasProjects),
@@ -114,8 +119,11 @@ function NekoCommandCenterComponent({
 
   useEffect(() => {
     if (open) {
-      if (!wasOpenRef.current && document.activeElement instanceof HTMLElement) {
-        returnFocusRef.current = document.activeElement;
+      if (!wasOpenRef.current) {
+        destinationOwnsFocusRef.current = false;
+        const focused = document.activeElement;
+        returnFocusRef.current = focused instanceof HTMLElement
+          && focused !== document.body && focused !== document.documentElement ? focused : null;
       }
       wasOpenRef.current = true;
       setQuery("");
@@ -125,10 +133,17 @@ function NekoCommandCenterComponent({
     }
     if (wasOpenRef.current) {
       wasOpenRef.current = false;
-      const frame = requestAnimationFrame(() => returnFocusRef.current?.focus());
+      const frame = requestAnimationFrame(() => {
+        // A requested destination owns its autofocus timing, not just this frame.
+        if (destinationOwnsFocusRef.current || document.activeElement !== document.body) return;
+        [returnFocusRef.current, returnFocusFallbackRef?.current].find((target) =>
+          target?.isConnected && !target.closest('[hidden], [inert], [aria-hidden="true"]')
+          && !target.matches(':disabled, [aria-disabled="true"]'),
+        )?.focus();
+      });
       return () => cancelAnimationFrame(frame);
     }
-  }, [open]);
+  }, [open, returnFocusFallbackRef]);
 
   useLayoutEffect(() => {
     if (open) {
@@ -153,9 +168,9 @@ function NekoCommandCenterComponent({
   const execute = (item: NekoCommandItem | undefined) => {
     if (!item) return;
     if (item.kind === "action" && item.disabled) return;
-    if (item.kind === "action") onAction(item.action);
+    if (item.kind === "action") destinationOwnsFocusRef.current = onAction(item.action) === "destination";
     else if (item.kind === "command") {
-      returnFocusRef.current = null;
+      destinationOwnsFocusRef.current = true;
       onInsertCommand(item.commandText);
     }
     else onSelectSession(item.sessionId);
