@@ -6,6 +6,13 @@
 export type ThemeMode = "light" | "dark" | "system";
 
 const THEME_STORAGE_KEY = "wiii:theme";
+const themeListeners = new Set<() => void>();
+
+/** Observe effective appearance, including system changes without a mode change. */
+export function subscribeTheme(listener: () => void): () => void {
+  themeListeners.add(listener);
+  return () => { themeListeners.delete(listener); };
+}
 
 /**
  * Resolve the effective theme (light or dark) from a mode setting.
@@ -24,11 +31,13 @@ function resolveTheme(mode: ThemeMode): "light" | "dark" {
  */
 function applyTheme(theme: "light" | "dark") {
   const root = document.documentElement;
+  const previous = getCurrentTheme();
   if (theme === "dark") {
     root.classList.add("dark");
   } else {
     root.classList.remove("dark");
   }
+  if (previous !== theme) themeListeners.forEach((listener) => listener());
 }
 
 /**

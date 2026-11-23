@@ -8,6 +8,7 @@ import {
   useMemo,
   useRef,
   useState,
+  useSyncExternalStore,
 } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import {
@@ -32,6 +33,7 @@ import {
   X,
 } from "lucide-react";
 import { MarkdownRenderer } from "@/components/common/MarkdownRenderer";
+import { getCurrentTheme, subscribeTheme } from "@/lib/theme";
 import {
   useNekoSessionStore,
   type NekoSession,
@@ -476,6 +478,8 @@ function NekoWorkspacePaneComponent({
   onClose,
   exiting = false,
 }: NekoWorkspacePaneProps) {
+  // Memoized panes must follow appearance without refreshing the selected file.
+  const editorTheme = useSyncExternalStore(subscribeTheme, getCurrentTheme) === "dark" ? "vs-dark" : "light";
   const targetId = session?.id ?? target?.id ?? "project-workspace-unavailable";
   const workspace = session?.workspace ?? target?.workspace ?? null;
   const sessionId = session?.id ?? target?.sessionId;
@@ -919,7 +923,7 @@ function NekoWorkspacePaneComponent({
                     original={pane.selectedDiff.original}
                     modified={pane.selectedDiff.modified}
                     language={pane.selectedDiff.language}
-                    theme={document.documentElement.classList.contains("dark") ? "vs-dark" : "light"}
+                    theme={editorTheme}
                     options={{ readOnly: true, domReadOnly: true, automaticLayout: true, minimap: { enabled: false }, renderSideBySide: true, wordWrap: "on" }}
                   />
                 </Suspense>
@@ -931,7 +935,7 @@ function NekoWorkspacePaneComponent({
                     key={`${workspace.path}\u0000${pane.selectedFile.path}`}
                     value={pane.selectedFile.content}
                     language={pane.selectedFile.language}
-                    theme={document.documentElement.classList.contains("dark") ? "vs-dark" : "light"}
+                    theme={editorTheme}
                     options={WORKSPACE_CODE_EDITOR_OPTIONS}
                   />
                 </Suspense>
