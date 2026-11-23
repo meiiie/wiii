@@ -35,6 +35,7 @@ describe("workspace diff keyboard navigation", () => {
     const layoutListeners = new Set<(layout: editor.EditorLayoutInfo) => void>();
     let onDispose = () => {};
     const original = {
+      hasWidgetFocus: () => document.activeElement === originalInput,
       getLayoutInfo: () => layout,
       updateOptions: (options: editor.IEditorOptions) => {
         if (options.tabIndex !== undefined) originalInput.tabIndex = options.tabIndex;
@@ -46,6 +47,7 @@ describe("workspace diff keyboard navigation", () => {
     };
     syncWorkspaceDiffTabOrder({
       getOriginalEditor: () => original,
+      getModifiedEditor: () => ({ focus: () => modifiedInput.focus() }),
       onDidDispose: (listener: () => void) => { onDispose = listener; },
     } as unknown as editor.IDiffEditor);
     return {
@@ -90,5 +92,35 @@ describe("workspace diff keyboard navigation", () => {
     expect(diff.layoutListeners.size).toBe(0);
     diff.resize(400);
     expect(diff.originalInput.tabIndex).toBe(-1);
+  });
+
+  it("keeps focus visible when the focused original collapses", () => {
+    const diff = fixture(400);
+    document.body.append(diff.originalInput, diff.modifiedInput);
+    try {
+      diff.originalInput.focus();
+      diff.resize(0);
+      expect(document.activeElement).toBe(diff.modifiedInput);
+    } finally {
+      diff.dispose();
+      diff.originalInput.remove();
+      diff.modifiedInput.remove();
+    }
+  });
+
+  it("does not steal focus from outside the original during layout", () => {
+    const diff = fixture(400);
+    const row = document.createElement("button");
+    document.body.append(row, diff.originalInput, diff.modifiedInput);
+    try {
+      row.focus();
+      diff.resize(0);
+      expect(document.activeElement).toBe(row);
+    } finally {
+      diff.dispose();
+      row.remove();
+      diff.originalInput.remove();
+      diff.modifiedInput.remove();
+    }
   });
 });

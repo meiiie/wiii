@@ -28,6 +28,9 @@ export function syncWorkspaceDiffTabOrder(diff: editor.IDiffEditor): void {
   const original = diff.getOriginalEditor();
   const sync = ({ contentWidth }: editor.EditorLayoutInfo) => {
     original.updateOptions({ tabIndex: contentWidth > 0 ? 0 : -1 });
+    if (contentWidth <= 0 && original.hasWidgetFocus()) {
+      diff.getModifiedEditor().focus();
+    }
   };
   sync(original.getLayoutInfo());
   const subscription = original.onDidLayoutChange(sync);
