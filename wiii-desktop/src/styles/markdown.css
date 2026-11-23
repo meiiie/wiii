@@ -56,8 +56,8 @@
   border: 2px solid var(--border);
 }
 
-.wiii-table-viewport:focus-visible {
-  /* The reserved border stays visible above cells in native WebKit scrollers. */
+.markdown-content .wiii-table-viewport:focus-visible {
+  /* Outrank shell focus rules; the reserved border cannot be clipped outside. */
   border-color: var(--accent);
   outline: none;
 }
