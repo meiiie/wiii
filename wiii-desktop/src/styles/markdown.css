@@ -48,15 +48,42 @@
   border-left: 3px solid color-mix(in srgb, var(--accent) 40%, var(--border));
 }
 
-.markdown-content table {
-  @apply w-full border-collapse mb-3 overflow-hidden;
+.wiii-table-viewport {
+  max-width: 100%;
+  overflow-x: auto;
+  margin-bottom: 0.75rem;
   border-radius: 8px;
-  border: 1px solid var(--border);
+  border: 2px solid var(--border);
+}
+
+.markdown-content .wiii-table-viewport:focus-visible {
+  /* Outrank shell focus rules; the reserved border cannot be clipped outside. */
+  border-color: var(--accent);
+  outline: none;
+}
+
+@media (forced-colors: active) {
+  .markdown-content .wiii-table-viewport:focus-visible {
+    /* Contrast themes can erase border-color changes; add a geometric cue. */
+    outline: 2px solid Highlight;
+    outline-offset: -4px;
+  }
+}
+
+.markdown-content table {
+  @apply border-collapse;
+  width: max-content;
+  min-width: 100%;
+  /* Prose may break anywhere; cells need their natural minimum word width. */
+  overflow-wrap: break-word;
+  word-break: normal;
 }
 
 .markdown-content th,
 .markdown-content td {
   @apply px-3 py-2 text-left text-sm;
+  /* Keep prose cells readable without one-word-wide, excessively tall rows. */
+  max-width: 32ch;
   border-bottom: 1px solid var(--border);
 }
 

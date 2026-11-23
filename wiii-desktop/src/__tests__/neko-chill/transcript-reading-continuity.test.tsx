@@ -92,6 +92,50 @@ beforeEach(() => {
 afterEach(() => { cleanup(); vi.restoreAllMocks(); vi.unstubAllGlobals(); });
 
 describe("Neko transcript reading continuity", () => {
+  it("isolates table columns per message/session through remounts and resize clamps", async () => {
+    const session = makeSession();
+    session.messages[1].blocks = [{ id: "answer-1", type: "answer", content: "| Lô | Hạn |\n| --- | --- |\n| GAMMA | 14:00 |" }];
+    // Blocks need only be unique within their message, not the entire session.
+    session.messages[3].blocks = [{ ...session.messages[1].blocks[0] }];
+    const positions = new Map<string, TranscriptReadingPosition>();
+    const view = mount(session, positions);
+    const tables = await screen.findAllByRole("region", { name: "Bảng" });
+    const table = tables[0];
+    let width = 300;
+    let extent = 900;
+    let left = 0;
+    Object.defineProperties(table, {
+      clientWidth: { configurable: true, get: () => width },
+      scrollWidth: { configurable: true, get: () => extent },
+      scrollLeft: { configurable: true, get: () => left, set: v => { left = Math.max(0, Math.min(extent - width, v)); } },
+    });
+    resize(table);
+    table.scrollLeft = 480; fireEvent.scroll(table);
+    tables[1].scrollLeft = 96; fireEvent.scroll(tables[1]);
+    // A native resize clamp is not the user choosing the first columns.
+    width = 1000; table.scrollLeft = 0; fireEvent.scroll(table); resize(table);
+    width = 300; resize(table);
+    expect(table.scrollLeft).toBe(480);
+    extent = 500; table.scrollLeft = 200; fireEvent.scroll(table); resize(table);
+    extent = 900; resize(table);
+    expect(table.scrollLeft).toBe(480);
+    view.viewport.scrollTop = 100; fireEvent.scroll(view.viewport);
+    const show = (current: NekoSession) => <NekoTranscript session={current} readingPositions={positions} onResolvePermission={vi.fn()} onInsertPrompt={vi.fn()} />;
+    // Same block IDs deliberately exercise isolation by session, not content.
+    const other = { ...session, id: "session-B" };
+    view.rerender(show(other));
+    const tableB = screen.getAllByRole("region", { name: "Bảng" })[0];
+    expect(tableB.scrollLeft).toBe(0);
+    tableB.scrollLeft = 64; fireEvent.scroll(tableB);
+    view.rerender(show(session));
+    expect(screen.getAllByRole("region", { name: "Bảng" }).map(t => t.scrollLeft)).toEqual([480, 96]);
+    view.rerender(show(other));
+    expect(screen.getAllByRole("region", { name: "Bảng" }).map(t => t.scrollLeft)).toEqual([64, 0]);
+    view.unmount();
+    mount(session, positions);
+    expect((await screen.findAllByRole("region", { name: "Bảng" })).map(t => t.scrollLeft)).toEqual([480, 96]);
+  });
+
   function readingFixture(session = makeSession()) {
     const view = mount(session);
     const textRects = new WeakMap<Node, (range: Range) => DOMRect>();

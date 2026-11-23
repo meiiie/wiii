@@ -24,6 +24,8 @@ export interface TranscriptReadingPosition {
   bookmark: ReadingBookmark | null;
   /** Numeric row geometry only; never retain the virtualizer or DOM nodes. */
   virtualMeasurements?: VirtualItem[];
+  /** Block/segment/table keys and horizontal offsets only; workspace lifetime. */
+  tableScrollPositions?: Map<string, number>;
 }
 
 /** Keep a text position, not a scroll percentage: wrapping changes earlier rows. */

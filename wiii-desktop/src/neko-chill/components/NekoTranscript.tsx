@@ -8,6 +8,7 @@ import { elementScroll, useVirtualizer } from "@tanstack/react-virtual";
 import { ArrowDown, BookOpen, ChevronRight, Command, FolderGit2, RotateCcw } from "lucide-react";
 import { NEKO_STARTER_PROMPTS } from "../starter-prompts";
 import { MarkdownRenderer } from "@/components/common/MarkdownRenderer";
+import { MarkdownTableScrollPositions, MarkdownTableScrollScope } from "@/components/common/MarkdownTable";
 import { NekoActivityIcon, resolveNekoToolIconKind } from "@/components/icons/neko";
 import type {
   ContentBlock,
@@ -258,7 +259,11 @@ function ActivityGroup({
   );
 }
 
-function Block({ block, active = false }: { block: ContentBlock; active?: boolean }) {
+function Block(props: { block: ContentBlock; active?: boolean }) {
+  return <MarkdownTableScrollScope scope={props.block.id}><BlockContent {...props} /></MarkdownTableScrollScope>;
+}
+
+function BlockContent({ block, active = false }: { block: ContentBlock; active?: boolean }) {
   switch (block.type) {
     case "thinking":
       return <ThinkingDisclosure block={block} active={active} />;
@@ -288,7 +293,7 @@ const MessageRow = memo(function MessageRow({
   const blocks = message.blocks ?? [];
   const lastBlock = blocks[blocks.length - 1];
   const groups = groupTranscriptBlocks(blocks);
-  return message.role === "user" ? (
+  return <MarkdownTableScrollScope scope={message.id}>{message.role === "user" ? (
     <div
       ref={onReady}
       tabIndex={-1}
@@ -318,7 +323,7 @@ const MessageRow = memo(function MessageRow({
         <Block key={group.block.id} block={group.block} active={streaming && group.block === lastBlock} />
       ))}
     </div>
-  );
+  )}</MarkdownTableScrollScope>;
 });
 
 export function streamingActivityLabel(session: NekoSession): string {
@@ -418,6 +423,16 @@ export function NekoTranscript({
   onRetry,
   readingPositions,
 }: NekoTranscriptProps) {
+  const tableScrollPositions = useMemo(
+    () => readingPositions?.get(session.id)?.tableScrollPositions ?? new Map<string, number>(),
+    [readingPositions, session.id],
+  );
+  useLayoutEffect(() => {
+    const saved = readingPositions?.get(session.id);
+    readingPositions?.set(session.id, {
+      followingTail: true, scrollTop: 0, bookmark: null, ...saved, tableScrollPositions,
+    });
+  }, [readingPositions, session.id, tableScrollPositions]);
   const scrollRef = useRef<HTMLDivElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
@@ -642,6 +657,7 @@ export function NekoTranscript({
       // text position until it has been restored, rather than caching the jump.
       else if (width === viewport.clientWidth) anchor = captureTranscriptReadingAnchor(viewport);
       if (width === viewport.clientWidth) readingPositions?.set(session.id, {
+        ...readingPositions.get(session.id),
         followingTail: followingTailRef.current,
         scrollTop: viewport.scrollTop,
         bookmark: followingTailRef.current ? null : captureTranscriptReadingBookmark(viewport, anchor),
@@ -697,6 +713,7 @@ export function NekoTranscript({
   useEffect(scheduleFollow, [lastMessage, lastBlockCount, session.pendingPermission, scheduleFollow]);
 
   return (
+    <MarkdownTableScrollPositions.Provider value={tableScrollPositions}>
     <div className="relative flex min-h-0 flex-1 flex-col">
       <NekoPromptRail
         messages={promptRailMessages}
@@ -854,5 +871,6 @@ export function NekoTranscript({
         </button>
       ) : null}
     </div>
+    </MarkdownTableScrollPositions.Provider>
   );
 }
