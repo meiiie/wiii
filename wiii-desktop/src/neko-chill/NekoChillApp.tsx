@@ -887,8 +887,11 @@ function NekoChillScreen({
     setInsertRequest((current) => ({ text, token: (current?.token ?? 0) + 1 }));
   };
 
-  const handleWorkbenchAction = (action: WorkbenchActionName) => {
-    if (action === "new") handleNewSession();
+  const handleWorkbenchAction = (action: WorkbenchActionName): "destination" | void => {
+    if (action === "new") {
+      handleNewSession();
+      return "destination";
+    }
     else if (action === "toggle-sidebar") {
       handleToggleSidebar();
     }

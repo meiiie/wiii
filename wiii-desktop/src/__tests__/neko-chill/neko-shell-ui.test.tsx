@@ -1,4 +1,4 @@
-import { Suspense } from "react";
+import { createRef, Suspense, useEffect, useRef } from "react";
 import { act, fireEvent, render, screen, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import NekoChillApp from "@/neko-chill/NekoChillApp";
@@ -970,6 +970,38 @@ describe("Neko Chill shell UI", () => {
     } finally {
       vi.unstubAllGlobals();
     }
+  });
+
+  it.each(["action", "command"])("lets a deferred %s destination own focus instead of the fallback", async (entry) => {
+    const fallbackRef = createRef<HTMLButtonElement>();
+    const session = makeSession("one", "Chat", null, { commands: [{ name: "plan", description: "Lập kế hoạch" }] });
+    let destination = false;
+    function DeferredDestination() {
+      const inputRef = useRef<HTMLInputElement>(null);
+      useEffect(() => {
+        const focusAtRequest = document.activeElement;
+        const frame = requestAnimationFrame(() => {
+          if (document.activeElement === focusAtRequest || document.activeElement === document.body) inputRef.current?.focus();
+        });
+        return () => cancelAnimationFrame(frame);
+      }, []);
+      return <input ref={inputRef} aria-label="Nơi soạn mới" />;
+    }
+    const view = (open: boolean) => <>
+      <button ref={fallbackRef}>Mở thanh bên</button><button hidden={destination}>Điều khiển tệp</button>
+      <NekoCommandCenter open={open} sessions={[session]} activeSession={session} sidebarOpen={false}
+        returnFocusFallbackRef={fallbackRef} onClose={() => rerender(view(false))}
+        onAction={() => { destination = true; return "destination"; }}
+        onSelectSession={vi.fn()} onInsertCommand={() => { destination = true; }} />
+      {destination && <DeferredDestination />}
+    </>;
+    const { rerender } = render(view(false));
+    screen.getByRole("button", { name: "Điều khiển tệp" }).focus();
+    rerender(view(true));
+    await act(() => new Promise<void>((resolve) => requestAnimationFrame(() => resolve())));
+    fireEvent.click(screen.getByRole("option", { name: entry === "action" ? /Phiên mới/ : /^\/plan/ }));
+    await act(() => new Promise<void>((resolve) => requestAnimationFrame(() => resolve())));
+    expect(document.activeElement === screen.getByRole("textbox", { name: "Nơi soạn mới" })).toBe(true);
   });
 
   it("keeps the command action's new focus instead of returning to an exiting tool", async () => {
