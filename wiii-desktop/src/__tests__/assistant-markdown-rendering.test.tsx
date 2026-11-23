@@ -1,7 +1,37 @@
-import { render, screen, within } from "@testing-library/react";
+import { fireEvent, render, screen, within } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 
 describe("MarkdownRenderer assistant cleanup", () => {
+  it.each([
+    ["GFM", ""], ["HTML", "\n\n<span>Ghi chú</span>"], ["math", "\n\n$x$"],
+  ])("restores separate %s table positions across block remounts and stream completion", async (_route, suffix) => {
+    const { MarkdownRenderer } = await import("@/components/common/MarkdownRenderer");
+    const { MarkdownTableScrollPositions, MarkdownTableScrollScope } = await import("@/components/common/MarkdownTable");
+    const positions = new Map<string, number>();
+    const table = "| Lô | Hạn |\n| --- | --- |\n| GAMMA | 14:00 |";
+    const content = `${table}\n\n---\n\n${table}${suffix}`;
+    const body = (scope: string, streaming = false) => (
+      <MarkdownTableScrollPositions.Provider value={positions}>
+        <MarkdownTableScrollScope scope={scope}><MarkdownRenderer content={content} streaming={streaming} /></MarkdownTableScrollScope>
+      </MarkdownTableScrollPositions.Provider>
+    );
+    const view = render(body("answer-A", true));
+    const tables = await screen.findAllByRole("region", { name: "Bảng" });
+    fireEvent.scroll(tables[0], { target: { scrollLeft: 240 } });
+    fireEvent.scroll(tables[1], { target: { scrollLeft: 80 } });
+    view.rerender(body("answer-B"));
+    expect(screen.getAllByRole("region", { name: "Bảng" }).map(t => t.scrollLeft)).toEqual([0, 0]);
+    fireEvent.scroll(screen.getAllByRole("region", { name: "Bảng" })[0], { target: { scrollLeft: 36 } });
+    view.rerender(body("answer-A"));
+    expect(screen.getAllByRole("region", { name: "Bảng" }).map(t => t.scrollLeft)).toEqual([240, 80]);
+    const first = screen.getAllByRole("region", { name: "Bảng" })[0];
+    view.rerender(body("answer-A", true));
+    expect(screen.getAllByRole("region", { name: "Bảng" })[0]).toBe(first);
+    view.unmount();
+    render(body("answer-A"));
+    expect((await screen.findAllByRole("region", { name: "Bảng" })).map(t => t.scrollLeft)).toEqual([240, 80]);
+  });
+
   it.each([
     ["GFM", ""],
     ["HTML", "\n\n<span>Ghi chú</span>"],

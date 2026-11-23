@@ -2,6 +2,7 @@ import { lazy, Suspense, useDeferredValue, useMemo } from "react";
 import { stripWiiiInternalMarkup } from "@/lib/internal-markup";
 import { normalizeAssistantMarkdown } from "@/lib/assistant-markdown";
 import { MarkdownLiteSegment } from "./MarkdownLiteSegment";
+import { MarkdownTableScrollScope } from "./MarkdownTable";
 import { splitWidgetBlocks } from "./widget-segments";
 
 const InlineHtmlWidget = lazy(() => import("./InlineHtmlWidget"));
@@ -162,12 +163,11 @@ export function MarkdownRenderer({
             : MarkdownLiteSegment;
 
         return (
-          <Suspense
-            key={`md-${i}`}
-            fallback={<PlainTextSegment content={seg.content} />}
-          >
-            <SegmentComponent content={seg.content} streaming={streaming} />
-          </Suspense>
+          <MarkdownTableScrollScope scope={String(i)} key={`md-${i}`}>
+            <Suspense fallback={<PlainTextSegment content={seg.content} />}>
+              <SegmentComponent content={seg.content} streaming={streaming} />
+            </Suspense>
+          </MarkdownTableScrollScope>
         );
       })}
     </div>

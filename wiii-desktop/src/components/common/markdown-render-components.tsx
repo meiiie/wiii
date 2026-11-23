@@ -1,5 +1,6 @@
 import { Children, isValidElement, type CSSProperties, type ReactNode, lazy, Suspense } from "react";
 import type { Components } from "react-markdown";
+import { MarkdownTable } from "./MarkdownTable";
 
 const MermaidDiagram = lazy(() => import("./MermaidDiagram"));
 const InlineHtmlWidget = lazy(() => import("./InlineHtmlWidget"));
@@ -65,13 +66,7 @@ function CitationLink({ href, children, title }: { href?: string; children?: Rea
 export function createMarkdownRenderComponents(streaming = false): Components {
   return {
     a: CitationLink,
-    table({ node: _node, children, ...props }) {
-      return (
-        <div className="wiii-table-viewport" role="region" aria-label="Bảng" tabIndex={0}>
-          <table {...props}>{children}</table>
-        </div>
-      );
-    },
+    table: MarkdownTable,
     ol({ node, start, children, style, ...props }) {
       const first = Number.isSafeInteger(start) ? start! : 1;
       const count = node?.children.filter(child => child.type === "element" && child.tagName === "li").length
