@@ -76,6 +76,16 @@ function makeSession(
   };
 }
 
+function stubViewport(width: number) {
+  vi.stubGlobal("matchMedia", vi.fn((query: string) => {
+    const max = query.match(/max-width:\s*(\d+)px/);
+    return {
+      matches: Boolean(max && width <= Number(max[1])),
+      addEventListener: vi.fn(), removeEventListener: vi.fn(),
+    };
+  }));
+}
+
 describe("Neko Chill shell UI", () => {
   const hydrateProjects = useNekoProjectStore.getState().hydrate;
   beforeEach(() => {
@@ -129,15 +139,13 @@ describe("Neko Chill shell UI", () => {
   });
 
   it.each([
-    { compact: true, queued: false }, { compact: true, queued: true },
-    { compact: false, queued: false }, { compact: false, queued: true },
-  ])("only keeps the current chat's card when tools fully cover it (compact=$compact, queued=$queued)", async ({ compact, queued }) => {
+    { width: 640, compact: true, queued: false }, { width: 640, compact: true, queued: true },
+    { width: 800, compact: false, queued: false }, { width: 800, compact: false, queued: true },
+    { width: 1200, compact: false, queued: false }, { width: 1200, compact: false, queued: true },
+  ])("only keeps the current chat's card when tools fully cover it (width=$width, queued=$queued)", async ({ width, compact, queued }) => {
     const focus = vi.spyOn(document, "hasFocus").mockReturnValue(true);
     const visibility = vi.spyOn(document, "visibilityState", "get").mockReturnValue("visible");
-    vi.stubGlobal("matchMedia", vi.fn((query: string) => ({
-      matches: compact && query === "(max-width: 1039px)",
-      addEventListener: vi.fn(), removeEventListener: vi.fn(),
-    })));
+    stubViewport(width);
     try {
       const workspace = { path: "/qa", name: "qa" };
       useNekoSessionStore.setState({
@@ -149,6 +157,7 @@ describe("Neko Chill shell UI", () => {
       const notice = { id: "result", sessionId: "one", title: "Completed reply" };
       useCompletionNoticeStore.setState({ sound: false, notices: queued ? [notice] : [] });
       await act(async () => { render(<NekoChillApp />); });
+      expect(Boolean(screen.queryByRole("separator", { name: "Điều chỉnh độ rộng công cụ" }))).toBe(!compact);
       if (!queued) act(() => useCompletionNoticeStore.getState().publish(notice));
       expect(Boolean(screen.queryByText("Completed reply"))).toBe(compact);
       if (compact) {
@@ -166,10 +175,7 @@ describe("Neko Chill shell UI", () => {
   });
 
   it("opens a background result without unpinning its already hidden tools", async () => {
-    vi.stubGlobal("matchMedia", vi.fn((query: string) => ({
-      matches: query === "(max-width: 1039px)",
-      addEventListener: vi.fn(), removeEventListener: vi.fn(),
-    })));
+    stubViewport(640);
     try {
       const workspace = { path: "/qa", name: "qa" };
       useNekoSessionStore.setState({ activeSessionId: "other", sessions: {
@@ -852,6 +858,64 @@ describe("Neko Chill shell UI", () => {
     expect(screen.queryByTestId("session-sidebar")).toBeNull();
     fireEvent.keyDown(window, { key: "b", metaKey: true });
     expect(screen.getByTestId("session-sidebar")).toBeTruthy();
+  });
+
+  it.each(["button", "shortcut", "menu"])("keeps room for chat when reopening navigation at 800px with %s", async (entry) => {
+    stubViewport(800);
+    const draft = "Giữ nguyên bản nháp.";
+    try {
+      const workspace = { path: "/qa", name: "qa" };
+      useNekoSessionStore.setState({
+        activeSessionId: "one", sessions: { one: makeSession("one", "Chat", workspace) },
+      });
+      useNekoWorkspaceStore.getState().ensureSession("one", workspace);
+      useNekoWorkspaceStore.getState().setPinned("one", true);
+      render(<NekoChillApp />);
+      fireEvent.change(screen.getByRole("textbox", { name: "Tin nhắn cho Neko Core" }), { target: { value: draft } });
+      const tools = screen.getByTestId("session-workspace-toggle");
+      fireEvent.click(tools);
+      await screen.findByTestId("neko-workspace-pane");
+      expect(screen.queryByTestId("session-sidebar")).toBeNull();
+      expect(screen.getByRole("separator", { name: "Điều chỉnh độ rộng công cụ" })).toBeTruthy();
+      if (entry === "button") fireEvent.click(screen.getByTestId("neko-sidebar-toggle"));
+      else if (entry === "shortcut") {
+        within(screen.getByRole("navigation", { name: "Công cụ Project" })).getByRole("button", { name: "Tệp" }).focus();
+        fireEvent.keyDown(window, { key: "b", ctrlKey: true });
+        expect(document.activeElement).toBe(screen.getByTestId("neko-sidebar-toggle"));
+      }
+      else {
+        fireEvent.click(screen.getByRole("menuitem", { name: "Xem" }));
+        fireEvent.click(screen.getByRole("menuitemcheckbox", { name: /Thanh bên/ }));
+      }
+      expect(screen.getByTestId("session-sidebar")).toBeTruthy();
+      expect(useNekoWorkspaceStore.getState().sessions.one.open).toBe(false);
+      expect(useNekoWorkspaceStore.getState().sessions.one.pinned).toBe(true);
+      expect((screen.getByRole("textbox", { name: "Tin nhắn cho Neko Core" }) as HTMLTextAreaElement).value).toBe(draft);
+      fireEvent.click(tools);
+      expect(screen.queryByTestId("session-sidebar")).toBeNull();
+      expect(useNekoWorkspaceStore.getState().sessions.one.open).toBe(true);
+    } finally {
+      clearNekoComposerDraft("session:one");
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it("keeps Project tools beside the home surface without squeezing in navigation at 800px", async () => {
+    stubViewport(800);
+    try {
+      useNekoProjectStore.setState({ projects: [{ id: "alpha", name: "Alpha", roots: [{ name: "Alpha", path: "/alpha" }], createdAt: 1, updatedAt: 1 }] });
+      render(<NekoChillApp />);
+      fireEvent.click(screen.getByTestId("new-session"));
+      fireEvent.click(screen.getByTestId("project-workspace-toggle"));
+      await screen.findByTestId("neko-workspace-pane");
+      act(() => useNekoWorkspaceStore.getState().setPinned("project:alpha", true));
+      expect(screen.getByRole("separator", { name: "Điều chỉnh độ rộng công cụ" })).toBeTruthy();
+      expect(screen.queryByTestId("session-sidebar")).toBeNull();
+      fireEvent.click(screen.getByTestId("neko-sidebar-toggle"));
+      expect(screen.getByTestId("session-sidebar")).toBeTruthy();
+      expect(useNekoWorkspaceStore.getState().sessions["project:alpha"].open).toBe(false);
+      expect(useNekoWorkspaceStore.getState().sessions["project:alpha"].pinned).toBe(true);
+    } finally { vi.unstubAllGlobals(); }
   });
 
   it("keeps the sidebar filter and collapsed projects across hide and reopen", () => {

@@ -478,6 +478,7 @@ function NekoChillScreen({
   const [sidebarViewState, setSidebarViewState] = useState<SessionSidebarViewState>(() => ({ query: "", collapsed: new Set() }));
   const [inspectorOpen, setInspectorOpen] = useState(false);
   const [commandCenterOpen, setCommandCenterOpen] = useState(false);
+  const sidebarToggleRef = useRef<HTMLButtonElement>(null);
   const workspaceToggleRef = useRef<HTMLButtonElement>(null);
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
   const [quickChatPending, setQuickChatPending] = useState(false);
@@ -491,8 +492,10 @@ function NekoChillScreen({
   const [harnessFocusRequest, setHarnessFocusRequest] = useState(0);
   const [projectWorkspaceRoot, setProjectWorkspaceRoot] = useState<WorkspaceRef | null>(null);
   const [insertRequest, setInsertRequest] = useState<ComposerInsertRequest | null>(null);
-  const compactWorkspace = useCompactWorkspace();
+  const narrowWorkspace = useCompactWorkspace();
   const compactSidebar = useCompactWorkspace(720);
+  // Keep chat beside tools at 800px; only smaller windows need a covering sheet.
+  const compactWorkspace = compactSidebar;
 
   useLayoutEffect(() => {
     measureWiiiPerformance("wiii:boot:neko-ready", "wiii:boot:start");
@@ -590,7 +593,7 @@ function NekoChillScreen({
     ensureWorkspaceSession(projectWorkspaceId);
     const opening = !useNekoWorkspaceStore.getState().sessions[projectWorkspaceId]?.open;
     if (opening) {
-      if (compactWorkspace) setSidebarOpen(false);
+      if (narrowWorkspace) setSidebarOpen(false);
       setWorkspaceTab(projectWorkspaceId, "files");
       void refreshWorkspace(projectWorkspaceId, projectWorkspaceRoot, { force: true });
       return;
@@ -598,13 +601,35 @@ function NekoChillScreen({
     closeWorkspace(projectWorkspaceId);
   }, [
     closeWorkspace,
-    compactWorkspace,
+    narrowWorkspace,
     ensureWorkspaceSession,
     projectWorkspaceId,
     projectWorkspaceRoot,
     refreshWorkspace,
     setWorkspaceTab,
   ]);
+
+  const sidebarWorkspaceId = session
+    ? (session.workspace ? session.id : null)
+    : (coworkerHomeOpen ? null : projectWorkspaceId);
+  const sidebarWorkspaceOpen = sidebarWorkspaceId === session?.id
+    ? Boolean(workspacePane?.open)
+    : Boolean(sidebarWorkspaceId && projectWorkspacePane?.open);
+  useEffect(() => {
+    if (narrowWorkspace && sidebarWorkspaceOpen) setSidebarOpen(false);
+  }, [narrowWorkspace, sidebarWorkspaceId, sidebarWorkspaceOpen]);
+  const handleToggleSidebar = useCallback(() => {
+    // Below 1040px, show one auxiliary pane at a time without losing its pin.
+    if (!sidebarOpen && narrowWorkspace && sidebarWorkspaceId
+      && useNekoWorkspaceStore.getState().sessions[sidebarWorkspaceId]?.open) {
+      if (sessionPresence.ref.current?.contains(document.activeElement)
+        || projectPresence.ref.current?.contains(document.activeElement)) {
+        sidebarToggleRef.current?.focus({ preventScroll: true });
+      }
+      toggleWorkspace(sidebarWorkspaceId);
+    }
+    setSidebarOpen((value) => !value);
+  }, [narrowWorkspace, projectPresence.ref, sessionPresence.ref, sidebarOpen, sidebarWorkspaceId, toggleWorkspace]);
 
   useEffect(() => {
     void detect("neko");
@@ -681,11 +706,11 @@ function NekoChillScreen({
         if (!value) markWiiiPerformance("wiii:command:open-start");
         return !value;
       });
-      else setSidebarOpen((value) => !value);
+      else handleToggleSidebar();
     };
     window.addEventListener("keydown", onKeyDown, true);
     return () => window.removeEventListener("keydown", onKeyDown, true);
-  }, [active]);
+  }, [active, handleToggleSidebar]);
 
   useEffect(() => {
     if (compactSidebar) setSidebarOpen(false);
@@ -695,7 +720,7 @@ function NekoChillScreen({
     if (!session) return;
     if (session.workspace) {
       if (!useNekoWorkspaceStore.getState().sessions[session.id]?.open) {
-        if (compactWorkspace) setSidebarOpen(false);
+        if (narrowWorkspace) setSidebarOpen(false);
         toggleWorkspace(session.id);
       }
       void refreshWorkspace(session.id, session.workspace, { force: true });
@@ -719,10 +744,10 @@ function NekoChillScreen({
 
     setInspectorOpen(false);
     const opening = !useNekoWorkspaceStore.getState().sessions[workspaceSessionId]?.open;
-    if (opening && compactWorkspace) setSidebarOpen(false);
+    if (opening && narrowWorkspace) setSidebarOpen(false);
     toggleWorkspace(workspaceSessionId);
     if (opening) void refreshWorkspace(workspaceSessionId, sessionWorkspace, { force: true });
-  }, [compactWorkspace, refreshWorkspace, workspaceSessionId, sessionWorkspace, toggleWorkspace]);
+  }, [narrowWorkspace, refreshWorkspace, workspaceSessionId, sessionWorkspace, toggleWorkspace]);
 
   const handleImportProviderSession = async (providerSession: NekoProviderSessionRecord) => {
     const agent = agents.find((candidate) => candidate.id === providerSession.providerId);
@@ -860,13 +885,14 @@ function NekoChillScreen({
 
   const handleWorkbenchAction = (action: WorkbenchActionName) => {
     if (action === "new") handleNewSession();
-    else if (action === "toggle-sidebar") setSidebarOpen((value) => !value);
+    else if (action === "toggle-sidebar") handleToggleSidebar();
     else if (action === "project") void handleProjectCommand();
     else setInspectorOpen(true);
   };
 
   const sidebarToggle = (
     <button
+      ref={sidebarToggleRef}
       type="button"
       className="nk-chrome-button grid h-8 w-8 shrink-0 place-items-center rounded-md text-[var(--nk-text-2)] hover:bg-[var(--nk-overlay)] hover:text-[var(--nk-text)]"
       aria-label={sidebarOpen ? "Ẩn cây dự án và phiên" : "Hiện cây dự án và phiên"}
@@ -874,7 +900,7 @@ function NekoChillScreen({
       aria-expanded={sidebarOpen}
       aria-keyshortcuts="Control+B Meta+B"
       title={`${sidebarOpen ? "Ẩn" : "Hiện"} cây dự án và phiên (Ctrl+B / ⌘B)`}
-      onClick={() => setSidebarOpen((value) => !value)}
+      onClick={handleToggleSidebar}
       data-testid="neko-sidebar-toggle"
     >
       {sidebarOpen ? (
@@ -969,7 +995,7 @@ function NekoChillScreen({
         leading={<>{sidebarToggle}<NekoMenuBar active={active} ready={hydrated}
           sidebarOpen={sidebarOpen} workspaceOpen={titleWorkspaceOpen} workspaceAvailable={workspaceAvailable}
           onNewSession={handleNewSession} onCreateProject={openProjectDialog} onSearch={openCommandCenter}
-          onToggleSidebar={() => setSidebarOpen((value) => !value)}
+          onToggleSidebar={handleToggleSidebar}
           onToggleWorkspace={session?.workspace ? handleToggleSessionWorkspace : toggleProjectWorkspace}
           onConnections={openConnections} /></>}
         commandCenter={false}
