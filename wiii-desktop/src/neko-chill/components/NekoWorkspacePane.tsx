@@ -57,7 +57,7 @@ import {
   type WorkspaceTreeRow,
 } from "../workspace-tree";
 import { resolvePreviewAssetPath } from "../workspace-preview";
-import { WORKSPACE_CODE_EDITOR_OPTIONS } from "../workspace-editor-options";
+import { syncWorkspaceDiffTabOrder, WORKSPACE_CODE_EDITOR_OPTIONS } from "../workspace-editor-options";
 import { NekoComputerSurface } from "@/neko-computer/NekoComputerSurface";
 
 const MonacoEditor = lazy(async () => {
@@ -924,6 +924,7 @@ function NekoWorkspacePaneComponent({
                     modified={pane.selectedDiff.modified}
                     language={pane.selectedDiff.language}
                     theme={editorTheme}
+                    onMount={syncWorkspaceDiffTabOrder}
                     options={{ readOnly: true, domReadOnly: true, automaticLayout: true, minimap: { enabled: false }, renderSideBySide: true, wordWrap: "on" }}
                   />
                 </Suspense>

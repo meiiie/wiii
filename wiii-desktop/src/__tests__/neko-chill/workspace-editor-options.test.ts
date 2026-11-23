@@ -2,8 +2,9 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 
 import { describe, expect, it } from "vitest";
+import type { editor } from "monaco-editor";
 
-import { WORKSPACE_CODE_EDITOR_OPTIONS } from "@/neko-chill/workspace-editor-options";
+import { syncWorkspaceDiffTabOrder, WORKSPACE_CODE_EDITOR_OPTIONS } from "@/neko-chill/workspace-editor-options";
 
 describe("workspace code editor gutter", () => {
   it("keeps one numbered gutter row per source line", () => {
@@ -23,5 +24,103 @@ describe("workspace code editor gutter", () => {
     expect(monacoOverride?.[1]).toContain("content: none");
     expect(monacoOverride?.[1]).toContain("counter-increment: none");
     expect(monacoOverride?.[1]).toContain("display: none");
+  });
+});
+
+describe("workspace diff keyboard navigation", () => {
+  function fixture(initialContentWidth: number) {
+    const originalInput = document.createElement("textarea");
+    const modifiedInput = document.createElement("textarea");
+    let layout = { contentWidth: initialContentWidth } as editor.EditorLayoutInfo;
+    const layoutListeners = new Set<(layout: editor.EditorLayoutInfo) => void>();
+    let onDispose = () => {};
+    const original = {
+      hasWidgetFocus: () => document.activeElement === originalInput,
+      getLayoutInfo: () => layout,
+      updateOptions: (options: editor.IEditorOptions) => {
+        if (options.tabIndex !== undefined) originalInput.tabIndex = options.tabIndex;
+      },
+      onDidLayoutChange: (listener: (layout: editor.EditorLayoutInfo) => void) => {
+        layoutListeners.add(listener);
+        return { dispose: () => layoutListeners.delete(listener) };
+      },
+    };
+    syncWorkspaceDiffTabOrder({
+      getOriginalEditor: () => original,
+      getModifiedEditor: () => ({ focus: () => modifiedInput.focus() }),
+      onDidDispose: (listener: () => void) => { onDispose = listener; },
+    } as unknown as editor.IDiffEditor);
+    return {
+      originalInput,
+      modifiedInput,
+      layoutListeners,
+      resize: (contentWidth: number) => {
+        layout = { ...layout, contentWidth };
+        for (const listener of layoutListeners) listener(layout);
+      },
+      dispose: () => onDispose(),
+    };
+  }
+
+  it.each([0, -40])("skips a hidden/gutter-only original (%s) without removing the visible diff", (width) => {
+    const diff = fixture(width);
+    expect(diff.originalInput.tabIndex).toBe(-1);
+    expect(diff.modifiedInput.tabIndex).toBe(0);
+    diff.dispose();
+  });
+
+  it("keeps a visible original keyboard-reachable in side-by-side view", () => {
+    const diff = fixture(400);
+    expect(diff.originalInput.tabIndex).toBe(0);
+    expect(diff.modifiedInput.tabIndex).toBe(0);
+    diff.dispose();
+  });
+
+  it("restores the original on expansion and skips it again on collapse", () => {
+    const diff = fixture(0);
+    diff.resize(400);
+    expect(diff.originalInput.tabIndex).toBe(0);
+    diff.resize(-40);
+    expect(diff.originalInput.tabIndex).toBe(-1);
+    expect(diff.modifiedInput.tabIndex).toBe(0);
+    diff.dispose();
+  });
+
+  it("stops observing layout when the diff is disposed", () => {
+    const diff = fixture(0);
+    diff.dispose();
+    expect(diff.layoutListeners.size).toBe(0);
+    diff.resize(400);
+    expect(diff.originalInput.tabIndex).toBe(-1);
+  });
+
+  it("keeps focus visible when the focused original collapses", () => {
+    const diff = fixture(400);
+    document.body.append(diff.originalInput, diff.modifiedInput);
+    try {
+      diff.originalInput.focus();
+      diff.resize(0);
+      expect(document.activeElement).toBe(diff.modifiedInput);
+    } finally {
+      diff.dispose();
+      diff.originalInput.remove();
+      diff.modifiedInput.remove();
+    }
+  });
+
+  it("does not steal focus from outside the original during layout", () => {
+    const diff = fixture(400);
+    const row = document.createElement("button");
+    document.body.append(row, diff.originalInput, diff.modifiedInput);
+    try {
+      row.focus();
+      diff.resize(0);
+      expect(document.activeElement).toBe(row);
+    } finally {
+      diff.dispose();
+      row.remove();
+      diff.originalInput.remove();
+      diff.modifiedInput.remove();
+    }
   });
 });
