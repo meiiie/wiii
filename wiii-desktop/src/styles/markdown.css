@@ -48,10 +48,24 @@
   border-left: 3px solid color-mix(in srgb, var(--accent) 40%, var(--border));
 }
 
-.markdown-content table {
-  @apply w-full border-collapse mb-3 overflow-hidden;
+.wiii-table-viewport {
+  max-width: 100%;
+  overflow-x: auto;
+  margin-bottom: 0.75rem;
   border-radius: 8px;
   border: 1px solid var(--border);
+}
+
+.wiii-table-viewport:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+.markdown-content table {
+  @apply w-full border-collapse;
+  /* Prose may break anywhere; cells need their natural minimum word width. */
+  overflow-wrap: normal;
+  word-break: normal;
 }
 
 .markdown-content th,

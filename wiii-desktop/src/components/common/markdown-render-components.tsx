@@ -65,6 +65,13 @@ function CitationLink({ href, children, title }: { href?: string; children?: Rea
 export function createMarkdownRenderComponents(streaming = false): Components {
   return {
     a: CitationLink,
+    table({ node: _node, children, ...props }) {
+      return (
+        <div className="wiii-table-viewport" role="region" aria-label="Bảng" tabIndex={0}>
+          <table {...props}>{children}</table>
+        </div>
+      );
+    },
     ol({ node, start, children, style, ...props }) {
       const first = Number.isSafeInteger(start) ? start! : 1;
       const count = node?.children.filter(child => child.type === "element" && child.tagName === "li").length
