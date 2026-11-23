@@ -47,6 +47,61 @@ describe("Neko completion sound", () => {
 });
 
 describe("completion feedback", () => {
+  describe("viewed chat", () => {
+    let focused: boolean;
+    let visibility: DocumentVisibilityState;
+    beforeEach(() => {
+      focused = true;
+      visibility = "visible";
+      vi.spyOn(document, "hasFocus").mockImplementation(() => focused);
+      vi.spyOn(document, "visibilityState", "get").mockImplementation(() => visibility);
+      notices.setState({ sound: false });
+    });
+
+    it("consumes its own toast without stealing draft focus or replaying it after navigation", () => {
+      const open = vi.fn();
+      const { rerender } = render(<><textarea aria-label="Draft" />
+        <CompletionNotices visibleSessionId="session-1" onOpen={open} /></>);
+      const draft = screen.getByRole("textbox"); draft.focus();
+      act(() => notices.getState().publish(notice("1")));
+      expect(screen.queryByText("Đã trả lời xong")).toBeNull();
+      expect(notices.getState().notices).toEqual([]);
+      expect(document.activeElement).toBe(draft);
+      rerender(<><textarea aria-label="Draft" /><CompletionNotices visibleSessionId={null} onOpen={open} /></>);
+      expect(screen.queryByText("Đã trả lời xong")).toBeNull();
+    });
+
+    it("keeps other chat results and consumes them when that chat becomes visible", () => {
+      const { rerender } = render(<CompletionNotices visibleSessionId="session-1" onOpen={vi.fn()} />);
+      act(() => { notices.getState().publish(notice("1")); notices.getState().publish(notice("2")); });
+      expect(screen.queryByText("Task 1")).toBeNull();
+      expect(screen.getByText("Task 2")).toBeTruthy();
+      rerender(<CompletionNotices visibleSessionId="session-2" onOpen={vi.fn()} />);
+      expect(screen.queryByText("Đã trả lời xong")).toBeNull();
+      expect(notices.getState().notices).toEqual([]);
+    });
+
+    it.each(["blurred", "hidden", "another surface"] as const)(
+      "keeps the selected chat notice while %s, then consumes it on return", (background) => {
+        focused = background !== "blurred";
+        visibility = background === "hidden" ? "hidden" : "visible";
+        const open = vi.fn();
+        const { rerender } = render(<CompletionNotices
+          visibleSessionId={background === "another surface" ? null : "session-1"} onOpen={open} />);
+        act(() => notices.getState().publish(notice("1")));
+        expect(screen.getByText("Task 1")).toBeTruthy();
+        expect(notices.getState().notices).toHaveLength(1);
+        focused = true;
+        visibility = "visible";
+        if (background === "blurred") fireEvent.focus(window);
+        else if (background === "hidden") fireEvent(document, new Event("visibilitychange"));
+        else rerender(<CompletionNotices visibleSessionId="session-1" onOpen={open} />);
+        expect(screen.queryByText("Đã trả lời xong")).toBeNull();
+        expect(notices.getState().notices).toEqual([]);
+      },
+    );
+  });
+
   it("bounds the queue, deduplicates live results and respects mute", () => {
     const play = vi.spyOn(completionPlayer, "play").mockResolvedValue(true);
     notices.getState().publish(notice("1"));
