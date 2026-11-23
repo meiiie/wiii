@@ -98,6 +98,9 @@ export function NekoOverview({
   onRefreshDiscovery,
   onImportProviderSession,
   harnessFocusRequest = 0,
+  onSetupModel,
+  needsModelSetup = false,
+  savedModel,
 }: {
   sessions: NekoSession[];
   agents: DetectedAgent[];
@@ -115,6 +118,9 @@ export function NekoOverview({
   onRefreshDiscovery: () => void;
   onImportProviderSession: (session: NekoProviderSessionRecord) => Promise<void>;
   harnessFocusRequest?: number;
+  onSetupModel?: () => void;
+  needsModelSetup?: boolean;
+  savedModel?: string;
 }) {
   const harnessHeading = useRef<HTMLHeadingElement>(null);
   const harnessDetails = useRef<HTMLDetailsElement>(null);
@@ -159,6 +165,10 @@ export function NekoOverview({
         <div className="nk-home-welcome">
           <WiiiMark size={48} />
           <h1 className="mt-5 text-[30px] font-medium leading-tight tracking-[-0.035em] text-[var(--nk-text)]">Cùng bắt tay vào việc.</h1>
+          {onSetupModel ? <div className={needsModelSetup ? "mt-5 rounded-xl border border-[var(--nk-border)] bg-[var(--nk-composer)] p-4" : "mt-3"}>
+            {needsModelSetup ? <><h2 className="text-[14px] font-medium text-[var(--nk-text)]">Chọn mô hình để bắt đầu</h2><p className="mt-1 text-[12px] leading-5 text-[var(--nk-text-3)]">Thêm khóa API hoặc địa chỉ mô hình trên máy.</p></> : savedModel ? <p role="status" className="text-[12px] text-[var(--nk-text-2)]">Đã lưu {savedModel} cho chat mới.</p> : null}
+            <button type="button" onClick={onSetupModel} className="nk-button mt-2" data-variant={needsModelSetup ? "primary" : "secondary"} data-size="sm">Thiết lập mô hình</button>
+          </div> : null}
           <div className="nk-home-actions mt-7 grid gap-3">
             <button type="button" className="nk-home-action" onClick={onQuickChat ?? onNewSession} disabled={quickChatPending} data-testid="overview-quick-chat">
               <span className="nk-home-action-icon">{quickChatPending ? <LoaderCircle aria-hidden="true" size={20} className="animate-spin motion-reduce:animate-none" /> : <MessageSquare aria-hidden="true" size={20} />}</span>

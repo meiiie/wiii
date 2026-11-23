@@ -4,6 +4,7 @@ pub mod coworker;
 pub mod journal;
 pub mod legacy_lease;
 pub mod lifecycle;
+pub mod local_models;
 pub mod provider;
 pub mod provider_sessions;
 pub mod runtime;

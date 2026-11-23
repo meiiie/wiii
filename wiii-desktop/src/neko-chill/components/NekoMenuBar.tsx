@@ -35,6 +35,7 @@ interface NekoMenuBarProps {
   onToggleSidebar: () => void;
   onToggleWorkspace: () => void;
   onConnections: () => void;
+  onSetupModel?: () => void;
 }
 
 export function NekoMenuBar(props: NekoMenuBarProps) {
@@ -104,6 +105,7 @@ export function NekoMenuBar(props: NekoMenuBarProps) {
       { label: "Tìm dự án hoặc phiên…", shortcut: `${modifier}K`, disabled: !props.ready, run: props.onSearch },
       { label: "Tài khoản & ứng dụng…", run: props.onConnections },
       { label: "Thông báo & âm thanh…", run: () => setHelp("notifications") },
+      ...(native && props.onSetupModel ? [{ label: "Thiết lập mô hình…", run: props.onSetupModel }] : []),
       ...(native ? [{ label: "Thoát Wiii", disabled: pendingQuit.current, run: () => { void quit(); } }] : []),
     ],
     EDIT_ITEMS.map(([command, label, key]) => ({

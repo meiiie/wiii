@@ -49,7 +49,8 @@
         "workbench-network",
         "workbench-agents",
         "workbench-computer",
-        "workbench-notifications"
+        "workbench-notifications",
+        "workbench-models"
       ],
       "csp": {
         "default-src": "'self'",

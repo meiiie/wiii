@@ -35,7 +35,10 @@ fn splash_has_only_its_startup_command_and_notification_permission_query() {
     assert_eq!(splash["windows"], serde_json::json!(["splashscreen"]));
     assert_eq!(
         splash["permissions"],
-        serde_json::json!(["allow-close-splash", "notification:allow-is-permission-granted"])
+        serde_json::json!([
+            "allow-close-splash",
+            "notification:allow-is-permission-granted"
+        ])
     );
 }
 
@@ -48,6 +51,7 @@ fn every_workbench_capability_excludes_the_splash_window() {
         "workbench-agents",
         "workbench-computer",
         "workbench-notifications",
+        "workbench-models",
     ] {
         let capability = read_json(&format!("capabilities/{name}.json"));
         assert_eq!(capability["windows"], serde_json::json!(["main"]), "{name}");
@@ -85,6 +89,33 @@ fn application_quit_is_granted_only_to_the_main_workbench() {
 }
 
 #[test]
+fn local_model_configuration_is_granted_only_to_the_main_workbench() {
+    for entry in fs::read_dir(tauri_root().join("capabilities")).unwrap() {
+        let path = entry.unwrap().path();
+        if path.extension().and_then(|value| value.to_str()) != Some("json") {
+            continue;
+        }
+        let capability: Value = serde_json::from_str(&fs::read_to_string(path).unwrap()).unwrap();
+        for permission in capability["permissions"].as_array().unwrap() {
+            let id = permission
+                .as_str()
+                .or_else(|| permission.get("identifier").and_then(Value::as_str));
+            if matches!(
+                id,
+                Some("allow-local-model-status" | "allow-local-model-save")
+            ) {
+                assert_eq!(capability["identifier"], "workbench-models");
+                assert_eq!(capability["windows"], serde_json::json!(["main"]));
+            }
+        }
+    }
+    assert_eq!(
+        read_json("capabilities/workbench-models.json")["permissions"],
+        serde_json::json!(["allow-local-model-status", "allow-local-model-save"])
+    );
+}
+
+#[test]
 fn native_http_scope_has_no_global_remote_wildcard() {
     let network = read_json("capabilities/workbench-network.json");
     let rendered = serde_json::to_string(&network).expect("network capability is serializable");
@@ -104,7 +135,8 @@ fn tauri_config_enables_only_the_reviewed_capability_set() {
             "workbench-network",
             "workbench-agents",
             "workbench-computer",
-            "workbench-notifications"
+            "workbench-notifications",
+            "workbench-models"
         ])
     );
 }

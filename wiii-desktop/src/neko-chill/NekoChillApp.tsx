@@ -1,4 +1,6 @@
 import { NekoRuntimeScope } from "./NekoRuntimeScope";
+import { canConfigureLocalModels, getLocalModelStatus, type LocalModelStatus, type SavedLocalModel } from "@/lib/local-model-setup";
+import { LocalModelSetupDialog } from "./components/LocalModelSetupDialog";
 /** Neko Chill desktop-agent shell: projects -> sessions -> active runtime. */
 import {
   lazy,
@@ -484,6 +486,25 @@ function NekoChillScreen({
   const workspaceToggleRef = useRef<HTMLButtonElement>(null);
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
   const [quickChatPending, setQuickChatPending] = useState(false);
+  const localModelsAvailable = canConfigureLocalModels();
+  const [localModelSetupOpen, setLocalModelSetupOpen] = useState(false);
+  const [localModelStatus, setLocalModelStatus] = useState<LocalModelStatus | null>(null);
+  const [localModelStatusFailed, setLocalModelStatusFailed] = useState(false);
+  const [configuredLocalModel, setConfiguredLocalModel] = useState<SavedLocalModel | null>(null);
+  const localModelRevision = useRef(0);
+  useEffect(() => {
+    if (!localModelsAvailable) return;
+    let cancelled = false;
+    const revision = localModelRevision.current;
+    void getLocalModelStatus().then((status) => {
+      if (!cancelled && revision === localModelRevision.current) setLocalModelStatus(status);
+    }).catch(() => {
+      // Setup's write-safety rules are stricter than Core's read rules (for
+      // example symlinked dotfiles). Failed discovery is not missing setup.
+      if (!cancelled && revision === localModelRevision.current) setLocalModelStatusFailed(true);
+    });
+    return () => { cancelled = true; };
+  }, [localModelsAvailable]);
   const [quickChatError, setQuickChatError] = useState<string | null>(null);
   const quickChatInFlight = useRef(false);
   const navigationRevision = useRef(0);
@@ -1002,6 +1023,7 @@ function NekoChillScreen({
         minimal
         browserVisible
         leading={<>{sidebarToggle}<NekoMenuBar active={active} ready={hydrated}
+          onSetupModel={localModelsAvailable ? () => setLocalModelSetupOpen(true) : undefined}
           sidebarOpen={sidebarOpen} workspaceOpen={titleWorkspaceOpen} workspaceAvailable={workspaceAvailable}
           onNewSession={handleNewSession} onCreateProject={openProjectDialog} onSearch={openCommandCenter}
           onToggleSidebar={handleToggleSidebar}
@@ -1176,6 +1198,9 @@ function NekoChillScreen({
                       key={projectHome.id}
                       project={projectHome}
                       resetToken={projectHomeResetToken}
+                      onSetupModel={localModelsAvailable ? () => setLocalModelSetupOpen(true) : undefined}
+                      needsModelSetup={localModelsAvailable && !localModelStatusFailed && localModelStatus?.configured !== true}
+                      configuredModel={configuredLocalModel}
                       onWorkspaceChange={updateProjectWorkspace}
                       onManageHarness={() => {
                         showOverview();
@@ -1205,6 +1230,9 @@ function NekoChillScreen({
               </div>
             ) : (
               <NekoOverview
+                onSetupModel={localModelsAvailable ? () => setLocalModelSetupOpen(true) : undefined}
+                needsModelSetup={localModelStatus?.configured === false}
+                savedModel={configuredLocalModel?.model}
                 harnessFocusRequest={harnessFocusRequest}
                 sessions={sessions}
                 agents={agents}
@@ -1245,6 +1273,15 @@ function NekoChillScreen({
           onInsertCommand={insertIntoComposer}
         />
       ) : null}
+      {localModelSetupOpen && localModelsAvailable ? <LocalModelSetupDialog
+        onClose={() => setLocalModelSetupOpen(false)}
+        onSaved={(model) => {
+          localModelRevision.current += 1;
+          setConfiguredLocalModel(model);
+          setLocalModelStatus((status) => ({ configured: true, presets: status?.presets ?? [] }));
+          setLocalModelSetupOpen(false);
+        }}
+      /> : null}
       {projectDialog ? (
         <ProjectDialog
           project={editingProject}
