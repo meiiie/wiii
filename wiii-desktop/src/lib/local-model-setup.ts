@@ -41,6 +41,7 @@ const SAFE_ERRORS = new Set([
   "Hãy chọn nhà cung cấp mô hình.",
   "Hãy nhập mã mô hình, không kèm khoảng trắng hoặc ký tự điều khiển.",
   "Hãy nhập khóa API hợp lệ của nhà cung cấp.",
+  "Máy chủ từ xa cần khóa API; chỉ localhost có thể để trống.",
   "Địa chỉ mô hình cần HTTPS, hoặc HTTP trên localhost; không kèm khóa, tài khoản hay tham số.",
   "Z.ai cần địa chỉ GLM Coding Plan, không dùng API tính phí theo lượt.",
   "Có cấu hình mô hình cũ đang ưu tiên trên máy này. Wiii giữ nguyên để tránh dùng nhầm khóa.",

@@ -203,7 +203,12 @@ fn has_text(value: Option<&Value>) -> bool {
 }
 
 fn has_connection(data: &Map<String, Value>) -> bool {
-    if has_text(data.get("api_key")) {
+    if has_text(data.get("api_key"))
+        || data
+            .get("base_url")
+            .and_then(Value::as_str)
+            .is_some_and(is_core_local_endpoint)
+    {
         return true;
     }
     if data
@@ -217,6 +222,9 @@ fn has_connection(data: &Map<String, Value>) -> bool {
                 "kimi",
                 "opencode-account",
                 "cline-account",
+                "ollama",
+                "lmstudio",
+                "local",
             ]
             .contains(&id)
         })
@@ -226,16 +234,38 @@ fn has_connection(data: &Map<String, Value>) -> bool {
     data.get("profiles")
         .and_then(Value::as_object)
         .is_some_and(|profiles| {
-            profiles.values().any(|profile| {
+            profiles.iter().any(|(id, profile)| {
                 has_text(profile.get("api_key"))
-                    || (profile.get("auth").and_then(Value::as_str) == Some("none")
-                        && has_text(profile.get("base_url")))
+                    || ["ollama", "lmstudio", "local"].contains(&id.as_str())
+                    || profile
+                        .get("base_url")
+                        .and_then(Value::as_str)
+                        .is_some_and(is_core_local_endpoint)
                     || profile
                         .get("key_env")
                         .and_then(Value::as_str)
                         .is_some_and(|name| {
                             std::env::var(name).is_ok_and(|value| !value.trim().is_empty())
                         })
+            })
+        })
+}
+
+// Match Neko 1.9.5 NekoConfig.isLocalEndpoint, not a wider idea of local
+// networking: its provider rejects a blank key before connecting otherwise.
+fn is_core_local_endpoint(value: &str) -> bool {
+    let lower = value.to_ascii_lowercase();
+    let Some(authority) = lower
+        .strip_prefix("http://")
+        .or_else(|| lower.strip_prefix("https://"))
+    else {
+        return false;
+    };
+    ["localhost", "127.0.0.1", "0.0.0.0", "[::1]", "::1"]
+        .iter()
+        .any(|host| {
+            authority.strip_prefix(host).is_some_and(|tail| {
+                tail.is_empty() || tail.starts_with(':') || tail.starts_with('/')
             })
         })
 }
@@ -277,6 +307,7 @@ fn normalized_url(value: &str) -> Result<String, String> {
     let url = tauri::Url::parse(value.trim()).map_err(|_| ERROR.to_string())?;
     let host = url.host_str().ok_or(ERROR)?;
     let loopback = host == "localhost"
+        || host == "0.0.0.0"
         || host == "[::1]"
         || host == "::1"
         || host
@@ -290,7 +321,7 @@ fn normalized_url(value: &str) -> Result<String, String> {
     {
         return Err(ERROR.into());
     }
-    if host == "api.z.ai"
+    if host.trim_end_matches('.') == "api.z.ai"
         && !["/api/anthropic", "/api/coding/paas/v4"].contains(&url.path().trim_end_matches('/'))
     {
         return Err("Z.ai cần địa chỉ GLM Coding Plan, không dùng API tính phí theo lượt.".into());
@@ -473,6 +504,9 @@ pub fn save(home: &Path, request: SaveLocalModelRequest) -> Result<SavedLocalMod
     } else {
         preset.base_url
     })?;
+    if key.is_empty() && !is_core_local_endpoint(&base_url) {
+        return Err("Máy chủ từ xa cần khóa API; chỉ localhost có thể để trống.".into());
+    }
     let legacy = read_object(&home.join("neko.json"))?;
     if legacy.contains_key("active_profile")
         || legacy.contains_key("profiles")
@@ -720,6 +754,52 @@ mod tests {
         let before = fs::read(home.config()).unwrap();
         assert!(save(&home.0, request()).is_err());
         assert_eq!(fs::read(home.config()).unwrap(), before);
+    }
+
+    #[test]
+    fn discovery_recognizes_cores_keyless_local_profiles_without_an_auth_field() {
+        for value in [
+            json!({"active_profile":"ollama"}),
+            json!({"profiles":{"ollama":{"model":"llama3.2"}}}),
+            json!({"base_url":"http://127.0.0.1:8080/v1"}),
+            json!({"profiles":{"mine":{"base_url":"http://localhost:11434/v1", "model":"llama3.2"}}}),
+        ] {
+            assert!(has_connection(value.as_object().unwrap()));
+        }
+        assert!(!has_connection(
+            json!({"profiles":{"mine":{"base_url":"https://remote.example/v1", "auth":"none"}}})
+                .as_object()
+                .unwrap()
+        ));
+    }
+
+    #[test]
+    fn keyless_custom_saves_respect_the_core_local_endpoint_boundary() {
+        for endpoint in [
+            "https://remote.example/v1",
+            "https://127.0.0.2/v1",
+            "https://localhost.example/v1",
+        ] {
+            let home = Home::new();
+            let mut input = request();
+            input.preset_id = "custom".into();
+            input.base_url = Some(endpoint.into());
+            input.api_key.clear();
+            assert!(save(&home.0, input).err().unwrap().contains("khóa API"));
+            assert!(!home.config().exists());
+        }
+        for endpoint in [
+            "http://localhost:11434/v1",
+            "https://127.0.0.1:8080/v1",
+            "http://[::1]:8080/v1",
+        ] {
+            let home = Home::new();
+            let mut input = request();
+            input.preset_id = "custom".into();
+            input.base_url = Some(endpoint.into());
+            input.api_key.clear();
+            assert!(save(&home.0, input).is_ok());
+        }
     }
 
     #[test]

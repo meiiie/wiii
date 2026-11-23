@@ -123,7 +123,7 @@ export function LocalModelSetupDialog({ onClose, onSaved }: {
         <label className="grid gap-1.5 text-[12px] text-[var(--nk-text-2)]">Mã mô hình
           <NekoInput ref={modelInput} value={model} disabled={saving} maxLength={200} autoComplete="off" spellCheck={false} placeholder="Ví dụ: llama3.2" onChange={(event) => setModel(event.target.value)} />
         </label>
-        <label className="grid gap-1.5 text-[12px] text-[var(--nk-text-2)]">{preset.requiresKey ? "Khóa API" : "Khóa API (nếu máy chủ yêu cầu)"}
+        <label className="grid gap-1.5 text-[12px] text-[var(--nk-text-2)]">{preset.requiresKey ? "Khóa API" : "Khóa API (có thể bỏ trống trên localhost)"}
           <NekoInput ref={keyInput} type="password" value={apiKey} disabled={saving} maxLength={8192} autoComplete="off" spellCheck={false} onChange={(event) => setApiKey(event.target.value)} aria-describedby="local-model-key-help" />
           <span id="local-model-key-help" className="text-[11px] leading-4 text-[var(--nk-text-3)]">Khóa chỉ lưu trên máy này, trong tệp cấu hình riêng tư chưa mã hóa. Không đồng bộ lên Wiii.</span>
         </label>
