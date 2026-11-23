@@ -927,6 +927,30 @@ describe("Neko Chill shell UI", () => {
     }
   });
 
+  it.each([800, 1200])("returns sidebar-command focus to the visible composer at %ipx", async (width) => {
+    stubViewport(width);
+    try {
+      const workspace = { path: "/qa", name: "qa" };
+      useNekoSessionStore.setState({ activeSessionId: "one", sessions: { one: makeSession("one", "Chat", workspace) } });
+      useNekoWorkspaceStore.getState().ensureSession("one", workspace);
+      render(<NekoChillApp />);
+      fireEvent.click(screen.getByTestId("session-workspace-toggle"));
+      const composer = screen.getByRole("textbox", { name: "Tin nhắn cho Neko Core" });
+      composer.focus();
+      fireEvent.change(composer, { target: { value: "Giữ nơi đang soạn." } });
+      fireEvent.keyDown(window, { key: "k", ctrlKey: true });
+      const dialog = await screen.findByRole("dialog", { name: "Trung tâm lệnh Neko Chill" });
+      await act(() => new Promise<void>((resolve) => requestAnimationFrame(() => resolve())));
+      fireEvent.click(within(dialog).getByRole("option", { name: /cây dự án và phiên/ }));
+      await act(() => new Promise<void>((resolve) => requestAnimationFrame(() => resolve())));
+      expect(document.activeElement).toBe(composer);
+      expect((composer as HTMLTextAreaElement).value).toBe("Giữ nơi đang soạn.");
+    } finally {
+      clearNekoComposerDraft("session:one");
+      vi.unstubAllGlobals();
+    }
+  });
+
   it("keeps the command action's new focus instead of returning to an exiting tool", async () => {
     const view = (open: boolean) => <>
       <button>Điều khiển tệp</button><button>Mở thanh bên</button>

@@ -6,6 +6,7 @@ import {
   useMemo,
   useRef,
   useState,
+  type RefObject,
 } from "react";
 import {
   Command,
@@ -32,6 +33,7 @@ interface NekoCommandCenterProps {
   activeSession: NekoSession | null;
   sidebarOpen: boolean;
   hasProjects?: boolean;
+  returnFocusFallbackRef?: RefObject<HTMLElement | null>;
   onClose: () => void;
   onAction: (action: WorkbenchActionName) => void;
   onSelectSession: (sessionId: string) => void;
@@ -69,6 +71,7 @@ function NekoCommandCenterComponent({
   activeSession,
   sidebarOpen,
   hasProjects = true,
+  returnFocusFallbackRef,
   onClose,
   onAction,
   onSelectSession,
@@ -126,14 +129,16 @@ function NekoCommandCenterComponent({
     if (wasOpenRef.current) {
       wasOpenRef.current = false;
       const frame = requestAnimationFrame(() => {
-        const target = returnFocusRef.current;
         // An action may already have focused its new destination.
-        if (document.activeElement === document.body && target?.isConnected
-          && !target.closest('[inert], [aria-hidden="true"]')) target.focus();
+        if (document.activeElement !== document.body) return;
+        [returnFocusRef.current, returnFocusFallbackRef?.current].find((target) =>
+          target?.isConnected && !target.closest('[hidden], [inert], [aria-hidden="true"]')
+          && !target.matches(':disabled, [aria-disabled="true"]'),
+        )?.focus();
       });
       return () => cancelAnimationFrame(frame);
     }
-  }, [open]);
+  }, [open, returnFocusFallbackRef]);
 
   useLayoutEffect(() => {
     if (open) {

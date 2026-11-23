@@ -891,7 +891,6 @@ function NekoChillScreen({
     if (action === "new") handleNewSession();
     else if (action === "toggle-sidebar") {
       handleToggleSidebar();
-      sidebarToggleRef.current?.focus({ preventScroll: true });
     }
     else if (action === "project") void handleProjectCommand();
     else setInspectorOpen(true);
@@ -1114,7 +1113,7 @@ function NekoChillScreen({
               </Panel>
               {sessionPresence.present && !compactWorkspace ? (
                 <>
-                  <Separator elementRef={sessionDividerRef} className="nk-workspace-separator" aria-label="Điều chỉnh độ rộng công cụ" disabled={!workspacePane?.open} />
+                  <Separator elementRef={sessionDividerRef} className="nk-workspace-separator" aria-label="Điều chỉnh độ rộng công cụ" aria-hidden={!workspacePane?.open || undefined} disabled={!workspacePane?.open} />
                   <Panel id="neko-workspace" defaultSize="58%" minSize="36%">
                     <div ref={sessionPresence.ref} className="nk-workspace-frame h-full" aria-hidden={!workspacePane?.open || undefined}>
                       {sessionWorkspaceTarget ? <NekoWorkspacePane target={sessionWorkspaceTarget} exiting={!workspacePane?.open} onClose={restoreWorkspaceFocus} /> : null}
@@ -1182,7 +1181,7 @@ function NekoChillScreen({
                   </Panel>
                   {projectPresence.present && projectWorkspaceTarget && !compactWorkspace ? (
                     <>
-                      <Separator elementRef={projectDividerRef} className="nk-workspace-separator" aria-label="Điều chỉnh độ rộng công cụ" disabled={!projectWorkspacePane?.open} />
+                      <Separator elementRef={projectDividerRef} className="nk-workspace-separator" aria-label="Điều chỉnh độ rộng công cụ" aria-hidden={!projectWorkspacePane?.open || undefined} disabled={!projectWorkspacePane?.open} />
                       <Panel id="neko-project-workspace" defaultSize="58%" minSize="36%">
                         <div ref={projectPresence.ref} className="nk-workspace-frame h-full" aria-hidden={!projectWorkspacePane?.open || undefined}>
                           <NekoWorkspacePane target={projectWorkspaceTarget} requestedSurface="files" exiting={!projectWorkspacePane?.open} onClose={restoreWorkspaceFocus} />
@@ -1227,6 +1226,7 @@ function NekoChillScreen({
       </div>
       {hydrated ? (
         <NekoCommandCenter
+          returnFocusFallbackRef={sidebarToggleRef}
           open={commandCenterOpen}
           sessions={sessions}
           activeSession={session}
