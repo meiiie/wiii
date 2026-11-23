@@ -1645,7 +1645,7 @@ describe("Neko Chill shell UI", () => {
     render(<NekoChillApp />);
     fireEvent.click(screen.getByTestId("new-session"));
     expect(screen.queryByRole("alert")).toBeNull();
-    fireEvent.click(screen.getByRole("button", { name: "Thiết lập agent" }));
+    fireEvent.click(screen.getByRole("button", { name: "Thiết lập trợ lý" }));
     expect(document.activeElement).toBe(screen.getByRole("heading", { name: "Quản lý agent" }));
     expect(screen.getByRole("alert").textContent).toContain("Chưa kiểm tra được agent");
     fireEvent.click(screen.getByText("Chi tiết kiểm tra"));

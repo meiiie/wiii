@@ -428,9 +428,9 @@ export function ProjectHome({
       <div className="shrink-0 px-5 pb-5">
         <div className="mx-auto w-full max-w-[720px]">
           {!selectedAgent && <div className="mb-2 flex flex-wrap items-center gap-x-3 gap-y-1 px-3 text-[11.5px] text-[var(--nk-text-3)]">
-            <span role="status">{isLoading ? "Đang kiểm tra agent…" : "Agent chưa sẵn sàng"}</span>
+            <span role="status">{isLoading ? "Đang kiểm tra trợ lý…" : "Trợ lý chưa sẵn sàng"}</span>
             {onManageHarness && <button type="button" className="rounded underline underline-offset-4 hover:text-[var(--nk-text)]"
-              onClick={onManageHarness}>Thiết lập agent</button>}
+              onClick={onManageHarness}>Thiết lập trợ lý</button>}
           </div>}
           {error ? (
             <div role="alert" className="mb-2 rounded-xl bg-[var(--nk-danger-soft)] px-3 py-2 text-[10.5px] leading-4 text-[var(--nk-danger)]">
