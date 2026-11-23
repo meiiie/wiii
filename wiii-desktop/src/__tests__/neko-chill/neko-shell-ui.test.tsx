@@ -128,6 +128,37 @@ describe("Neko Chill shell UI", () => {
     }
   });
 
+  it.each([true, false])("only keeps the current chat's card when tools fully cover it (compact=%s)", async (compact) => {
+    const focus = vi.spyOn(document, "hasFocus").mockReturnValue(true);
+    const visibility = vi.spyOn(document, "visibilityState", "get").mockReturnValue("visible");
+    vi.stubGlobal("matchMedia", vi.fn((query: string) => ({
+      matches: compact && query === "(max-width: 1039px)",
+      addEventListener: vi.fn(), removeEventListener: vi.fn(),
+    })));
+    try {
+      const workspace = { path: "/qa", name: "qa" };
+      useNekoSessionStore.setState({
+        activeSessionId: "one", sessions: { one: makeSession("one", "Open chat", workspace) },
+      });
+      useNekoWorkspaceStore.getState().ensureSession("one", workspace);
+      useNekoWorkspaceStore.getState().toggle("one");
+      useCompletionNoticeStore.setState({ sound: false, notices: [] });
+      await act(async () => { render(<NekoChillApp />); });
+      act(() => useCompletionNoticeStore.getState().publish({ id: "result", sessionId: "one", title: "Completed reply" }));
+      expect(Boolean(screen.queryByText("Completed reply"))).toBe(compact);
+      if (compact) {
+        fireEvent.click(screen.getByRole("button", { name: "Xem kết quả" }));
+        expect(useNekoWorkspaceStore.getState().sessions.one.open).toBe(false);
+        expect(useNekoSessionStore.getState().activeSessionId).toBe("one");
+        expect(screen.queryByText("Completed reply")).toBeNull();
+        expect(useCompletionNoticeStore.getState().notices).toEqual([]);
+      }
+    } finally {
+      focus.mockRestore(); visibility.mockRestore(); vi.unstubAllGlobals();
+      act(() => useCompletionNoticeStore.setState({ notices: [] }));
+    }
+  });
+
   it("opens quick chat without a selected project or dispatching a session", async () => {
     const originalCreate = useNekoSessionStore.getState().createSession;
     const create = vi.fn();
