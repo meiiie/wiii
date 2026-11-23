@@ -53,24 +53,29 @@
   overflow-x: auto;
   margin-bottom: 0.75rem;
   border-radius: 8px;
-  border: 1px solid var(--border);
+  border: 2px solid var(--border);
 }
 
 .wiii-table-viewport:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: -2px;
+  /* The reserved border stays visible above cells in native WebKit scrollers. */
+  border-color: var(--accent);
+  outline: none;
 }
 
 .markdown-content table {
-  @apply w-full border-collapse;
+  @apply border-collapse;
+  width: max-content;
+  min-width: 100%;
   /* Prose may break anywhere; cells need their natural minimum word width. */
-  overflow-wrap: normal;
+  overflow-wrap: break-word;
   word-break: normal;
 }
 
 .markdown-content th,
 .markdown-content td {
   @apply px-3 py-2 text-left text-sm;
+  /* Keep prose cells readable without one-word-wide, excessively tall rows. */
+  max-width: 32ch;
   border-bottom: 1px solid var(--border);
 }
 
