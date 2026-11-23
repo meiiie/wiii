@@ -94,6 +94,27 @@ describe("Project Home readiness and missing Neko recovery", () => {
     await act(async () => { fireEvent.click(sendButton()); });
     expect(useNekoSessionStore.getState().createSession).toHaveBeenCalledWith(neko, project.roots[0], expect.objectContaining({ id: "zai" }), { projectId: project.id });
   });
+  it("keeps a manual model choice when changing roots after setup", async () => {
+    useNekoAgentStore.setState({ agents: [neko] });
+    const roots = [...project.roots, { name: "second", path: "C:/test/second" }];
+    const saved = { profileId: "zai", provider: "anthropic", model: "glm-5.3" };
+    host.profiles.mockResolvedValue([
+      { id: "zai", provider: "anthropic", model: "glm-5.3", active: true },
+      { id: "local", provider: "openai_compat", model: "llama3.2", active: false },
+    ]);
+    render(<ProjectHome project={{ ...project, roots }} resetToken={0} configuredModel={saved} />);
+    const input = screen.getByRole("textbox", { name: "Lời nhắn đầu tiên" }) as HTMLTextAreaElement;
+    fireEvent.change(input, { target: { value: "Giữ lựa chọn và bản nháp" } });
+    await vi.waitFor(() => expect(sendButton().disabled).toBe(false));
+    fireEvent.click(screen.getByRole("button", { name: "Profile / model" }));
+    fireEvent.click(within(await screen.findByTestId("project-home-profile-picker-menu")).getByRole("option", { name: /local · llama3.2/ }));
+    await act(async () => { fireEvent.change(screen.getByRole("combobox", { name: "Chọn Workspace thực thi" }), { target: { value: roots[1].path } }); });
+    await vi.waitFor(() => expect(sendButton().disabled).toBe(false));
+    expect(input.value).toBe("Giữ lựa chọn và bản nháp");
+    await act(async () => { fireEvent.click(sendButton()); });
+    expect(useNekoSessionStore.getState().createSession).toHaveBeenCalledWith(neko, roots[1], expect.objectContaining({ id: "local" }), { projectId: project.id });
+  });
+
   it("retains the Project draft when sendPrompt returns without acceptance", async () => {
     home([gemini]);
     await pickHarness("Gemini CLI");

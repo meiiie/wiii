@@ -361,7 +361,7 @@ export function ProjectHome({
     setSelectedProfileId(configuredModel.profileId);
     setProfileLoading(true);
     setProfileAttempt((value) => value + 1);
-  }, [configuredModel, selectedAgent?.id, selectedRoot?.path]);
+  }, [configuredModel, selectedAgent?.id]);
 
   const start = async () => {
     if (!selectedRoot || !selectedAgent || !canStart || launchInFlight.current) return;
