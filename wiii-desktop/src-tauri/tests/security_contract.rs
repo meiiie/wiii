@@ -135,7 +135,8 @@ fn tauri_config_enables_only_the_reviewed_capability_set() {
             "workbench-network",
             "workbench-agents",
             "workbench-computer",
-            "workbench-notifications"
+            "workbench-notifications",
+            "workbench-models"
         ])
     );
 }
