@@ -1078,8 +1078,8 @@ function NekoChillScreen({
             >
               <Panel
                 id="neko-chat"
-                defaultSize={sessionPresence.present && !compactWorkspace ? 42 : 100}
-                minSize={28}
+                defaultSize={sessionPresence.present && !compactWorkspace ? "42%" : "100%"}
+                minSize="28%"
               >
             <div className="flex h-full min-w-0 flex-1 flex-col">
               <LiveNekoTranscript
@@ -1108,7 +1108,7 @@ function NekoChillScreen({
               {sessionPresence.present && !compactWorkspace ? (
                 <>
                   <Separator className="nk-workspace-separator" aria-label="Điều chỉnh độ rộng công cụ" disabled={!workspacePane?.open} />
-                  <Panel id="neko-workspace" defaultSize={58} minSize={36}>
+                  <Panel id="neko-workspace" defaultSize="58%" minSize="36%">
                     <div ref={sessionPresence.ref} className="nk-workspace-frame h-full" aria-hidden={!workspacePane?.open || undefined}>
                       {sessionWorkspaceTarget ? <NekoWorkspacePane target={sessionWorkspaceTarget} exiting={!workspacePane?.open} onClose={restoreWorkspaceFocus} /> : null}
                     </div>
@@ -1156,8 +1156,8 @@ function NekoChillScreen({
                 >
                   <Panel
                     id="neko-project-home"
-                    defaultSize={projectPresence.present && !compactWorkspace ? 42 : 100}
-                    minSize={28}
+                    defaultSize={projectPresence.present && !compactWorkspace ? "42%" : "100%"}
+                    minSize="28%"
                   >
                     <ProjectHome
                       key={projectHome.id}
@@ -1176,7 +1176,7 @@ function NekoChillScreen({
                   {projectPresence.present && projectWorkspaceTarget && !compactWorkspace ? (
                     <>
                       <Separator className="nk-workspace-separator" aria-label="Điều chỉnh độ rộng công cụ" disabled={!projectWorkspacePane?.open} />
-                      <Panel id="neko-project-workspace" defaultSize={58} minSize={36}>
+                      <Panel id="neko-project-workspace" defaultSize="58%" minSize="36%">
                         <div ref={projectPresence.ref} className="nk-workspace-frame h-full" aria-hidden={!projectWorkspacePane?.open || undefined}>
                           <NekoWorkspacePane target={projectWorkspaceTarget} requestedSurface="files" exiting={!projectWorkspacePane?.open} onClose={restoreWorkspaceFocus} />
                         </div>
