@@ -1,3 +1,5 @@
+import type { editor } from "monaco-editor";
+
 /**
  * Keep one visual gutter row per source line. Wrapping adds unnumbered visual
  * rows, while sticky scroll repeats ancestor lines above the real viewport.
@@ -20,3 +22,14 @@ export const WORKSPACE_CODE_EDITOR_OPTIONS = {
   fontSize: 12,
   lineHeight: 20,
 } as const;
+
+/** Skip the original editor when Monaco collapses it to an inline gutter. */
+export function syncWorkspaceDiffTabOrder(diff: editor.IDiffEditor): void {
+  const original = diff.getOriginalEditor();
+  const sync = ({ contentWidth }: editor.EditorLayoutInfo) => {
+    original.updateOptions({ tabIndex: contentWidth > 0 ? 0 : -1 });
+  };
+  sync(original.getLayoutInfo());
+  const subscription = original.onDidLayoutChange(sync);
+  diff.onDidDispose(() => subscription.dispose());
+}
