@@ -32,10 +32,37 @@ function Notice({ notice, onOpen }: { notice: CompletionNotice; onOpen: (session
   </article>;
 }
 
-export function CompletionNotices({ onOpen }: { onOpen: (sessionId: string) => void }) {
-  const { notices, enabled, sound } = useCompletionNoticeStore(useShallow((state) => ({
-    notices: state.notices, enabled: state.enabled, sound: state.sound,
+function isForeground() {
+  return document.visibilityState === "visible" && document.hasFocus();
+}
+
+export function CompletionNotices({ onOpen, visibleSessionId }: {
+  onOpen: (sessionId: string) => void;
+  visibleSessionId?: string | null;
+}) {
+  const { notices, enabled, sound, dismiss } = useCompletionNoticeStore(useShallow((state) => ({
+    notices: state.notices, enabled: state.enabled, sound: state.sound, dismiss: state.dismiss,
   })));
+  const [foreground, setForeground] = useState(isForeground);
+  useEffect(() => {
+    const sync = () => setForeground(isForeground());
+    window.addEventListener("focus", sync);
+    window.addEventListener("blur", sync);
+    document.addEventListener("visibilitychange", sync);
+    sync();
+    return () => {
+      window.removeEventListener("focus", sync);
+      window.removeEventListener("blur", sync);
+      document.removeEventListener("visibilitychange", sync);
+    };
+  }, []);
+  const viewedSessionId = foreground ? visibleSessionId : null;
+  useEffect(() => {
+    // Consume, rather than just hide: don't replay a seen result after navigation.
+    for (const notice of notices) {
+      if (notice.sessionId === viewedSessionId) dismiss(notice.id);
+    }
+  }, [dismiss, notices, viewedSessionId]);
   useEffect(() => {
     if (!enabled || !sound) return;
     let disposed = false;
@@ -53,6 +80,7 @@ export function CompletionNotices({ onOpen }: { onOpen: (sessionId: string) => v
   useEffect(() => () => completionPlayer.dispose(), []);
   return <section aria-label="Thông báo hoàn tất" aria-live="polite" aria-relevant="additions"
     className="pointer-events-none fixed bottom-4 left-4 z-[60] flex w-[320px] max-w-[calc(100vw-32px)] flex-col gap-2 text-[var(--nk-text)]">
-    {notices.map((notice) => <Notice key={notice.id} notice={notice} onOpen={onOpen} />)}
+    {notices.filter((notice) => notice.sessionId !== viewedSessionId)
+      .map((notice) => <Notice key={notice.id} notice={notice} onOpen={onOpen} />)}
   </section>;
 }
