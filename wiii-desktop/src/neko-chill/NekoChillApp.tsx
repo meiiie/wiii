@@ -489,6 +489,7 @@ function NekoChillScreen({
   const localModelsAvailable = canConfigureLocalModels();
   const [localModelSetupOpen, setLocalModelSetupOpen] = useState(false);
   const [localModelStatus, setLocalModelStatus] = useState<LocalModelStatus | null>(null);
+  const [localModelStatusFailed, setLocalModelStatusFailed] = useState(false);
   const [configuredLocalModel, setConfiguredLocalModel] = useState<SavedLocalModel | null>(null);
   const localModelRevision = useRef(0);
   useEffect(() => {
@@ -497,7 +498,11 @@ function NekoChillScreen({
     const revision = localModelRevision.current;
     void getLocalModelStatus().then((status) => {
       if (!cancelled && revision === localModelRevision.current) setLocalModelStatus(status);
-    }).catch(() => { /* Setup remains accessible and can retry its own read. */ });
+    }).catch(() => {
+      // Setup's write-safety rules are stricter than Core's read rules (for
+      // example symlinked dotfiles). Failed discovery is not missing setup.
+      if (!cancelled && revision === localModelRevision.current) setLocalModelStatusFailed(true);
+    });
     return () => { cancelled = true; };
   }, [localModelsAvailable]);
   const [quickChatError, setQuickChatError] = useState<string | null>(null);
@@ -1194,7 +1199,7 @@ function NekoChillScreen({
                       project={projectHome}
                       resetToken={projectHomeResetToken}
                       onSetupModel={localModelsAvailable ? () => setLocalModelSetupOpen(true) : undefined}
-                      needsModelSetup={localModelsAvailable && localModelStatus?.configured !== true}
+                      needsModelSetup={localModelsAvailable && !localModelStatusFailed && localModelStatus?.configured !== true}
                       configuredModel={configuredLocalModel}
                       onWorkspaceChange={updateProjectWorkspace}
                       onManageHarness={() => {
