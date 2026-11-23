@@ -128,7 +128,10 @@ describe("Neko Chill shell UI", () => {
     }
   });
 
-  it.each([true, false])("only keeps the current chat's card when tools fully cover it (compact=%s)", async (compact) => {
+  it.each([
+    { compact: true, queued: false }, { compact: true, queued: true },
+    { compact: false, queued: false }, { compact: false, queued: true },
+  ])("only keeps the current chat's card when tools fully cover it (compact=$compact, queued=$queued)", async ({ compact, queued }) => {
     const focus = vi.spyOn(document, "hasFocus").mockReturnValue(true);
     const visibility = vi.spyOn(document, "visibilityState", "get").mockReturnValue("visible");
     vi.stubGlobal("matchMedia", vi.fn((query: string) => ({
@@ -142,19 +145,48 @@ describe("Neko Chill shell UI", () => {
       });
       useNekoWorkspaceStore.getState().ensureSession("one", workspace);
       useNekoWorkspaceStore.getState().toggle("one");
-      useCompletionNoticeStore.setState({ sound: false, notices: [] });
+      useNekoWorkspaceStore.getState().setPinned("one", true);
+      const notice = { id: "result", sessionId: "one", title: "Completed reply" };
+      useCompletionNoticeStore.setState({ sound: false, notices: queued ? [notice] : [] });
       await act(async () => { render(<NekoChillApp />); });
-      act(() => useCompletionNoticeStore.getState().publish({ id: "result", sessionId: "one", title: "Completed reply" }));
+      if (!queued) act(() => useCompletionNoticeStore.getState().publish(notice));
       expect(Boolean(screen.queryByText("Completed reply"))).toBe(compact);
       if (compact) {
         fireEvent.click(screen.getByRole("button", { name: "Xem kết quả" }));
         expect(useNekoWorkspaceStore.getState().sessions.one.open).toBe(false);
+        expect(useNekoWorkspaceStore.getState().sessions.one.pinned).toBe(true);
         expect(useNekoSessionStore.getState().activeSessionId).toBe("one");
         expect(screen.queryByText("Completed reply")).toBeNull();
         expect(useCompletionNoticeStore.getState().notices).toEqual([]);
       }
     } finally {
       focus.mockRestore(); visibility.mockRestore(); vi.unstubAllGlobals();
+      act(() => useCompletionNoticeStore.setState({ notices: [] }));
+    }
+  });
+
+  it("opens a background result without unpinning its already hidden tools", async () => {
+    vi.stubGlobal("matchMedia", vi.fn((query: string) => ({
+      matches: query === "(max-width: 1039px)",
+      addEventListener: vi.fn(), removeEventListener: vi.fn(),
+    })));
+    try {
+      const workspace = { path: "/qa", name: "qa" };
+      useNekoSessionStore.setState({ activeSessionId: "other", sessions: {
+        one: makeSession("one", "Destination", workspace),
+        other: makeSession("other", "Current chat", workspace),
+      } });
+      useNekoWorkspaceStore.getState().ensureSession("one", workspace);
+      useNekoWorkspaceStore.getState().setPinned("one", true);
+      useCompletionNoticeStore.setState({ sound: false, notices: [] });
+      await act(async () => { render(<NekoChillApp />); });
+      act(() => useCompletionNoticeStore.getState().publish({ id: "result", sessionId: "one", title: "Destination result" }));
+      fireEvent.click(screen.getByRole("button", { name: "Xem kết quả" }));
+      expect(useNekoSessionStore.getState().activeSessionId).toBe("one");
+      expect(useNekoWorkspaceStore.getState().sessions.one.open).toBe(false);
+      expect(useNekoWorkspaceStore.getState().sessions.one.pinned).toBe(true);
+    } finally {
+      vi.unstubAllGlobals();
       act(() => useCompletionNoticeStore.setState({ notices: [] }));
     }
   });

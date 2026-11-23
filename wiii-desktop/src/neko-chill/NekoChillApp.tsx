@@ -120,7 +120,8 @@ function NekoWorkspacePane(props: ComponentProps<typeof LazyNekoWorkspacePane>) 
 }
 
 function useCompactWorkspace(breakpoint = 1040) {
-  const [compact, setCompact] = useState(false);
+  const [compact, setCompact] = useState(() => typeof window !== "undefined"
+    && typeof window.matchMedia === "function" && window.matchMedia(`(max-width: ${breakpoint - 1}px)`).matches);
   useEffect(() => {
     if (typeof window === "undefined" || typeof window.matchMedia !== "function") return;
     const query = window.matchMedia(`(max-width: ${breakpoint - 1}px)`);
@@ -959,7 +960,7 @@ function NekoChillScreen({
     <div className="nk-root flex h-screen flex-col bg-[var(--nk-canvas)] text-[var(--nk-text)]">
       <CompletionNotices visibleSessionId={active && !(compactWorkspace && sessionPresence.present) ? session?.id : null} onOpen={(sessionId) => {
         if (!useNekoSessionStore.getState().sessions[sessionId]) return;
-        if (compactWorkspace) closeWorkspace(sessionId);
+        if (compactWorkspace && useNekoWorkspaceStore.getState().sessions[sessionId]?.open) toggleWorkspace(sessionId);
         openSessionFromCatalog(sessionId);
       }} />
       <TitleBar
