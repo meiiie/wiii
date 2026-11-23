@@ -1087,6 +1087,10 @@ function NekoChillScreen({
             >
               <Panel
                 id="neko-chat"
+                style={{
+                  // Only the transcript/composer may scroll, never the whole chat column.
+                  overflow: "clip",
+                }}
                 defaultSize={sessionPresence.present && !compactWorkspace ? "42%" : "100%"}
                 minSize="28%"
               >
