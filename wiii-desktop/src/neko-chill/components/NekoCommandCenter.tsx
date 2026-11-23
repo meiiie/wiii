@@ -117,8 +117,10 @@ function NekoCommandCenterComponent({
 
   useEffect(() => {
     if (open) {
-      if (!wasOpenRef.current && document.activeElement instanceof HTMLElement) {
-        returnFocusRef.current = document.activeElement;
+      if (!wasOpenRef.current) {
+        const focused = document.activeElement;
+        returnFocusRef.current = focused instanceof HTMLElement
+          && focused !== document.body && focused !== document.documentElement ? focused : null;
       }
       wasOpenRef.current = true;
       setQuery("");
