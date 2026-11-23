@@ -62,6 +62,14 @@
   outline: none;
 }
 
+@media (forced-colors: active) {
+  .markdown-content .wiii-table-viewport:focus-visible {
+    /* Contrast themes can erase border-color changes; add a geometric cue. */
+    outline: 2px solid Highlight;
+    outline-offset: -4px;
+  }
+}
+
 .markdown-content table {
   @apply border-collapse;
   width: max-content;
