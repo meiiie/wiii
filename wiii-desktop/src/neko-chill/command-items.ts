@@ -105,7 +105,7 @@ function actionItem(
   action: WorkbenchActionName,
   label: string,
   description: string,
-  gate?: { disabled?: boolean; disabledTitle?: string },
+  options?: { disabled?: boolean; disabledTitle?: string; searchAliases?: string },
 ): ActionCommandItem {
   return {
     id: `action:${action}`,
@@ -113,9 +113,9 @@ function actionItem(
     action,
     label,
     description,
-    searchText: normalize(`${label} ${description}`),
-    disabled: gate?.disabled,
-    disabledTitle: gate?.disabledTitle,
+    searchText: normalize(`${label} ${description} ${options?.searchAliases ?? ""}`),
+    disabled: options?.disabled,
+    disabledTitle: options?.disabledTitle,
   };
 }
 
@@ -152,7 +152,10 @@ export function buildNekoCommandItems(
           }
           : undefined,
       ),
-      actionItem("info", "Thông tin phiên", "Mô hình và trạng thái"),
+      actionItem("info", "Thông tin phiên", "Trạng thái và điều khiển", {
+        // Keep legacy English lookups without adding new transcript-shadowing terms.
+        searchAliases: "Agent, model",
+      }),
     );
   }
 
