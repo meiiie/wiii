@@ -399,7 +399,7 @@ function LiveNekoTranscript({
         const prompt = current ? getStoppedPrompt(current) : null;
         if (prompt?.eventId === eventId) {
           // Use normal admission; never replace the draft or replay stored tools.
-          await state.sendPromptToSession(sessionId, prompt.text);
+          await state.sendPromptToSession(sessionId, prompt.text, undefined, undefined, eventId);
         }
       }}
     />

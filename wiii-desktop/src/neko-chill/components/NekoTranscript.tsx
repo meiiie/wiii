@@ -5,7 +5,7 @@
  */
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { elementScroll, useVirtualizer } from "@tanstack/react-virtual";
-import { ArrowDown, BookOpen, ChevronRight, Command, FolderGit2 } from "lucide-react";
+import { ArrowDown, BookOpen, ChevronRight, Command, FolderGit2, RotateCcw } from "lucide-react";
 import { NEKO_STARTER_PROMPTS } from "../starter-prompts";
 import { MarkdownRenderer } from "@/components/common/MarkdownRenderer";
 import { NekoActivityIcon, resolveNekoToolIconKind } from "@/components/icons/neko";
@@ -20,6 +20,7 @@ import { PermissionCard } from "./PermissionCard";
 import { NekoPromptRail, type NekoPromptLandmark } from "./NekoPromptRail";
 import { nativeSessionNeedsRecovery } from "../stores/session-native-recovery";
 import { captureTranscriptReadingAnchor, restoreTranscriptReadingAnchor, captureTranscriptReadingBookmark, restoreTranscriptReadingBookmark, type TranscriptReadingPosition } from "../transcript-reading-anchor";
+import { retriedMessageIds } from "../transcript-retries";
 
 export const NEKO_TRANSCRIPT_VIRTUALIZATION_THRESHOLD = 50;
 
@@ -275,11 +276,13 @@ const MessageRow = memo(function MessageRow({
   message,
   messageIndex,
   streaming = false,
+  retry = false,
   onReady,
 }: {
   message: NekoSession["messages"][number];
   messageIndex: number;
   streaming?: boolean;
+  retry?: boolean;
   onReady?: (node: HTMLDivElement | null) => void;
 }) {
   const blocks = message.blocks ?? [];
@@ -294,7 +297,9 @@ const MessageRow = memo(function MessageRow({
       data-neko-message-index={messageIndex}
     >
       <div className="max-w-[80%] whitespace-pre-wrap rounded-2xl bg-[var(--nk-raised)] px-3.5 py-2 text-[13.5px] leading-[20px] text-[var(--nk-text)]">
-        {message.text}
+        {retry ? <span className="inline-flex items-center gap-1.5 text-[var(--nk-text-3)]">
+          <RotateCcw aria-hidden="true" className="h-3 w-3" /> Thử lại câu trả lời
+        </span> : message.text}
       </div>
     </div>
   ) : (
@@ -432,6 +437,8 @@ export function NekoTranscript({
   const previousLastMessageRef = useRef(lastMessage?.id);
   const lastBlockCount = lastMessage?.blocks?.length ?? 0;
   const useVirtual = shouldVirtualizeTranscript(messageCount);
+  // User metadata is immutable; avoid rescanning on each assistant token.
+  const retries = useMemo(() => retriedMessageIds(session.messages), [messageCount, session.id]);
   const promptRailMessages = useMemo(
     () => session.messages,
     [messageCount, session.id, session.status === "streaming"],
@@ -756,6 +763,7 @@ export function NekoTranscript({
                   <MessageRow
                     message={message}
                     messageIndex={row.index}
+                    retry={retries.has(message.id)}
                     onReady={focusPromptTarget}
                     streaming={session.status === "streaming" && message.id === lastMessage?.id}
                   />
@@ -769,6 +777,7 @@ export function NekoTranscript({
               key={message.id}
               message={message}
               messageIndex={messageIndex}
+              retry={retries.has(message.id)}
               onReady={focusPromptTarget}
               streaming={session.status === "streaming" && message.id === lastMessage?.id}
             />

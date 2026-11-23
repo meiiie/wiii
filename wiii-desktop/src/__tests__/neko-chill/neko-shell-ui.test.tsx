@@ -472,7 +472,7 @@ describe("Neko Chill shell UI", () => {
     const retry = screen.getByRole("button", { name: "Thử lại tin nhắn vừa dừng" });
     expect(sendPromptToSession).not.toHaveBeenCalled();
     fireEvent.click(retry); fireEvent.click(retry);
-    expect(sendPromptToSession).toHaveBeenCalledExactlyOnceWith(session.id, "Tin nhắn gốc");
+    expect(sendPromptToSession).toHaveBeenCalledExactlyOnceWith(session.id, "Tin nhắn gốc", undefined, undefined, "input");
     expect((screen.getByTestId("neko-composer-input") as HTMLTextAreaElement).value).toBe("Bản nháp khác\nGiữ nguyên tiếng Việt");
     expect(readNekoComposerDraft("session:retry-session")).toBe("Bản nháp khác\nGiữ nguyên tiếng Việt");
     expect(JSON.stringify(useNekoSessionStore.getState().sessions[session.id])).toBe(before);

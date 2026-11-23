@@ -38,8 +38,8 @@ import {
 import { useNekoAgentStore } from "@/neko-chill/stores/neko-agent-store";
 import { useCompletionNoticeStore } from "@/neko-chill/stores/completion-notice-store";
 import { saveStoreStrict } from "@/lib/storage";
-import { getSessionControlNotices } from "@/neko-chill/session-control-status";
-import { persistSessionStrict } from "@/neko-chill/persistence";
+import { getSessionControlNotices, getStoppedPrompt } from "@/neko-chill/session-control-status";
+import { loadSessionSnapshot, persistSessionStrict } from "@/neko-chill/persistence";
 
 const AGENT: DetectedAgent = {
   id: "neko",
@@ -847,6 +847,31 @@ describe("provider-terminal presentation correlation", () => {
   });
   const inputId=(id:string)=>[...session(id).events].reverse().find(e=>e.data.type==="model-input")!.eventId!;
   const terminal=(id:string,promptEventId:string,stopReason:"cancelled"|"end_turn"="cancelled")=>({type:"turn-finished" as const,sessionId:id,promptEventId,stopReason});
+  it("marks only an explicit confirmed Retry while preserving full dispatched inputs and restart history", async () => {
+    const id = await setup();
+    await useNekoSessionStore.getState().sendPrompt("Tin nhắn gốc");
+    const original = session(id).messages[0];
+    const pid = inputId(id);
+    driver.emit({ type: "turn-started", sessionId: id, promptEventId: pid });
+    driver.emit({ type: "answer-delta", sessionId: id, text: "Câu trả lời dở" });
+    await useNekoSessionStore.getState().cancelTurn();
+    driver.emit(terminal(id, pid));
+    await vi.waitFor(() => expect(getStoppedPrompt(session(id))?.eventId).toBe(pid));
+    const stopped = JSON.stringify(session(id));
+    await useNekoSessionStore.getState().sendPromptToSession(id, "Tin khác", undefined, undefined, pid);
+    await useNekoSessionStore.getState().sendPromptToSession(id, "Tin nhắn gốc", undefined, undefined, "stale-id");
+    expect(JSON.stringify(session(id))).toBe(stopped);
+    await useNekoSessionStore.getState().sendPromptToSession(id, "Tin nhắn gốc", undefined, undefined, pid);
+    expect(driver.prompts).toEqual(["Tin nhắn gốc", "Tin nhắn gốc"]);
+    const retry = session(id).messages.at(-1)!;
+    expect(retry).toMatchObject({ role: "user", text: "Tin nhắn gốc", retryOfMessageId: original.id });
+    expect(retry.id).not.toBe(original.id);
+    expect(session(id).messages[1].blocks?.[0]).toMatchObject({ type: "answer", content: "Câu trả lời dở" });
+    await persistSessionStrict(session(id));
+    expect((await loadSessionSnapshot(id)).messages).toEqual(session(id).messages);
+    await useNekoSessionStore.getState().sendPrompt("Tin nhắn gốc");
+    expect(session(id).messages.at(-1)).not.toHaveProperty("retryOfMessageId");
+  });
   it("latches repeated Stop through notify resolution and stores a single correlated terminal", async () => {
     const id=await setup();const promptSpy=vi.spyOn(driver,"prompt");await useNekoSessionStore.getState().sendPrompt("Task");
     const promptEventId=inputId(id);expect(promptSpy.mock.calls[0][1]).toEqual({promptEventId});
