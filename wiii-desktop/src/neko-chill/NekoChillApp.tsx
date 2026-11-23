@@ -479,6 +479,8 @@ function NekoChillScreen({
   const [inspectorOpen, setInspectorOpen] = useState(false);
   const [commandCenterOpen, setCommandCenterOpen] = useState(false);
   const sidebarToggleRef = useRef<HTMLButtonElement>(null);
+  const sessionDividerRef = useRef<HTMLDivElement>(null);
+  const projectDividerRef = useRef<HTMLDivElement>(null);
   const workspaceToggleRef = useRef<HTMLButtonElement>(null);
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
   const [quickChatPending, setQuickChatPending] = useState(false);
@@ -622,14 +624,16 @@ function NekoChillScreen({
     // Below 1040px, show one auxiliary pane at a time without losing its pin.
     if (!sidebarOpen && narrowWorkspace && sidebarWorkspaceId
       && useNekoWorkspaceStore.getState().sessions[sidebarWorkspaceId]?.open) {
-      if (sessionPresence.ref.current?.contains(document.activeElement)
-        || projectPresence.ref.current?.contains(document.activeElement)) {
+      const focused = document.activeElement;
+      if (commandCenterOpen || sessionPresence.ref.current?.contains(focused)
+        || projectPresence.ref.current?.contains(focused)
+        || sessionDividerRef.current === focused || projectDividerRef.current === focused) {
         sidebarToggleRef.current?.focus({ preventScroll: true });
       }
       toggleWorkspace(sidebarWorkspaceId);
     }
     setSidebarOpen((value) => !value);
-  }, [narrowWorkspace, projectPresence.ref, sessionPresence.ref, sidebarOpen, sidebarWorkspaceId, toggleWorkspace]);
+  }, [commandCenterOpen, narrowWorkspace, projectPresence.ref, sessionPresence.ref, sidebarOpen, sidebarWorkspaceId, toggleWorkspace]);
 
   useEffect(() => {
     void detect("neko");
@@ -1107,7 +1111,7 @@ function NekoChillScreen({
               </Panel>
               {sessionPresence.present && !compactWorkspace ? (
                 <>
-                  <Separator className="nk-workspace-separator" aria-label="Điều chỉnh độ rộng công cụ" disabled={!workspacePane?.open} />
+                  <Separator elementRef={sessionDividerRef} className="nk-workspace-separator" aria-label="Điều chỉnh độ rộng công cụ" disabled={!workspacePane?.open} />
                   <Panel id="neko-workspace" defaultSize="58%" minSize="36%">
                     <div ref={sessionPresence.ref} className="nk-workspace-frame h-full" aria-hidden={!workspacePane?.open || undefined}>
                       {sessionWorkspaceTarget ? <NekoWorkspacePane target={sessionWorkspaceTarget} exiting={!workspacePane?.open} onClose={restoreWorkspaceFocus} /> : null}
@@ -1175,7 +1179,7 @@ function NekoChillScreen({
                   </Panel>
                   {projectPresence.present && projectWorkspaceTarget && !compactWorkspace ? (
                     <>
-                      <Separator className="nk-workspace-separator" aria-label="Điều chỉnh độ rộng công cụ" disabled={!projectWorkspacePane?.open} />
+                      <Separator elementRef={projectDividerRef} className="nk-workspace-separator" aria-label="Điều chỉnh độ rộng công cụ" disabled={!projectWorkspacePane?.open} />
                       <Panel id="neko-project-workspace" defaultSize="58%" minSize="36%">
                         <div ref={projectPresence.ref} className="nk-workspace-frame h-full" aria-hidden={!projectWorkspacePane?.open || undefined}>
                           <NekoWorkspacePane target={projectWorkspaceTarget} requestedSurface="files" exiting={!projectWorkspacePane?.open} onClose={restoreWorkspaceFocus} />

@@ -125,7 +125,12 @@ function NekoCommandCenterComponent({
     }
     if (wasOpenRef.current) {
       wasOpenRef.current = false;
-      const frame = requestAnimationFrame(() => returnFocusRef.current?.focus());
+      const frame = requestAnimationFrame(() => {
+        const target = returnFocusRef.current;
+        // An action may already have focused its new destination.
+        if (document.activeElement === document.body && target?.isConnected
+          && !target.closest('[inert], [aria-hidden="true"]')) target.focus();
+      });
       return () => cancelAnimationFrame(frame);
     }
   }, [open]);

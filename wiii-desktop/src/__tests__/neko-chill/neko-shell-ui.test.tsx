@@ -2,6 +2,7 @@ import { Suspense } from "react";
 import { act, fireEvent, render, screen, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import NekoChillApp from "@/neko-chill/NekoChillApp";
+import { NekoCommandCenter } from "@/neko-chill/components/NekoCommandCenter";
 import { LocalWorkbenchSurface } from "@/App";
 import {
   formatReasoningDuration,
@@ -860,7 +861,7 @@ describe("Neko Chill shell UI", () => {
     expect(screen.getByTestId("session-sidebar")).toBeTruthy();
   });
 
-  it.each(["button", "shortcut", "menu"])("keeps room for chat when reopening navigation at 800px with %s", async (entry) => {
+  it.each(["button", "shortcut", "divider shortcut", "menu", "command center"])("keeps room for chat when reopening navigation at 800px with %s", async (entry) => {
     stubViewport(800);
     const draft = "Giữ nguyên bản nháp.";
     try {
@@ -878,9 +879,22 @@ describe("Neko Chill shell UI", () => {
       expect(screen.queryByTestId("session-sidebar")).toBeNull();
       expect(screen.getByRole("separator", { name: "Điều chỉnh độ rộng công cụ" })).toBeTruthy();
       if (entry === "button") fireEvent.click(screen.getByTestId("neko-sidebar-toggle"));
-      else if (entry === "shortcut") {
-        within(screen.getByRole("navigation", { name: "Công cụ Project" })).getByRole("button", { name: "Tệp" }).focus();
+      else if (entry === "shortcut" || entry === "divider shortcut") {
+        const source = entry === "divider shortcut"
+          ? screen.getByRole("separator", { name: "Điều chỉnh độ rộng công cụ" })
+          : within(screen.getByRole("navigation", { name: "Công cụ Project" })).getByRole("button", { name: "Tệp" });
+        source.focus();
         fireEvent.keyDown(window, { key: "b", ctrlKey: true });
+        expect(document.activeElement).toBe(screen.getByTestId("neko-sidebar-toggle"));
+      }
+      else if (entry === "command center") {
+        within(screen.getByRole("navigation", { name: "Công cụ Project" })).getByRole("button", { name: "Tệp" }).focus();
+        fireEvent.keyDown(window, { key: "k", ctrlKey: true });
+        const dialog = await screen.findByRole("dialog", { name: "Trung tâm lệnh Neko Chill" });
+        await act(() => new Promise<void>((resolve) => requestAnimationFrame(() => resolve())));
+        expect(dialog.contains(document.activeElement)).toBe(true);
+        fireEvent.click(within(dialog).getByRole("option", { name: /Hiện cây dự án và phiên/ }));
+        await act(() => new Promise<void>((resolve) => requestAnimationFrame(() => resolve())));
         expect(document.activeElement).toBe(screen.getByTestId("neko-sidebar-toggle"));
       }
       else {
@@ -898,6 +912,23 @@ describe("Neko Chill shell UI", () => {
       clearNekoComposerDraft("session:one");
       vi.unstubAllGlobals();
     }
+  });
+
+  it("keeps the command action's new focus instead of returning to an exiting tool", async () => {
+    const view = (open: boolean) => <>
+      <button>Điều khiển tệp</button><button>Mở thanh bên</button>
+      <NekoCommandCenter open={open} sessions={[]} activeSession={null} sidebarOpen={false}
+        onClose={() => rerender(view(false))}
+        onAction={() => screen.getByRole("button", { name: "Mở thanh bên" }).focus()}
+        onSelectSession={vi.fn()} onInsertCommand={vi.fn()} />
+    </>;
+    const { rerender } = render(view(false));
+    screen.getByRole("button", { name: "Điều khiển tệp" }).focus();
+    rerender(view(true));
+    await act(() => new Promise<void>((resolve) => requestAnimationFrame(() => resolve())));
+    fireEvent.click(screen.getByRole("option", { name: /Hiện cây dự án và phiên/ }));
+    await act(() => new Promise<void>((resolve) => requestAnimationFrame(() => resolve())));
+    expect(document.activeElement).toBe(screen.getByRole("button", { name: "Mở thanh bên" }));
   });
 
   it("keeps Project tools beside the home surface without squeezing in navigation at 800px", async () => {
