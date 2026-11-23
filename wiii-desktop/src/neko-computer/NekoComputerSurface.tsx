@@ -238,7 +238,9 @@ function NekoComputerSurfaceComponent({
     };
     window.addEventListener("message", onMessage);
     const timeout = window.setTimeout(() => {
-      setViewerState((current) => current === "visible" ? current : "stalled");
+      setViewerState((current) =>
+        current === "loading" || current === "connected" ? "stalled" : current,
+      );
     }, 16_000);
     return () => {
       window.removeEventListener("message", onMessage);
