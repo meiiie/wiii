@@ -177,7 +177,7 @@ describe("Neko question navigation", () => {
     const view = mount(session);
     fireEvent.click(screen.getByRole("button", { name: "Câu hỏi 60" }));
     fireEvent.click(screen.getByRole("button", { name: "Đi tới lời nhắn 58: Câu hỏi dài 58" }));
-    expect(virtual.scrollToIndex).toHaveBeenCalledWith(57, { align: "start", behavior: "smooth" });
+    expect(virtual.scrollToIndex).toHaveBeenCalledWith(57, { align: "start", behavior: "auto" });
     expect(document.querySelector('[data-neko-message-index="57"]')).toBeNull();
 
     virtual.rows = [{ index: 57, start: 10260 }];
