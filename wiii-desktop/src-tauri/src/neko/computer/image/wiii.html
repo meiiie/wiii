@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="en">
+<html lang="vi">
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width,initial-scale=1" />
@@ -8,13 +8,17 @@
       html, body, #screen { width: 100%; height: 100%; margin: 0; overflow: hidden; background: #111; }
       #screen { display: grid; place-items: center; }
       #screen canvas { max-width: 100%; max-height: 100%; image-rendering: auto; }
+      #screen[data-keyboard-ready="true"]:focus-within { outline: 2px solid #f4ca70; outline-offset: -3px; }
+      #keyboard-help { display: none; position: fixed; top: 8px; right: 8px; z-index: 2; margin: 0; padding: 4px 8px; border-radius: 6px; background: #111e; color: #fff; font: 12px/1.5 system-ui; pointer-events: none; }
+      #screen[data-keyboard-ready="true"]:focus-within + #keyboard-help { display: block; }
       #status { position: fixed; inset: 0; z-index: 1; display: grid; place-items: center; padding: 24px; color: #d8d8d8; font: 14px/1.5 system-ui; text-align: center; }
       #status[hidden] { display: none; }
     </style>
   </head>
   <body>
     <div id="status" role="status" aria-live="polite">Connecting to Wiii Computer…</div>
-    <div id="screen"></div>
+    <div id="screen" tabindex="-1" role="region" aria-label="Màn hình máy tính" aria-describedby="keyboard-help"></div>
+    <p id="keyboard-help">F8 về Wiii</p>
     <script type="module">
       import RFB from './core/rfb.js';
 
@@ -38,6 +42,25 @@
       report('viewer.loaded');
       const rfb = new RFB(screen, target, { credentials: { password } });
       rfb.viewOnly = viewOnly;
+      const setKeyboardReady = (ready) => {
+        const enabled = ready && !viewOnly;
+        screen.tabIndex = enabled ? 0 : -1;
+        screen.dataset.keyboardReady = String(enabled);
+      };
+      screen.addEventListener('focus', () => {
+        if (screen.tabIndex === 0) rfb.focus({ preventScroll: true });
+      });
+      window.addEventListener('keydown', (event) => {
+        if (viewOnly || event.key !== 'F8' || event.isComposing
+          || event.ctrlKey || event.altKey || event.shiftKey || event.metaKey
+          || !screen.contains(document.activeElement)) return;
+        // Keep Tab/Escape in the guest. Return focus through the trusted host
+        // bridge so the frame loses focus and noVNC releases held guest keys.
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        rfb.blur();
+        report('keyboard.release');
+      }, true);
       const connectionDeadline = window.setTimeout(() => {
         status.hidden = false;
         status.textContent = 'Wiii Computer đang mất nhiều thời gian hơn dự kiến để kết nối.';
@@ -74,6 +97,7 @@
             if (framebufferHasVisiblePixels()) {
               stopFramebufferProbe();
               status.hidden = true;
+              setKeyboardReady(true);
               report('framebuffer.visible');
               return;
             }
@@ -106,6 +130,7 @@
       rfb.addEventListener('disconnect', (event) => {
         window.clearTimeout(connectionDeadline);
         stopFramebufferProbe();
+        setKeyboardReady(false);
         status.hidden = false;
         status.textContent = event.detail.clean ? 'Computer đã ngắt kết nối.' : 'Kết nối tới Computer đã bị gián đoạn.';
         report('rfb.disconnected', { clean: event.detail.clean === true });
@@ -113,6 +138,7 @@
       rfb.addEventListener('securityfailure', () => {
         window.clearTimeout(connectionDeadline);
         stopFramebufferProbe();
+        setKeyboardReady(false);
         status.hidden = false;
         status.textContent = 'Wiii Computer không thể xác thực màn hình.';
         report('rfb.security_failure');

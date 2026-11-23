@@ -18,8 +18,9 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::thread;
 use std::time::{Duration, Instant};
 
-const IMAGE_REF: &str = "wiii/web-computer:semantic-v44";
-const OBSOLETE_IMAGE_REFS: [&str; 43] = [
+const IMAGE_REF: &str = "wiii/web-computer:semantic-v45";
+const OBSOLETE_IMAGE_REFS: [&str; 44] = [
+    "wiii/web-computer:semantic-v44",
     "wiii/web-computer:semantic-v43",
     "wiii/web-computer:semantic-v42",
     "wiii/web-computer:semantic-v41",
@@ -65,9 +66,9 @@ const OBSOLETE_IMAGE_REFS: [&str; 43] = [
     "wiii/local-computer:pilot-v1",
 ];
 const OWNER_LABEL: &str = "neko-computer-v1";
-const PACK_ID: &str = "web-computer-semantic-v44";
+const PACK_ID: &str = "web-computer-semantic-v45";
 const PACK_SCHEMA_VERSION: &str = "wiii-computer-pack.v2";
-const PACK_VERSION: &str = "semantic-v44";
+const PACK_VERSION: &str = "semantic-v45";
 const PACK_CHANNEL: &str = "preview";
 const PROFILE_SCHEMA_VERSION: u32 = 1;
 pub(crate) const CORE_PACKAGE_ID: &str = "web-computer-core";
