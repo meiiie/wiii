@@ -17,7 +17,7 @@
   </head>
   <body>
     <div id="status" role="status" aria-live="polite">Connecting to Wiii Computer…</div>
-    <div id="screen" tabindex="-1" role="region" aria-label="Màn hình máy tính" aria-describedby="keyboard-help"></div>
+    <div id="screen" tabindex="-1" role="region" aria-label="Màn hình máy tính"></div>
     <p id="keyboard-help">F8 về Wiii</p>
     <script type="module">
       import RFB from './core/rfb.js';
@@ -46,6 +46,9 @@
         const enabled = ready && !viewOnly;
         screen.tabIndex = enabled ? 0 : -1;
         screen.dataset.keyboardReady = String(enabled);
+        const canvas = screen.querySelector('canvas');
+        canvas?.setAttribute('aria-label', screen.getAttribute('aria-label') || '');
+        if (enabled) canvas?.setAttribute('aria-describedby', 'keyboard-help');
       };
       screen.addEventListener('focus', () => {
         if (screen.tabIndex === 0) rfb.focus({ preventScroll: true });

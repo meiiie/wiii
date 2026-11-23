@@ -64,6 +64,9 @@ describe("Computer viewer keyboard entry", () => {
     region.focus();
     expect(rfb.focus).toHaveBeenCalledOnce();
     expect(document.activeElement).toBe(rfb.canvas);
+    expect(rfb.canvas.getAttribute("aria-label")).toBe("Màn hình máy tính");
+    expect(rfb.canvas.getAttribute("aria-describedby")).toBe("keyboard-help");
+    expect(document.getElementById("keyboard-help")?.textContent).toBe("F8 về Wiii");
     expect(rfb.viewOnly).toBe(false);
   });
 
@@ -73,6 +76,8 @@ describe("Computer viewer keyboard entry", () => {
     region.focus();
     expect(rfb.focus).not.toHaveBeenCalled();
     expect(rfb.viewOnly).toBe(true);
+    expect(region.hasAttribute("aria-describedby")).toBe(false);
+    expect(rfb.canvas.hasAttribute("aria-describedby")).toBe(false);
   });
 
   it("reserves plain F8 for host return without stealing guest Tab, Escape or F10", () => {
