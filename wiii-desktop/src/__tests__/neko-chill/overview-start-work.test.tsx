@@ -15,6 +15,14 @@ beforeEach(() => {
 });
 
 describe("desktop home actions", () => {
+  it("exposes first-use local setup without requiring a managed account", () => {
+    const setup = vi.fn();
+    render(<NekoOverview {...props} needsModelSetup onSetupModel={setup} />);
+    expect(screen.getByRole("heading", { name: "Chọn mô hình để bắt đầu" })).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Thiết lập mô hình" }));
+    expect(setup).toHaveBeenCalledOnce();
+    expect(props.onNewSession).not.toHaveBeenCalled();
+  });
   it("starts chat without routing through project creation", () => {
     const chat = vi.fn();
     const create = vi.fn();

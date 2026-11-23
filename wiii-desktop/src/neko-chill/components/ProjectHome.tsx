@@ -36,6 +36,7 @@ import {
   writeNekoComposerDraft,
 } from "../composer-drafts";
 import { NEKO_STARTER_PROMPTS } from "../starter-prompts";
+import type { SavedLocalModel } from "@/lib/local-model-setup";
 
 /** Control-local reason when send is gated (ZCode cue: disabled = explained). */
 export function projectHomeSendTitle(args: {
@@ -69,12 +70,18 @@ export function ProjectHome({
   onEditProject,
   onWorkspaceChange,
   onManageHarness,
+  onSetupModel,
+  needsModelSetup = false,
+  configuredModel,
 }: {
   project: NekoProject;
   resetToken: number;
   onEditProject?: () => void;
   onWorkspaceChange?: (workspace: WorkspaceRef) => void;
   onManageHarness?: () => void;
+  onSetupModel?: () => void;
+  needsModelSetup?: boolean;
+  configuredModel?: SavedLocalModel | null;
 }) {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const previousResetTokenRef = useRef(resetToken);
@@ -349,8 +356,19 @@ export function ProjectHome({
     [profiles],
   );
 
+  useEffect(() => {
+    if (!configuredModel || selectedAgent?.id !== "neko") return;
+    setSelectedProfileId(configuredModel.profileId);
+    setProfileLoading(true);
+    setProfileAttempt((value) => value + 1);
+  }, [configuredModel, selectedAgent?.id, selectedRoot?.path]);
+
   const start = async () => {
     if (!selectedRoot || !selectedAgent || !canStart || launchInFlight.current) return;
+    if (selectedAgent.id === "neko" && needsModelSetup && onSetupModel) {
+      onSetupModel();
+      return;
+    }
     launchInFlight.current = true;
     const profile = selectedAgent.id === "neko"
       ? profiles.find((item) => item.id === selectedProfileId) ?? null
@@ -546,6 +564,9 @@ export function ProjectHome({
                   className="text-[var(--nk-text-3)]"
                 />
               ) : null}
+
+              {selectedAgent?.id === "neko" && onSetupModel ? <button type="button" disabled={starting} onClick={onSetupModel}
+                className="rounded px-2 py-1 text-[11px] font-medium text-[var(--nk-accent)] hover:bg-[var(--nk-overlay)] disabled:opacity-50">Thiết lập mô hình</button> : null}
 
               {selectedAgent?.id === "codex" ? (
                 <span className="text-[10px] text-[var(--nk-text-3)]">

@@ -537,6 +537,18 @@
           "markdownDescription": "Enables the close_splash command without any pre-configured scope."
         },
         {
+          "description": "Enables the local_model_save command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-local-model-save",
+          "markdownDescription": "Enables the local_model_save command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the local_model_status command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-local-model-status",
+          "markdownDescription": "Enables the local_model_status command without any pre-configured scope."
+        },
+        {
           "description": "Enables the neko_computer_app_events_poll command without any pre-configured scope.",
           "type": "string",
           "const": "allow-neko-computer-app-events-poll",
@@ -835,6 +847,18 @@
           "type": "string",
           "const": "deny-close-splash",
           "markdownDescription": "Denies the close_splash command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the local_model_save command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-local-model-save",
+          "markdownDescription": "Denies the local_model_save command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the local_model_status command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-local-model-status",
+          "markdownDescription": "Denies the local_model_status command without any pre-configured scope."
         },
         {
           "description": "Denies the neko_computer_app_events_poll command without any pre-configured scope.",

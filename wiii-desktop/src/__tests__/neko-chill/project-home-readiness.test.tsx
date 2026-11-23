@@ -63,6 +63,37 @@ beforeEach(() => {
 });
 
 describe("Project Home readiness and missing Neko recovery", () => {
+  it("opens setup before first Send and preserves the exact unsent draft", async () => {
+    useNekoAgentStore.setState({ agents: [neko] });
+    const setup = vi.fn();
+    render(<ProjectHome project={project} resetToken={0} needsModelSetup onSetupModel={setup} />);
+    const input = screen.getByRole("textbox", { name: "Lời nhắn đầu tiên" }) as HTMLTextAreaElement;
+    const draft = "  Bản nháp\nchưa gửi  ";
+    fireEvent.change(input, { target: { value: draft } });
+    await vi.waitFor(() => expect(sendButton().disabled).toBe(false));
+    fireEvent.click(sendButton());
+    expect(setup).toHaveBeenCalledOnce();
+    expect(useNekoSessionStore.getState().createSession).not.toHaveBeenCalled();
+    expect(input.value).toBe(draft);
+    expect(readNekoComposerDraft(`project:${project.id}`)).toBe(draft);
+  });
+
+  it("refreshes a saved profile without remounting or sending the composer draft", async () => {
+    useNekoAgentStore.setState({ agents: [neko] });
+    const view = render(<ProjectHome project={project} resetToken={0} />);
+    const input = screen.getByRole("textbox", { name: "Lời nhắn đầu tiên" }) as HTMLTextAreaElement;
+    fireEvent.change(input, { target: { value: "Bản nháp giữ nguyên" } });
+    await vi.waitFor(() => expect(sendButton().disabled).toBe(false));
+    host.profiles.mockResolvedValueOnce([{ id: "zai", provider: "anthropic", model: "glm-5.3", active: true }]);
+    view.rerender(<ProjectHome project={project} resetToken={0} configuredModel={{ profileId: "zai", provider: "anthropic", model: "glm-5.3" }} />);
+    await vi.waitFor(() => expect(host.profiles).toHaveBeenCalledTimes(2));
+    await vi.waitFor(() => expect(sendButton().disabled).toBe(false));
+    expect(screen.getByRole("textbox", { name: "Lời nhắn đầu tiên" })).toBe(input);
+    expect(input.value).toBe("Bản nháp giữ nguyên");
+    expect(useNekoSessionStore.getState().createSession).not.toHaveBeenCalled();
+    await act(async () => { fireEvent.click(sendButton()); });
+    expect(useNekoSessionStore.getState().createSession).toHaveBeenCalledWith(neko, project.roots[0], expect.objectContaining({ id: "zai" }), { projectId: project.id });
+  });
   it("retains the Project draft when sendPrompt returns without acceptance", async () => {
     home([gemini]);
     await pickHarness("Gemini CLI");

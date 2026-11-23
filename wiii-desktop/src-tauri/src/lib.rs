@@ -13,6 +13,7 @@ use tauri::Manager;
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        .manage(commands::local_models::LocalModelSetupState::default())
         // Reject a second journal owner before setup. Bring the existing
         // Workbench to the foreground instead of surfacing a generic lease
         // error from a second process.
@@ -39,6 +40,8 @@ pub fn run() {
             commands::files::neko_workspace_diff,
             commands::splash::close_splash,
             commands::lifecycle::quit_app,
+            commands::local_models::local_model_status,
+            commands::local_models::local_model_save,
             commands::neko_agent::neko_control_provider_list,
             commands::neko_agent::neko_control_provider_profiles,
             commands::neko_agent::neko_control_provider_sessions,
