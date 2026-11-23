@@ -3,11 +3,15 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { NekoMenuBar } from "@/neko-chill/components/NekoMenuBar";
 import { captureTextEditTarget, runTextEdit } from "@/neko-chill/text-edit-target";
 import { setTheme } from "@/lib/theme";
+import { invoke } from "@tauri-apps/api/core";
+
+vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn() }));
 
 const readText = vi.fn<() => Promise<string>>();
 const writeText = vi.fn<(text: string) => Promise<void>>();
 const execute = vi.fn();
 const originalClipboard = Object.getOwnPropertyDescriptor(navigator, "clipboard");
+const originalTauri = Object.getOwnPropertyDescriptor(window, "__TAURI_INTERNALS__");
 
 function setup(ready = true) {
   const actions = { onNewSession: vi.fn(), onCreateProject: vi.fn(), onSearch: vi.fn(),
@@ -32,6 +36,7 @@ function openEdit() {
 
 describe("application menu and local editing", () => {
   beforeEach(() => {
+    vi.mocked(invoke).mockReset().mockResolvedValue(undefined);
     vi.stubGlobal("matchMedia", vi.fn(() => ({ matches: false, addEventListener: vi.fn(), removeEventListener: vi.fn() })));
     readText.mockReset().mockResolvedValue("Văn bản mới");
     writeText.mockReset().mockResolvedValue(undefined);
@@ -45,11 +50,47 @@ describe("application menu and local editing", () => {
     setTheme("light");
     localStorage.removeItem("wiii:theme");
     vi.unstubAllGlobals();
+    if (originalTauri) Object.defineProperty(window, "__TAURI_INTERNALS__", originalTauri);
+    else Reflect.deleteProperty(window, "__TAURI_INTERNALS__");
     if (originalClipboard) Object.defineProperty(navigator, "clipboard", originalClipboard);
     else Reflect.deleteProperty(navigator, "clipboard");
     Reflect.deleteProperty(document, "queryCommandSupported");
     Reflect.deleteProperty(document, "queryCommandEnabled");
     Reflect.deleteProperty(document, "execCommand");
+  });
+
+  it("keeps app Quit out of the browser preview", () => {
+    setup();
+    fireEvent.click(screen.getByRole("menuitem", { name: "Tệp", exact: true }));
+    expect(screen.queryByRole("menuitem", { name: "Thoát Wiii" })).toBeNull();
+    expect(invoke).not.toHaveBeenCalled();
+  });
+
+  it("reaches native Quit by the File menu keyboard route even when runtime is not ready", async () => {
+    Object.defineProperty(window, "__TAURI_INTERNALS__", { configurable: true, value: {} });
+    const { actions, input } = setup(false);
+    fireEvent.keyDown(window, { key: "F10" });
+    fireEvent.keyDown(document.activeElement!, { key: "ArrowDown" });
+    fireEvent.keyDown(document.activeElement!, { key: "End" });
+    expect(document.activeElement).toBe(screen.getByRole("menuitem", { name: "Thoát Wiii" }));
+    fireEvent.click(document.activeElement!);
+    await vi.waitFor(() => expect(invoke).toHaveBeenCalledExactlyOnceWith("quit_app"));
+    expect(actions.onNewSession).not.toHaveBeenCalled();
+    expect(input.value).toBe("Nội dung Wiii");
+  });
+
+  it("reports failed native Quit and permits retry without losing the draft", async () => {
+    Object.defineProperty(window, "__TAURI_INTERNALS__", { configurable: true, value: {} });
+    vi.mocked(invoke).mockRejectedValueOnce(new Error("native denied"));
+    const { input } = setup();
+    fireEvent.click(screen.getByRole("menuitem", { name: "Tệp", exact: true }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "Thoát Wiii" }));
+    expect((await screen.findByRole("alert")).textContent).toContain("Chưa thể thoát Wiii");
+    expect(input.value).toBe("Nội dung Wiii");
+    fireEvent.click(screen.getByRole("menuitem", { name: "Tệp", exact: true }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "Thoát Wiii" }));
+    await vi.waitFor(() => expect(invoke).toHaveBeenCalledTimes(2));
+    expect(screen.queryByRole("alert")).toBeNull();
   });
 
   it("changes appearance from View, persists it, and returns focus to the draft", () => {

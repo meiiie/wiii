@@ -55,6 +55,36 @@ fn every_workbench_capability_excludes_the_splash_window() {
 }
 
 #[test]
+fn application_quit_is_granted_only_to_the_main_workbench() {
+    for entry in fs::read_dir(tauri_root().join("capabilities")).unwrap() {
+        let path = entry.unwrap().path();
+        if path.extension().and_then(|value| value.to_str()) != Some("json") {
+            continue;
+        }
+        let capability: Value = serde_json::from_str(&fs::read_to_string(&path).unwrap()).unwrap();
+        let can_quit = capability["permissions"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|permission| {
+                permission
+                    .as_str()
+                    .or_else(|| permission.get("identifier").and_then(Value::as_str))
+                    == Some("allow-quit-app")
+            });
+        if can_quit {
+            assert_eq!(capability["identifier"], "workbench-base");
+            assert_eq!(capability["windows"], serde_json::json!(["main"]));
+        }
+    }
+    let base = read_json("capabilities/workbench-base.json");
+    assert!(base["permissions"]
+        .as_array()
+        .unwrap()
+        .contains(&serde_json::json!("allow-quit-app")));
+}
+
+#[test]
 fn native_http_scope_has_no_global_remote_wildcard() {
     let network = read_json("capabilities/workbench-network.json");
     let rendered = serde_json::to_string(&network).expect("network capability is serializable");
