@@ -504,8 +504,9 @@ pub fn save(home: &Path, request: SaveLocalModelRequest) -> Result<SavedLocalMod
         preset.id.to_string()
     };
 
-    // Match Neko's setActiveProfile ownership migration: legacy globals must
-    // not override the new profile or send a prior provider's key elsewhere.
+    // Migrate unambiguous legacy globals, but never recombine an already
+    // scoped connection with another endpoint/key. Core 1.9.5's migration
+    // keeps a profile's key while replacing its endpoint; that is not safe.
     if CONNECTION_FIELDS
         .iter()
         .any(|field| data.contains_key(*field))
@@ -527,11 +528,15 @@ pub fn save(home: &Path, request: SaveLocalModelRequest) -> Result<SavedLocalMod
             .or_insert_with(|| json!({}))
             .as_object_mut()
             .ok_or(CONFIG_ERROR)?;
+        if CONNECTION_FIELDS
+            .iter()
+            .any(|field| old.contains_key(*field))
+        {
+            return Err("Có cấu hình mô hình cũ đang ưu tiên trên máy này. Wiii giữ nguyên để tránh dùng nhầm khóa.".into());
+        }
         for field in CONNECTION_FIELDS {
             if let Some(value) = data.remove(field) {
-                if field != "api_key" || !has_text(old.get("api_key")) {
-                    old.insert(field.into(), value);
-                }
+                old.insert(field.into(), value);
             }
         }
     }
@@ -700,6 +705,21 @@ mod tests {
         let data = home.data();
         assert_eq!(data["profiles"]["legacy"]["api_key"], "keep-value");
         assert_eq!(data["profiles"]["legacy-2"]["api_key"], "unscoped-value");
+    }
+
+    #[test]
+    fn mixed_legacy_and_scoped_connections_never_rebind_or_drop_either_key() {
+        let home = Home::new();
+        home.put(json!({"active_profile":"openai", "provider":"openai_compat", "base_url":"https://legacy.example/v1", "api_key":"legacy-only-value", "profiles":{"openai":{"base_url":"https://scoped.example/v1", "api_key":"scoped-only-value"}}}));
+        let before = fs::read(home.config()).unwrap();
+        assert!(save(&home.0, request()).is_err());
+        assert_eq!(fs::read(home.config()).unwrap(), before);
+        // A scoped environment-key binding is equally private, even if the
+        // profile stores no literal credential.
+        home.put(json!({"active_profile":"openai", "base_url":"https://legacy.example/v1", "profiles":{"openai":{"key_env":"OPENAI_API_KEY"}}}));
+        let before = fs::read(home.config()).unwrap();
+        assert!(save(&home.0, request()).is_err());
+        assert_eq!(fs::read(home.config()).unwrap(), before);
     }
 
     #[test]
