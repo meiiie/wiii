@@ -1,4 +1,4 @@
-import { useEffect, useRef, type ComponentPropsWithoutRef } from "react";
+import { useCallback, useEffect, useRef, type ComponentPropsWithoutRef } from "react";
 import { tabbable } from "tabbable";
 
 type Props = ComponentPropsWithoutRef<"div"> & { enabled: boolean };
@@ -17,13 +17,19 @@ function isPlainTab(event: KeyboardEvent): boolean {
 }
 
 /** Keep the native shell's Tab cycle out of GTK's empty webview boundary. */
-export function NativeTabBoundary({ enabled, children, onKeyDown, ...props }: Props) {
+export function NativeTabBoundary({ enabled, children, onKeyDown, onPointerDownCapture, onFocusCapture, ...props }: Props) {
   const rootRef = useRef<HTMLDivElement>(null);
   const relayRef = useRef<HTMLSpanElement>(null);
   const goingBackward = useRef(false);
+  const pointerAnchor = useRef<Node | null>(null);
   const firstControl = () => rootRef.current
     ? tabbable(rootRef.current).find((node) => node !== relayRef.current)
     : undefined;
+  const relayBackward = useCallback(() => {
+    goingBackward.current = true;
+    try { relayRef.current?.focus({ preventScroll: true }); }
+    finally { goingBackward.current = false; }
+  }, []);
   useEffect(() => {
     if (!enabled || !rootRef.current) return;
     const doc = rootRef.current.ownerDocument;
@@ -35,6 +41,14 @@ export function NativeTabBoundary({ enabled, children, onKeyDown, ...props }: Pr
       // The relay is a forward stop only. Reverse entry can start on BODY,
       // outside React's event path; keep the browser's own navigation anchor.
       relay.tabIndex = event.shiftKey ? -1 : 0;
+      const anchor = pointerAnchor.current;
+      const first = event.shiftKey ? firstControl() : undefined;
+      // A passive click before the first control (e.g. a notice title) is
+      // another reverse edge, not a reason to hand focus to GTK. Mid-page
+      // text anchors remain browser-owned; a real control focus clears this.
+      if (event.shiftKey && doc.activeElement === doc.body && anchor && first
+        && rootRef.current?.contains(anchor)
+        && (anchor.compareDocumentPosition(first) & Node.DOCUMENT_POSITION_FOLLOWING)) relayBackward();
       if (event.shiftKey) restoreTimer = setTimeout(() => {
         relay.tabIndex = 0;
         restoreTimer = undefined;
@@ -43,19 +57,24 @@ export function NativeTabBoundary({ enabled, children, onKeyDown, ...props }: Pr
     doc.addEventListener("keydown", prepareRelay, true);
     return () => {
       clearTimeout(restoreTimer);
+      pointerAnchor.current = null;
       doc.removeEventListener("keydown", prepareRelay, true);
     };
-  }, [enabled]);
+  }, [enabled, relayBackward]);
 
-  return <div {...props} ref={rootRef} onKeyDown={(event) => {
+  return <div {...props} ref={rootRef} onPointerDownCapture={(event) => {
+    onPointerDownCapture?.(event);
+    if (enabled && !event.defaultPrevented && event.target instanceof Node) pointerAnchor.current = event.target;
+  }} onFocusCapture={(event) => {
+    onFocusCapture?.(event);
+    if (enabled) pointerAnchor.current = null;
+  }} onKeyDown={(event) => {
     onKeyDown?.(event);
     if (!enabled || !event.shiftKey || !isPlainTab(event.nativeEvent)
       || event.currentTarget.ownerDocument.activeElement !== firstControl()) return;
     // Let this same trusted Shift+Tab continue backward from the relay. The
     // browser, not a DOM selector, chooses the last control (including frames).
-    goingBackward.current = true;
-    try { relayRef.current?.focus({ preventScroll: true }); }
-    finally { goingBackward.current = false; }
+    relayBackward();
   }}>
     {children}
     {enabled && <span ref={relayRef} tabIndex={0} aria-hidden="true" data-neko-native-tab-relay=""

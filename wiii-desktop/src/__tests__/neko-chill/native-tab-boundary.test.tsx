@@ -81,6 +81,34 @@ describe("native shell Tab boundary", () => {
     expect(document.activeElement).toBe(document.body);
   });
 
+  it("wraps a passive pointer anchor before the first control, such as a completion title", () => {
+    const { container } = render(<NativeTabBoundary enabled>
+      <h2>Completed chat</h2><button>Open result</button><button>Last</button>
+    </NativeTabBoundary>);
+    fireEvent.pointerDown(screen.getByRole("heading", { name: "Completed chat" }));
+    const event = new KeyboardEvent("keydown", { key: "Tab", shiftKey: true, bubbles: true, cancelable: true });
+    fireEvent(document.body, event);
+    expect(document.activeElement).toBe(container.querySelector("[data-neko-native-tab-relay]"));
+    expect(event.defaultPrevented).toBe(false);
+  });
+
+  it("does not turn a mid-page passive text anchor into a reverse boundary", () => {
+    render(<NativeTabBoundary enabled><button>First</button><p>Reading here</p><button>Last</button></NativeTabBoundary>);
+    fireEvent.pointerDown(screen.getByText("Reading here"));
+    fireEvent.keyDown(document.body, { key: "Tab", shiftKey: true });
+    expect(document.activeElement).toBe(document.body);
+  });
+
+  it("drops an old pointer anchor after real control focus", () => {
+    render(<NativeTabBoundary enabled><h2>Old title</h2><button>First</button><input aria-label="Draft" /></NativeTabBoundary>);
+    fireEvent.pointerDown(screen.getByRole("heading", { name: "Old title" }));
+    const draft = screen.getByRole("textbox", { name: "Draft" });
+    draft.focus();
+    draft.blur();
+    fireEvent.keyDown(document.body, { key: "Tab", shiftKey: true });
+    expect(document.activeElement).toBe(document.body);
+  });
+
   it.each([
     { key: "Tab" }, { key: "Tab", shiftKey: true, ctrlKey: true },
     { key: "Tab", shiftKey: true, altKey: true }, { key: "Tab", shiftKey: true, metaKey: true },
