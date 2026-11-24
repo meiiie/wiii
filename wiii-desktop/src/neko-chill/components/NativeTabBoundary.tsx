@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, type ComponentPropsWithoutRef } from "react";
+import { useEffect, useRef, type ComponentPropsWithoutRef } from "react";
 import { tabbable } from "tabbable";
 
 type Props = ComponentPropsWithoutRef<"div"> & { enabled: boolean };
@@ -10,8 +10,8 @@ export function nativeTabBoundaryEnabled(active: boolean): boolean {
     && /^Linux(?:\s|$)/.test(window.navigator.platform);
 }
 
-function isBackwardTab(event: KeyboardEvent): boolean {
-  return !event.defaultPrevented && event.key === "Tab" && event.shiftKey
+function isPlainTab(event: KeyboardEvent): boolean {
+  return !event.defaultPrevented && event.key === "Tab"
     && !event.ctrlKey && !event.altKey && !event.metaKey
     && !event.isComposing && event.keyCode !== 229;
 }
@@ -24,32 +24,38 @@ export function NativeTabBoundary({ enabled, children, onKeyDown, ...props }: Pr
   const firstControl = () => rootRef.current
     ? tabbable(rootRef.current).find((node) => node !== relayRef.current)
     : undefined;
-  const relayBackward = useCallback(() => {
-    goingBackward.current = true;
-    try { relayRef.current?.focus({ preventScroll: true }); }
-    finally { goingBackward.current = false; }
-  }, []);
-
   useEffect(() => {
     if (!enabled || !rootRef.current) return;
     const doc = rootRef.current.ownerDocument;
-    const enterBackward = (event: KeyboardEvent) => {
-      if (!isBackwardTab(event)) return;
-      // An initial/body keydown never bubbles through the React shell. Put
-      // reverse entry before the relay *before* the browser runs its default.
-      if (doc.activeElement === doc.body || doc.activeElement === doc.documentElement) relayBackward();
+    let restoreTimer: ReturnType<typeof setTimeout> | undefined;
+    const prepareRelay = (event: KeyboardEvent) => {
+      const relay = relayRef.current;
+      if (!relay || !isPlainTab(event)) return;
+      clearTimeout(restoreTimer);
+      // The relay is a forward stop only. Reverse entry can start on BODY,
+      // outside React's event path; keep the browser's own navigation anchor.
+      relay.tabIndex = event.shiftKey ? -1 : 0;
+      if (event.shiftKey) restoreTimer = setTimeout(() => {
+        relay.tabIndex = 0;
+        restoreTimer = undefined;
+      }, 0); // A task (not a microtask) restores it after native default traversal.
     };
-    doc.addEventListener("keydown", enterBackward, true);
-    return () => doc.removeEventListener("keydown", enterBackward, true);
-  }, [enabled, relayBackward]);
+    doc.addEventListener("keydown", prepareRelay, true);
+    return () => {
+      clearTimeout(restoreTimer);
+      doc.removeEventListener("keydown", prepareRelay, true);
+    };
+  }, [enabled]);
 
   return <div {...props} ref={rootRef} onKeyDown={(event) => {
     onKeyDown?.(event);
-    if (!enabled || !isBackwardTab(event.nativeEvent)
+    if (!enabled || !event.shiftKey || !isPlainTab(event.nativeEvent)
       || event.currentTarget.ownerDocument.activeElement !== firstControl()) return;
     // Let this same trusted Shift+Tab continue backward from the relay. The
     // browser, not a DOM selector, chooses the last control (including frames).
-    relayBackward();
+    goingBackward.current = true;
+    try { relayRef.current?.focus({ preventScroll: true }); }
+    finally { goingBackward.current = false; }
   }}>
     {children}
     {enabled && <span ref={relayRef} tabIndex={0} aria-hidden="true" data-neko-native-tab-relay=""

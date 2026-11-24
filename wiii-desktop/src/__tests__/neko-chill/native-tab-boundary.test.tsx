@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { NativeTabBoundary, nativeTabBoundaryEnabled } from "@/neko-chill/components/NativeTabBoundary";
 
@@ -63,7 +63,7 @@ describe("native shell Tab boundary", () => {
     expect(document.activeElement).toBe(screen.getByRole("button", { name: "Open result" }));
   });
 
-  it("starts reverse traversal from an unfocused document at the end, not the first control", () => {
+  it("leaves reverse document entry to the browser, excluding only the forward relay", async () => {
     const { container } = render(<NativeTabBoundary enabled><button>First</button><button>Last</button></NativeTabBoundary>);
     const first = screen.getByRole("button", { name: "First" });
     first.focus();
@@ -71,10 +71,14 @@ describe("native shell Tab boundary", () => {
     expect(document.activeElement).toBe(document.body);
     const backward = new KeyboardEvent("keydown", { key: "Tab", shiftKey: true, bubbles: true, cancelable: true });
     fireEvent(document.body, backward);
-    expect(document.activeElement).toBe(container.querySelector("[data-neko-native-tab-relay]"));
+    const relay = container.querySelector<HTMLElement>("[data-neko-native-tab-relay]")!;
+    expect(document.activeElement).toBe(document.body);
+    expect(relay.tabIndex).toBe(-1);
     expect(backward.defaultPrevented).toBe(false);
-    // The same native default must choose the previous real control next;
-    // jsdom cannot execute that default and does not prove native traversal.
+    // Do not replace the native starting point (which can follow a text click)
+    // with a guessed last control. jsdom cannot prove native default traversal.
+    await waitFor(() => expect(relay.tabIndex).toBe(0));
+    expect(document.activeElement).toBe(document.body);
   });
 
   it.each([
