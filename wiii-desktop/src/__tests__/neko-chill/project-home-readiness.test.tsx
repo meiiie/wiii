@@ -173,7 +173,7 @@ describe("Project Home readiness and missing Neko recovery", () => {
   it("routes missing Neko management away from the draft without launching or installing", () => {
     const input = home([missing]);
     expect(screen.queryByText("Cách cài Neko Core")).toBeNull();
-    fireEvent.click(screen.getByRole("button", { name: "Thiết lập agent" }));
+    fireEvent.click(screen.getByRole("button", { name: "Thiết lập trợ lý" }));
     expect(manage).toHaveBeenCalledOnce();
     fireEvent.keyDown(input, { key: "Enter" });
     expect(sendButton().disabled).toBe(true);
@@ -188,7 +188,7 @@ describe("Project Home readiness and missing Neko recovery", () => {
     expect(select.textContent).toMatch(/Neko|Chưa sẵn sàng/i);
     expect(sendButton().disabled).toBe(true);
     await pickHarness("Gemini CLI");
-    expect(screen.queryByRole("button", { name: "Thiết lập agent" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Thiết lập trợ lý" })).toBeNull();
     await vi.waitFor(() => expect(sendButton().disabled).toBe(false));
     fireEvent.click(sendButton());
     await vi.waitFor(() => expect(useNekoSessionStore.getState().createSession).toHaveBeenCalledWith(
@@ -198,7 +198,7 @@ describe("Project Home readiness and missing Neko recovery", () => {
 
   it("shows checking instead of missing and blocks launching cached agents", () => {
     const input = home([gemini], { isLoading: true });
-    expect(screen.getByText("Đang kiểm tra agent…")).toBeTruthy();
+    expect(screen.getByText("Đang kiểm tra trợ lý…")).toBeTruthy();
     expect(screen.queryByText("Cách cài Neko Core")).toBeNull();
     fireEvent.keyDown(input, { key: "Enter" });
     expect(sendButton().disabled).toBe(true);
@@ -207,7 +207,7 @@ describe("Project Home readiness and missing Neko recovery", () => {
 
   it("does not treat a global discovery error as a missing install or safe cached result", () => {
     const input = home([gemini], { error: "cleanup could not be proven" });
-    expect(screen.getByText("Agent chưa sẵn sàng")).toBeTruthy();
+    expect(screen.getByText("Trợ lý chưa sẵn sàng")).toBeTruthy();
     expect(screen.queryByText("cleanup could not be proven")).toBeNull();
     expect(screen.queryByText("Cách cài Neko Core")).toBeNull();
     fireEvent.keyDown(input, { key: "Enter" });
@@ -217,7 +217,7 @@ describe("Project Home readiness and missing Neko recovery", () => {
 
   it("keeps a provider-scoped probe failure separate from an alternative", async () => {
     home([{ ...missing, availability: "probe_failed", detail: "probe timed out" }, gemini]);
-    expect(screen.getByText("Agent chưa sẵn sàng")).toBeTruthy();
+    expect(screen.getByText("Trợ lý chưa sẵn sàng")).toBeTruthy();
     expect(screen.queryByText("Cách cài Neko Core")).toBeNull();
     expect(sendButton().disabled).toBe(true);
     await pickHarness("Gemini CLI");
@@ -251,7 +251,7 @@ describe("Project Home readiness and missing Neko recovery", () => {
 
   it("does not recommend installation when this Wiii host is unsupported", () => {
     home([{ ...missing, availability: "host_unsupported" }]);
-    expect(screen.getByRole("button", { name: "Thiết lập agent" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Thiết lập trợ lý" })).toBeTruthy();
     expect(screen.queryByText("Cách cài Neko Core")).toBeNull();
     expect(sendButton().disabled).toBe(true);
   });
@@ -259,7 +259,7 @@ describe("Project Home readiness and missing Neko recovery", () => {
   it("does not equate an empty browser discovery result with not installed or poll forever", async () => {
     host.providers.mockResolvedValue([]);
     home([]);
-    await vi.waitFor(() => expect(screen.getByText("Agent chưa sẵn sàng")).toBeTruthy());
+    await vi.waitFor(() => expect(screen.getByText("Trợ lý chưa sẵn sàng")).toBeTruthy());
     expect(host.providers).toHaveBeenCalledExactlyOnceWith("neko");
     expect(screen.queryByText("Chưa cài Neko Core")).toBeNull();
   });
