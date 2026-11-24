@@ -55,6 +55,24 @@ describe("native shell Tab boundary", () => {
     expect(document.activeElement).toBe(first);
   });
 
+  it.each([false, true])("recognizes WebKitGTK's unidentified physical Shift+Tab (BODY entry: %s)", async (bodyEntry) => {
+    const { container } = render(<NativeTabBoundary enabled><button>First</button><button>Last</button></NativeTabBoundary>);
+    const first = screen.getByRole("button", { name: "First" });
+    const relay = container.querySelector<HTMLElement>("[data-neko-native-tab-relay]")!;
+    first.focus();
+    if (bodyEntry) first.blur();
+    // Shape captured from trusted native input, not a claim that jsdom runs
+    // WebKit's default traversal. Both capture and React guards must accept it.
+    const backward = new KeyboardEvent("keydown", {
+      key: "Unidentified", code: "Tab", keyCode: 9, shiftKey: true, bubbles: true, cancelable: true,
+    });
+    fireEvent(bodyEntry ? document.body : first, backward);
+    expect(document.activeElement).toBe(bodyEntry ? document.body : relay);
+    expect(relay.tabIndex).toBe(-1);
+    expect(backward.defaultPrevented).toBe(false);
+    await waitFor(() => expect(relay.tabIndex).toBe(0));
+  });
+
   it("uses the current first control when a notification appears before the chrome", () => {
     const { container, rerender } = render(<NativeTabBoundary enabled><button>Sidebar</button></NativeTabBoundary>);
     rerender(<NativeTabBoundary enabled><button>Open result</button><button>Sidebar</button></NativeTabBoundary>);
@@ -113,14 +131,19 @@ describe("native shell Tab boundary", () => {
     { key: "Tab" }, { key: "Tab", shiftKey: true, ctrlKey: true },
     { key: "Tab", shiftKey: true, altKey: true }, { key: "Tab", shiftKey: true, metaKey: true },
     { key: "Tab", shiftKey: true, isComposing: true }, { key: "Escape", shiftKey: true },
+    { key: "Unidentified", code: "KeyA", shiftKey: true }, { key: "a", code: "Tab", shiftKey: true },
+    { key: "Unidentified", code: "Tab", shiftKey: true, ctrlKey: true },
+    { key: "Unidentified", code: "Tab", shiftKey: true, isComposing: true },
+    { key: "Unidentified", code: "Tab", shiftKey: true, keyCode: 229 },
   ])("does not claim unfocused-document input for ordinary/modified keys: %j", (keys) => {
-    render(<NativeTabBoundary enabled><button>First</button></NativeTabBoundary>);
+    const { container } = render(<NativeTabBoundary enabled><button>First</button></NativeTabBoundary>);
     const first = screen.getByRole("button", { name: "First" });
     first.focus();
     first.blur();
     const event = new KeyboardEvent("keydown", { ...keys, bubbles: true, cancelable: true });
     fireEvent(document.body, event);
     expect(document.activeElement).toBe(document.body);
+    expect(container.querySelector<HTMLElement>("[data-neko-native-tab-relay]")!.tabIndex).toBe(0);
     expect(event.defaultPrevented).toBe(false);
   });
 
@@ -128,6 +151,10 @@ describe("native shell Tab boundary", () => {
     { key: "Tab" }, { key: "Tab", shiftKey: true, ctrlKey: true },
     { key: "Tab", shiftKey: true, altKey: true }, { key: "Tab", shiftKey: true, metaKey: true },
     { key: "Tab", shiftKey: true, isComposing: true }, { key: "Escape", shiftKey: true },
+    { key: "Unidentified", code: "KeyA", shiftKey: true }, { key: "a", code: "Tab", shiftKey: true },
+    { key: "Unidentified", code: "Tab", shiftKey: true, ctrlKey: true },
+    { key: "Unidentified", code: "Tab", shiftKey: true, isComposing: true },
+    { key: "Unidentified", code: "Tab", shiftKey: true, keyCode: 229 },
   ])("leaves ordinary and modified key handling unchanged: %j", (keys) => {
     render(<NativeTabBoundary enabled><button>First</button></NativeTabBoundary>);
     const first = screen.getByRole("button", { name: "First" });

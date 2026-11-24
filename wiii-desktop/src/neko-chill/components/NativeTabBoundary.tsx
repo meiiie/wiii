@@ -11,7 +11,10 @@ export function nativeTabBoundaryEnabled(active: boolean): boolean {
 }
 
 function isPlainTab(event: KeyboardEvent): boolean {
-  return !event.defaultPrevented && event.key === "Tab"
+  // WebKitGTK can label trusted Shift+Tab "Unidentified" while preserving its
+  // physical Tab code. Do not override a different identified/remapped key.
+  const tab = event.key === "Tab" || (event.key === "Unidentified" && event.code === "Tab");
+  return !event.defaultPrevented && tab
     && !event.ctrlKey && !event.altKey && !event.metaKey
     && !event.isComposing && event.keyCode !== 229;
 }
