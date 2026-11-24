@@ -1,10 +1,12 @@
 import { useEffect, useRef, useState } from "react";
 import { X } from "lucide-react";
+import { tabbable } from "tabbable";
 import {
   getLocalModelStatus, saveLocalModel,
   type LocalModelPreset, type SavedLocalModel,
 } from "@/lib/local-model-setup";
 import { NekoButton, NekoDialogPanel, NekoIconButton, NekoInput } from "./ui";
+import { isPlainTab, nativeTabBoundaryEnabled } from "./NativeTabBoundary";
 
 export function LocalModelSetupDialog({ onClose, onSaved }: {
   onClose: () => void;
@@ -99,6 +101,20 @@ export function LocalModelSetupDialog({ onClose, onSaved }: {
   };
 
   return <dialog ref={dialog} className="nk-dialog" aria-labelledby="local-model-title" aria-describedby="local-model-description"
+    onKeyDown={(event) => {
+      if (!nativeTabBoundaryEnabled(true) || !isPlainTab(event.nativeEvent)) return;
+      // WebKitGTK also inserts an empty webview stop at native modal edges.
+      // Only join this dialog's ends; leave inner traversal and other platforms native.
+      const controls = tabbable(event.currentTarget);
+      const first = controls[0], last = controls[controls.length - 1];
+      const focused = event.currentTarget.ownerDocument.activeElement;
+      const next = event.shiftKey && focused === first ? last
+        : !event.shiftKey && focused === last ? first : undefined;
+      if (next) {
+        event.preventDefault();
+        next.focus({ preventScroll: true });
+      }
+    }}
     onCancel={(event) => { event.preventDefault(); close(); }}
     onClick={(event) => { if (event.target === event.currentTarget) close(); }}>
     <div className="nk-dialog-layout" onMouseDown={(event) => { if (event.target === event.currentTarget) close(); }}>

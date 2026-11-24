@@ -10,7 +10,7 @@ export function nativeTabBoundaryEnabled(active: boolean): boolean {
     && /^Linux(?:\s|$)/.test(window.navigator.platform);
 }
 
-function isPlainTab(event: KeyboardEvent): boolean {
+export function isPlainTab(event: KeyboardEvent): boolean {
   // WebKitGTK can label trusted Shift+Tab "Unidentified" while preserving its
   // physical Tab code. Do not override a different identified/remapped key.
   const tab = event.key === "Tab" || (event.key === "Unidentified" && event.code === "Tab");

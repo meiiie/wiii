@@ -31,7 +31,7 @@ beforeEach(() => {
   vi.spyOn(HTMLDialogElement.prototype, "showModal").mockImplementation(function () { this.setAttribute("open", ""); });
   vi.spyOn(HTMLDialogElement.prototype, "close").mockImplementation(function () { this.removeAttribute("open"); });
 });
-afterEach(() => vi.restoreAllMocks());
+afterEach(() => { vi.restoreAllMocks(); vi.unstubAllGlobals(); });
 
 describe("first-use local model setup", () => {
   it("masks an ephemeral key and cancels back to the opener without saving", async () => {
@@ -105,5 +105,94 @@ describe("first-use local model setup", () => {
     await screen.findByLabelText(/^Khóa API/);
     expect(getLocalModelStatus).toHaveBeenCalledTimes(2);
     expect(saveLocalModel).not.toHaveBeenCalled();
+  });
+});
+
+describe("Linux native model setup keyboard boundary", () => {
+  beforeEach(() => {
+    vi.stubGlobal("__TAURI_INTERNALS__", {});
+    vi.spyOn(window.navigator, "platform", "get").mockReturnValue("Linux x86_64");
+    // jsdom has no layout or native Tab default; only model rendered visibility.
+    vi.spyOn(HTMLElement.prototype, "getClientRects").mockImplementation(function () {
+      return [new DOMRect(0, 0, 30, 20)] as unknown as DOMRectList;
+    });
+  });
+
+  function tab(target: HTMLElement, init: KeyboardEventInit = {}) {
+    const event = new KeyboardEvent("keydown", { key: "Tab", code: "Tab", bubbles: true, cancelable: true, ...init });
+    fireEvent(target, event);
+    return event;
+  }
+
+  it.each(["Tab", "Unidentified"])("keeps both edges inside the modal for %s, preserving fields and Escape return", async (key) => {
+    const opener = setup();
+    const provider = await screen.findByRole("combobox", { name: /^Nhà cung cấp/ });
+    const model = screen.getByRole<HTMLInputElement>("textbox", { name: "Mã mô hình" });
+    const apiKey = screen.getByLabelText<HTMLInputElement>(/^Khóa API/);
+    fireEvent.change(apiKey, { target: { value: "unit-test-only-value" } });
+    expect(document.activeElement).toBe(provider);
+    const first = screen.getByRole("button", { name: "Đóng thiết lập mô hình" });
+    const last = screen.getByRole("button", { name: "Lưu mô hình" });
+    for (let cycle = 0; cycle < 2; cycle += 1) {
+      last.focus();
+      expect(tab(last, { key, keyCode: 9 }).defaultPrevented).toBe(true);
+      expect(document.activeElement).toBe(first);
+      expect(tab(first, { key, keyCode: 9, shiftKey: true }).defaultPrevented).toBe(true);
+      expect(document.activeElement).toBe(last);
+    }
+    expect(model.value).toBe(presets[0].model);
+    expect(apiKey.value).toBe("unit-test-only-value");
+    expect(saveLocalModel).not.toHaveBeenCalled();
+    expect(onSaved).not.toHaveBeenCalled();
+    fireEvent(screen.getByRole("dialog"), new Event("cancel", { cancelable: true }));
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(document.activeElement).toBe(opener);
+  });
+
+  it("leaves inner ordering, modified shortcuts and child-prevented keys alone", async () => {
+    setup();
+    const provider = await screen.findByRole("combobox", { name: /^Nhà cung cấp/ });
+    expect(tab(provider).defaultPrevented).toBe(false);
+    expect(document.activeElement).toBe(provider);
+    const last = screen.getByRole("button", { name: "Lưu mô hình" });
+    last.focus();
+    expect(tab(last, { altKey: true }).defaultPrevented).toBe(false);
+    expect(document.activeElement).toBe(last);
+    last.addEventListener("keydown", (event) => event.preventDefault(), { once: true });
+    expect(tab(last).defaultPrevented).toBe(true);
+    expect(document.activeElement).toBe(last);
+  });
+
+  it("uses the current controls after a failed status read is retried", async () => {
+    vi.mocked(getLocalModelStatus).mockRejectedValueOnce(new Error("Chưa đọc được cấu hình mô hình."));
+    setup();
+    const retry = await screen.findByRole("button", { name: "Thử lại" });
+    const first = screen.getByRole("button", { name: "Đóng thiết lập mô hình" });
+    retry.focus();
+    tab(retry);
+    expect(document.activeElement).toBe(first);
+    tab(first, { key: "Unidentified", keyCode: 9, shiftKey: true });
+    expect(document.activeElement).toBe(retry);
+    fireEvent.click(retry);
+    await screen.findByLabelText(/^Khóa API/);
+    first.focus();
+    tab(first, { key: "Unidentified", keyCode: 9, shiftKey: true });
+    expect(document.activeElement).toBe(screen.getByRole("button", { name: "Lưu mô hình" }));
+    expect(saveLocalModel).not.toHaveBeenCalled();
+  });
+
+  it.each(["MacIntel", "Win32", "Linux browser"])("keeps %s on its native keyboard policy", async (platform) => {
+    if (platform === "Linux browser") vi.unstubAllGlobals();
+    else vi.spyOn(window.navigator, "platform", "get").mockReturnValue(platform);
+    setup();
+    await screen.findByRole("combobox", { name: /^Nhà cung cấp/ });
+    const first = screen.getByRole("button", { name: "Đóng thiết lập mô hình" });
+    const last = screen.getByRole("button", { name: "Lưu mô hình" });
+    last.focus();
+    expect(tab(last).defaultPrevented).toBe(false);
+    expect(document.activeElement).toBe(last);
+    first.focus();
+    expect(tab(first, { key: "Unidentified", shiftKey: true }).defaultPrevented).toBe(false);
+    expect(document.activeElement).toBe(first);
   });
 });
