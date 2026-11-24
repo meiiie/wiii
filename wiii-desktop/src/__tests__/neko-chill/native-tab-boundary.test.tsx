@@ -63,6 +63,35 @@ describe("native shell Tab boundary", () => {
     expect(document.activeElement).toBe(screen.getByRole("button", { name: "Open result" }));
   });
 
+  it("starts reverse traversal from an unfocused document at the end, not the first control", () => {
+    const { container } = render(<NativeTabBoundary enabled><button>First</button><button>Last</button></NativeTabBoundary>);
+    const first = screen.getByRole("button", { name: "First" });
+    first.focus();
+    first.blur();
+    expect(document.activeElement).toBe(document.body);
+    const backward = new KeyboardEvent("keydown", { key: "Tab", shiftKey: true, bubbles: true, cancelable: true });
+    fireEvent(document.body, backward);
+    expect(document.activeElement).toBe(container.querySelector("[data-neko-native-tab-relay]"));
+    expect(backward.defaultPrevented).toBe(false);
+    // The same native default must choose the previous real control next;
+    // jsdom cannot execute that default and does not prove native traversal.
+  });
+
+  it.each([
+    { key: "Tab" }, { key: "Tab", shiftKey: true, ctrlKey: true },
+    { key: "Tab", shiftKey: true, altKey: true }, { key: "Tab", shiftKey: true, metaKey: true },
+    { key: "Tab", shiftKey: true, isComposing: true }, { key: "Escape", shiftKey: true },
+  ])("does not claim unfocused-document input for ordinary/modified keys: %j", (keys) => {
+    render(<NativeTabBoundary enabled><button>First</button></NativeTabBoundary>);
+    const first = screen.getByRole("button", { name: "First" });
+    first.focus();
+    first.blur();
+    const event = new KeyboardEvent("keydown", { ...keys, bubbles: true, cancelable: true });
+    fireEvent(document.body, event);
+    expect(document.activeElement).toBe(document.body);
+    expect(event.defaultPrevented).toBe(false);
+  });
+
   it.each([
     { key: "Tab" }, { key: "Tab", shiftKey: true, ctrlKey: true },
     { key: "Tab", shiftKey: true, altKey: true }, { key: "Tab", shiftKey: true, metaKey: true },
