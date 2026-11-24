@@ -66,6 +66,7 @@
     "remark-gfm": "^4.0.0",
     "remark-math": "^6.0.0",
     "simplex-noise": "^4.0.3",
+    "tabbable": "6.2.0",
     "uuid": "^14.0.0",
     "zustand": "^5.1.0"
   },

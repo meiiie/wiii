@@ -55,6 +55,7 @@ import { SessionSidebar, type SessionSidebarViewState } from "./components/Sessi
 import { NekoCommandCenter } from "./components/NekoCommandCenter";
 import { NekoMenuBar } from "./components/NekoMenuBar";
 import { CompletionNotices } from "./components/CompletionNotices";
+import { NativeTabBoundary, nativeTabBoundaryEnabled } from "./components/NativeTabBoundary";
 import type { NekoWorkspaceTarget } from "./components/NekoWorkspacePane";
 import { useNekoSessionCatalog } from "./hooks/useNekoSessionCatalog";
 import { useWorkspacePresence } from "./hooks/useWorkspacePresence";
@@ -1014,7 +1015,8 @@ function NekoChillScreen({
   );
 
   return (
-    <div className="nk-root flex h-screen flex-col bg-[var(--nk-canvas)] text-[var(--nk-text)]">
+    <NativeTabBoundary enabled={nativeTabBoundaryEnabled(active)}
+      className="nk-root flex h-screen flex-col bg-[var(--nk-canvas)] text-[var(--nk-text)]">
       <CompletionNotices visibleSessionId={active && !(compactWorkspace && sessionPresence.present) ? session?.id : null} onOpen={(sessionId) => {
         if (!useNekoSessionStore.getState().sessions[sessionId]) return;
         if (compactWorkspace && useNekoWorkspaceStore.getState().sessions[sessionId]?.open) toggleWorkspace(sessionId);
@@ -1304,6 +1306,6 @@ function NekoChillScreen({
           }}
         />
       ) : null}
-    </div>
+    </NativeTabBoundary>
   );
 }
