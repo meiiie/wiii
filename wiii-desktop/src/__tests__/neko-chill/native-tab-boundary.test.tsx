@@ -1,6 +1,6 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { NativeTabBoundary } from "@/neko-chill/components/NativeTabBoundary";
+import { NativeTabBoundary, nativeTabBoundaryEnabled } from "@/neko-chill/components/NativeTabBoundary";
 
 describe("native shell Tab boundary", () => {
   beforeEach(() => {
@@ -9,7 +9,22 @@ describe("native shell Tab boundary", () => {
       return (this.closest("[hidden]") ? [] : [new DOMRect(0, 0, 30, 20)]) as unknown as DOMRectList;
     });
   });
-  afterEach(() => vi.restoreAllMocks());
+  afterEach(() => { vi.restoreAllMocks(); vi.unstubAllGlobals(); });
+
+  it.each([
+    { platform: "Linux x86_64", enabled: true }, { platform: "Linux aarch64", enabled: true },
+    { platform: "MacIntel", enabled: false }, { platform: "Win32", enabled: false },
+  ])("limits the workaround to active Linux Tauri, not $platform's native keyboard policy", ({ platform, enabled }) => {
+    vi.stubGlobal("__TAURI_INTERNALS__", {});
+    vi.spyOn(window.navigator, "platform", "get").mockReturnValue(platform);
+    expect(nativeTabBoundaryEnabled(true)).toBe(enabled);
+    expect(nativeTabBoundaryEnabled(false)).toBe(false);
+  });
+
+  it("leaves Linux browsers outside the native workaround", () => {
+    vi.spyOn(window.navigator, "platform", "get").mockReturnValue("Linux x86_64");
+    expect(nativeTabBoundaryEnabled(true)).toBe(false);
+  });
 
   it("wraps the forward edge to a visible enabled control without changing a draft", () => {
     const { container } = render(<NativeTabBoundary enabled>

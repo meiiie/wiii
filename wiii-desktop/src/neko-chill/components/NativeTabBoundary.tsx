@@ -3,6 +3,13 @@ import { tabbable } from "tabbable";
 
 type Props = ComponentPropsWithoutRef<"div"> & { enabled: boolean };
 
+export function nativeTabBoundaryEnabled(active: boolean): boolean {
+  // This is a WebKitGTK workaround, not a cross-platform keyboard policy.
+  // macOS's implicit button stops depend on the user's keyboard settings.
+  return active && typeof window !== "undefined" && "__TAURI_INTERNALS__" in window
+    && /^Linux(?:\s|$)/.test(window.navigator.platform);
+}
+
 /** Keep the native shell's Tab cycle out of GTK's empty webview boundary. */
 export function NativeTabBoundary({ enabled, children, onKeyDown, ...props }: Props) {
   const rootRef = useRef<HTMLDivElement>(null);
